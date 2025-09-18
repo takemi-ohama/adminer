@@ -31,9 +31,14 @@ class AdminerBigQueryServers {
      */
     public function __construct($servers = []) {
         // Default servers - can be customized via environment variables
+        $defaultProject = getenv('BQ_PROJECT');
+        if (empty($defaultProject)) {
+            throw new Exception('BQ_PROJECT environment variable is required for BigQuery configuration');
+        }
+
         $defaultServers = [
             'BigQuery (Default Project)' => [
-                'server' => getenv('BQ_PROJECT') ?: 'your-gcp-project-id',
+                'server' => $defaultProject,
                 'driver' => 'bigquery',
                 'username' => '',
                 'password' => ''
@@ -65,8 +70,8 @@ class AdminerBigQueryServers {
         }
 
         echo "</select>\n";
-        echo "<tr><th>Project ID<td><input name='auth[server]' value='"
-            . htmlspecialchars($_GET['server'] ?? '') . "' title='GCP Project ID'>\n";
+        echo "<tr><th>Project ID<td><input name='auth[project_id]' value='"
+            . htmlspecialchars($_GET['server'] ?? '') . "' title='GCP Project ID' onchange='updateServerField(this.value)'>\n";
         echo "<tr><th>Driver<td>";
         echo "<select name='auth[driver]'>";
         echo "<option value='bigquery' selected>BigQuery</option>";
@@ -76,7 +81,14 @@ class AdminerBigQueryServers {
         // JavaScript for server selection
         echo "<script>
         function selectServer(server) {
-            document.querySelector('input[name=\"auth[server]\"]').value = server;
+            var projectInput = document.querySelector('input[name=\"auth[project_id]\"]');
+            var serverSelect = document.querySelector('select[name=\"auth[server]\"]');
+            if (projectInput) projectInput.value = server;
+            if (serverSelect) serverSelect.value = server;
+        }
+        function updateServerField(projectId) {
+            var serverSelect = document.querySelector('select[name=\"auth[server]\"]');
+            if (serverSelect) serverSelect.value = projectId;
         }
         </script>";
 

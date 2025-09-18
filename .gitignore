@@ -7,8 +7,9 @@
 /tests/pdo-*.html
 /tests/screenshots/
 /tests/cropped/
-/vendor/
+vendor/
 adminer-plugins/
 adminer-plugins.php
 
 .env
+

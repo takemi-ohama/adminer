@@ -15,7 +15,9 @@
  */
 
 // Define driver constant
-define('Adminer\\DRIVER', "bigquery");
+if (!defined('DRIVER')) {
+    define('DRIVER', 'bigquery');
+}
 
 // Import required BigQuery classes
 use Google\Cloud\BigQuery\BigQueryClient;
@@ -50,9 +52,24 @@ class Db {
      */
     public function connect($server, $username, $password) {
         try {
-            // Parse project ID and optional location from server parameter
+            // Validate and parse project ID and optional location from server parameter
+            if (empty($server)) {
+                throw new Exception('Project ID is required');
+            }
+
             $parts = explode(':', $server);
-            $this->projectId = $parts[0];
+            $projectId = trim($parts[0]);
+
+            // Validate project ID format
+            if (!preg_match('/^[a-z0-9][a-z0-9\-]{4,28}[a-z0-9]$/i', $projectId)) {
+                throw new Exception('Invalid GCP Project ID format');
+            }
+
+            if (strlen($projectId) > 30) {
+                throw new Exception('Project ID too long (max 30 characters)');
+            }
+
+            $this->projectId = $projectId;
             $location = isset($parts[1]) ? $parts[1] : 'US';
 
             // Initialize BigQuery client with service account authentication
@@ -75,12 +92,50 @@ class Db {
             return true;
 
         } catch (ServiceException $e) {
-            error_log("BigQuery connection error: " . $e->getMessage());
+            // Log sanitized error message to prevent information disclosure
+            $safeMessage = preg_replace('/project[s]?[\s:]+[a-z0-9\-]+/i', 'project: [REDACTED]', $e->getMessage());
+            error_log("BigQuery connection error: " . $safeMessage);
             return false;
         } catch (Exception $e) {
-            error_log("BigQuery setup error: " . $e->getMessage());
+            $safeMessage = preg_replace('/project[s]?[\s:]+[a-z0-9\-]+/i', 'project: [REDACTED]', $e->getMessage());
+            error_log("BigQuery setup error: " . $safeMessage);
             return false;
         }
+    }
+
+    /**
+     * Validate if query is safe for read-only access
+     *
+     * @param string $query SQL query to validate
+     * @return bool True if query is safe
+     * @throws Exception If query contains unsafe operations
+     */
+    private function validateReadOnlyQuery($query) {
+        // Remove SQL comments to prevent bypass
+        $cleanQuery = preg_replace('/--.*$/m', '', $query);
+        $cleanQuery = preg_replace('/\/\*.*?\*\//s', '', $cleanQuery);
+        $cleanQuery = trim($cleanQuery);
+
+        // Must start with SELECT
+        if (!preg_match('/^\s*SELECT\s+/i', $cleanQuery)) {
+            throw new Exception('Only SELECT queries are supported in read-only mode');
+        }
+
+        // Block dangerous operations that might be hidden in subqueries or CTEs
+        $dangerousPatterns = [
+            '/\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE)\b/i',
+            '/\b(GRANT|REVOKE)\b/i',
+            '/\bCALL\s+/i',
+            '/\bEXEC(UTE)?\s+/i',
+        ];
+
+        foreach ($dangerousPatterns as $pattern) {
+            if (preg_match($pattern, $cleanQuery)) {
+                throw new Exception('DDL/DML operations are not allowed in read-only mode');
+            }
+        }
+
+        return true;
     }
 
     /**
@@ -91,10 +146,8 @@ class Db {
      */
     public function query($query) {
         try {
-            // For MVP, only allow SELECT queries (READ-ONLY)
-            if (!preg_match('/^\s*SELECT\s+/i', trim($query))) {
-                throw new Exception('Only SELECT queries are supported in READ-ONLY mode');
-            }
+            // Validate query for read-only safety
+            $this->validateReadOnlyQuery($query);
 
             // Configure query job
             $queryConfig = $this->bigQueryClient->query($query)
@@ -111,10 +164,13 @@ class Db {
             return new Result($queryResults);
 
         } catch (ServiceException $e) {
-            error_log("BigQuery query error: " . $e->getMessage());
+            // Log sanitized error message
+            $safeMessage = preg_replace('/project[s]?[\s:]+[a-z0-9\-]+/i', 'project: [REDACTED]', $e->getMessage());
+            error_log("BigQuery query error: " . $safeMessage);
             return false;
         } catch (Exception $e) {
-            error_log("BigQuery query error: " . $e->getMessage());
+            $safeMessage = preg_replace('/project[s]?[\s:]+[a-z0-9\-]+/i', 'project: [REDACTED]', $e->getMessage());
+            error_log("BigQuery query error: " . $safeMessage);
             return false;
         }
     }
@@ -174,6 +230,12 @@ class Result {
     /** @var array Field information cache */
     private $fieldsCache = null;
 
+    /** @var Iterator Result iterator */
+    private $iterator = null;
+
+    /** @var bool Is iterator initialized */
+    private $isIteratorInitialized = false;
+
     public function __construct($queryResults) {
         $this->queryResults = $queryResults;
     }
@@ -185,7 +247,14 @@ class Result {
      */
     public function fetch_assoc() {
         try {
-            foreach ($this->queryResults as $row) {
+            if (!$this->isIteratorInitialized) {
+                $this->iterator = $this->queryResults->getIterator();
+                $this->isIteratorInitialized = true;
+            }
+
+            if ($this->iterator && $this->iterator->valid()) {
+                $row = $this->iterator->current();
+                $this->iterator->next();
                 $this->currentRow = $row;
                 $this->rowNumber++;
                 return $row;
@@ -445,6 +514,8 @@ function fields($table) {
 
 // Initialize driver
 if (class_exists('Adminer') || interface_exists('AdminerPlugin')) {
-    // Register BigQuery driver
-    new AdminerPlugin();
+    // Register BigQuery driver only if AdminerPlugin class exists
+    if (class_exists('AdminerPlugin')) {
+        new AdminerPlugin();
+    }
 }
