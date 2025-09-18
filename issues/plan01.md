@@ -1,5 +1,12 @@
 # Adminer BigQuery Driver Plugin 開発計画
 
+## プロジェクト概要
+AdminerのドライバープラグインとしてBigQueryに接続し、読み取り中心のMVP機能を提供する。
+Google Cloud BigQueryの標準SQLクエリ実行、データセット/テーブル/スキーマ閲覧、結果ページングを実現する。
+
+**作成日**: 2025-09-18
+**対象**: Adminer BigQuery Driver Plugin MVP
+
 ## 1. プロジェクト目標
 
 ### MVP目標
