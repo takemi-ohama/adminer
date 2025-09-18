@@ -37,10 +37,45 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "aws
 # github cli
 RUN curl -sS https://webi.sh/gh | sh
 
+# PHP 8.x と関連拡張のインストール (BigQuery driver plugin開発用)
+RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+    # PHP 8.x とWeb開発に必要な拡張
+    php8.3 php8.3-cli php8.3-common php8.3-curl php8.3-mbstring \
+    php8.3-xml php8.3-zip php8.3-intl php8.3-bcmath \
+    # Composer (PHP依存関係管理)
+    composer \
+    # Web開発用
+    apache2 libapache2-mod-php8.3 \
+    && \
+    # PHP設定の最適化
+    echo "date.timezone = UTC" >> /etc/php/8.3/cli/php.ini && \
+    echo "memory_limit = 512M" >> /etc/php/8.3/cli/php.ini && \
+    echo "max_execution_time = 300" >> /etc/php/8.3/cli/php.ini && \
+    # Apache設定 (開発用)
+    a2enmod php8.3 && \
+    a2enmod rewrite && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 RUN npm install -g  \
     @anthropic-ai/claude-code \
     aws-cdk aws-cdk-lib typescript && \
     npm cache clean --force
+
+# gcloud CLI
+RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-linux-$(uname -m).tar.gz | tar -xzf - -C /opt && \
+    /opt/google-cloud-sdk/install.sh --quiet --path-update=true && \
+    ln -s /opt/google-cloud-sdk/bin/gcloud /usr/local/bin/gcloud && \
+    ln -s /opt/google-cloud-sdk/bin/gsutil /usr/local/bin/gsutil && \
+    ln -s /opt/google-cloud-sdk/bin/bq /usr/local/bin/bq
+
+# terraform
+RUN wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null && \
+    echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/hashicorp.list && \
+    apt update && apt install -y terraform
 
 ARG USERNAME="ubuntu"
 
@@ -52,6 +87,15 @@ RUN usermod -aG users $USERNAME && \
 USER ${USERNAME}
 WORKDIR /home/${USERNAME}/work
 VOLUME  /home/${USERNAME}/work
+
+# BigQuery開発用の環境設定
+ENV PHP_CLI_SERVER_WORKERS=4
+ENV GOOGLE_APPLICATION_CREDENTIALS=""
+
+# PHPエイリアス設定 (開発効率向上)
+RUN echo 'alias php-serve="php -S localhost:8080"' >> ~/.bashrc && \
+    echo 'alias composer-install="composer install --no-dev --optimize-autoloader"' >> ~/.bashrc && \
+    echo 'alias adminer-serve="cd /home/${USERNAME}/work/adminer && php -S localhost:8080"' >> ~/.bashrc
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 

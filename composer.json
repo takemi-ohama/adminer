@@ -30,7 +30,8 @@
         "GPL-2.0-only"
     ],
     "require": {
-        "php": ">=7.4"
+        "php": ">=7.4",
+        "google/cloud-bigquery": "^1.34"
     },
     "scripts": {
         "check": [

@@ -71,13 +71,6 @@
       ],
       "env": {},
       "disabled": false
-    },
-    "mysql": {
-      "command": "uvx",
-      "args": [
-        "mysql_mcp_server"
-      ],
-      "env": {}
     }
   }
 }
