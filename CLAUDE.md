@@ -75,3 +75,62 @@ adminer/
 2. **メタデータ**: get_databases(), tables_list(), fields()
 3. **クエリ実行**: select(), query(), Resultクラス
 4. **拡張機能**: explain(), UI最適化
+
+## 開発補助ツール - Serena MCP
+
+### Serena MCPの積極利用
+このプロジェクトでは **Serena MCP** を活用してコードベースの効率的な分析・編集を行います。
+ファイル全体を読み込む前に、必ずSerenaの分析ツールを使用してトークン使用量を最適化してください。
+
+### 主要な利用方法
+
+#### 1. コード分析時の基本パターン
+```
+1. get_symbols_overview でファイル構造の把握
+2. find_symbol で特定のクラス・関数の詳細取得
+3. find_referencing_symbols で依存関係の確認
+4. 必要な場合のみ Read ツールでファイル全体を読み込み
+```
+
+#### 2. 実装開発時の編集パターン
+```
+1. find_symbol で編集対象の特定
+2. replace_symbol_body でメソッド・クラス全体の置き換え
+3. insert_after_symbol / insert_before_symbol で新規追加
+4. search_for_pattern で横断的なパターン検索
+```
+
+### 重要な注意事項
+- ⚠️ **必須**: ファイル全体読み込み前にシンボリックツールを使用
+- ⚠️ **禁止**: 既にファイル内容を把握している場合の重複読み込み
+- ✅ **推奨**: メモリー機能を活用した分析結果の保存・参照
+
+### プロジェクト固有の使用例
+
+#### BigQueryドライバー実装時
+```bash
+# 1. 既存ドライバーの分析
+mcp__serena__get_symbols_overview plugins/drivers/elastic.php
+mcp__serena__find_symbol Driver plugins/drivers/elastic.php
+
+# 2. 新規実装時のシンボル編集
+mcp__serena__insert_after_symbol
+mcp__serena__replace_symbol_body
+
+# 3. 分析結果の記憶
+mcp__serena__write_memory bigquery_implementation_notes
+```
+
+#### プロジェクト進行管理
+```bash
+# メモリー管理
+mcp__serena__list_memories           # 保存済み分析結果の確認
+mcp__serena__read_memory [name]      # 過去の分析結果参照
+mcp__serena__write_memory [name]     # 新しい分析結果保存
+```
+
+### 現在保存されているメモリー
+- `adminer_bigquery_analysis`: 詳細なプロジェクト分析結果
+- `pr_creation_workflow`: PR作成手順の記録
+
+このSerena MCPの活用により、大規模なコードベースでも効率的かつ精密な開発を実現します。
