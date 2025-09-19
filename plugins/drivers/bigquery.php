@@ -284,7 +284,7 @@ if (isset($_GET["bigquery"])) {
         private static function isApcuAvailable(): bool
         {
             if (self::$apcuAvailable === null) {
-                self::$apcuAvailable = function_exists('apcu_exists') && function_exists('apcu_fetch') && function_exists('apcu_store');
+                self::$apcuAvailable = function_exists('\apcu_exists') && function_exists('\apcu_fetch') && function_exists('\apcu_store');
             }
             return self::$apcuAvailable;
         }
@@ -298,8 +298,8 @@ if (isset($_GET["bigquery"])) {
         public static function get(string $key, int $ttl = 300)
         {
             // APCu優先
-            if (self::isApcuAvailable() && apcu_exists($key)) {
-                return apcu_fetch($key);
+            if (self::isApcuAvailable() && \apcu_exists($key)) {
+                return \apcu_fetch($key);
             }
 
             // 静的キャッシュフォールバック
@@ -326,7 +326,7 @@ if (isset($_GET["bigquery"])) {
 
             // APCu優先
             if (self::isApcuAvailable()) {
-                $success = apcu_store($key, $value, $ttl);
+                $success = \apcu_store($key, $value, $ttl);
             }
 
             // 静的キャッシュも更新
@@ -346,7 +346,7 @@ if (isset($_GET["bigquery"])) {
             if ($pattern === null) {
                 // 全クリア
                 if (self::isApcuAvailable()) {
-                    apcu_clear_cache();
+                    \apcu_clear_cache();
                 }
                 self::$staticCache = [];
                 self::$cacheTimestamps = [];
@@ -367,7 +367,7 @@ if (isset($_GET["bigquery"])) {
          */
         public static function getStats(): array
         {
-            $apcuInfo = self::isApcuAvailable() && function_exists('apcu_cache_info') ? apcu_cache_info() : [];
+            $apcuInfo = self::isApcuAvailable() && function_exists('\apcu_cache_info') ? \apcu_cache_info() : [];
 
             return [
                 'static_cache_size' => count(self::$staticCache),
@@ -901,8 +901,7 @@ if (isset($_GET["bigquery"])) {
 
                 $queryJob = $this->bigQueryClient->query($query)
                     ->useLegacySql(false)
-                    ->location($queryLocation)
-                    ->useQueryCache(true);
+                    ->location($queryLocation);
 
                 $job = $this->bigQueryClient->runQuery($queryJob);
 
@@ -1571,7 +1570,7 @@ if (isset($_GET["bigquery"])) {
     {
         global $connection;
 
-        $cacheKey = 'bq_databases_' . ($connection ? $connection->projectId : 'default');
+        $cacheKey = 'bq_databases_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default');
         $cacheTime = 300; // 5分間キャッシュ
 
         // キャッシュから取得を試行
@@ -1586,9 +1585,9 @@ if (isset($_GET["bigquery"])) {
         try {
             // maxResultsで制限して大量取得を避ける
             $datasets = [];
-            $datasetsIterator = $connection->bigQueryClient->datasets([
+            $datasetsIterator = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->datasets([
                 'maxResults' => 100  // 一度に大量取得を避ける
-            ]);
+            ]) : [];
 
             foreach ($datasetsIterator as $dataset) {
                 $datasets[] = $dataset->id();
@@ -1619,7 +1618,7 @@ if (isset($_GET["bigquery"])) {
                 $actualDatabase = $database;
             } else {
                 // Try to get from URL parameters or connection
-                $actualDatabase = $_GET['db'] ?? $connection->datasetId ?? '';
+                $actualDatabase = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
             }
 
             if (empty($actualDatabase)) {
@@ -1627,7 +1626,7 @@ if (isset($_GET["bigquery"])) {
                 return [];
             }
 
-            $cacheKey = 'bq_tables_' . $connection->projectId . '_' . $actualDatabase;
+            $cacheKey = 'bq_tables_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . '_' . $actualDatabase;
             $cacheTime = 300; // 5分間キャッシュ
 
             // キャッシュから取得を試行
@@ -1639,7 +1638,7 @@ if (isset($_GET["bigquery"])) {
 
             error_log("tables_list called with database: '$database', using actual: '$actualDatabase'");
 
-            $dataset = $connection->bigQueryClient->dataset($actualDatabase);
+            $dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($actualDatabase) : null;
             $tables = [];
 
             // ページネーション付きで取得してN+1問題を回避
@@ -1674,7 +1673,7 @@ if (isset($_GET["bigquery"])) {
 
         try {
             // Get the dataset from URL parameter
-            $database = $_GET['db'] ?? $connection->datasetId ?? '';
+            $database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 
             if (empty($database)) {
                 error_log("table_status: No database (dataset) context available, returning empty array");
@@ -1683,7 +1682,7 @@ if (isset($_GET["bigquery"])) {
 
             error_log("table_status called with name param: '$name', fast: " . ($fast ? 'true' : 'false') . ", using database: '$database'");
 
-            $dataset = $connection->bigQueryClient->dataset($database);
+            $dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
             $tables = [];
 
             if ($name) {
@@ -1823,14 +1822,14 @@ if (isset($_GET["bigquery"])) {
 
         try {
             // Get database (dataset) from URL parameters or connection
-            $database = $_GET['db'] ?? $connection->datasetId ?? '';
+            $database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 
             if (empty($database)) {
                 error_log("fields: No database (dataset) context available for table '$table'");
                 return [];
             }
 
-            $cacheKey = 'bq_fields_' . $connection->projectId . '_' . $database . '_' . $table;
+            $cacheKey = 'bq_fields_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . '_' . $database . '_' . $table;
             $cacheTime = 600; // 10分間キャッシュ（フィールド情報は変更頻度が低い）
 
             // キャッシュから取得を試行
@@ -1842,7 +1841,7 @@ if (isset($_GET["bigquery"])) {
 
             error_log("fields called for table: '$table' in database: '$database'");
 
-            $dataset = $connection->bigQueryClient->dataset($database);
+            $dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
             $tableObj = $dataset->table($table);
 
             // 不要なexists()チェックを削除し、直接info()を取得
@@ -1931,13 +1930,13 @@ if (isset($_GET["bigquery"])) {
                 return "`" . str_replace("`", "``", $col) . "`";
             }, $select));
 
-            $database = $_GET['db'] ?? $connection->datasetId ?? '';
+            $database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
             if (empty($database)) {
                 return false;
             }
 
             // Construct fully qualified table name for BigQuery
-            $fullTableName = "`" . $connection->projectId . "`.`" . $database . "`.`" . $table . "`";
+            $fullTableName = "`" . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . "`.`" . $database . "`.`" . $table . "`";
 
             $query = "SELECT $selectClause FROM $fullTableName";
 
@@ -1993,7 +1992,7 @@ if (isset($_GET["bigquery"])) {
             BigQueryUtils::logQuerySafely($query, "SELECT");
 
             // Execute query using the connection's query method
-            return $connection->query($query);
+            return ($connection && method_exists($connection, 'query')) ? $connection->query($query) : false;
         } catch (Exception $e) {
             error_log("BigQuery select error: " . $e->getMessage());
             return false;
@@ -2019,7 +2018,7 @@ if (isset($_GET["bigquery"])) {
         {
             global $connection;
             if ($connection) {
-                $errorMsg = $connection->error();
+                $errorMsg = ($connection && method_exists($connection, 'error')) ? $connection->error() : 'Connection error';
                 // Use Adminer's h() function for XSS protection if available, otherwise fallback
                 if (function_exists('h')) {
                     return h($errorMsg);
