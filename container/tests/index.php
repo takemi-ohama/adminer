@@ -73,7 +73,7 @@ function adminer_object() {
         new AdminerLoginBigQuery('nyle-carmo-analysis', '/etc/google_credentials.json'),
     );
 
-    return new Adminer\AdminerPlugin($plugins);
+    return new \Adminer\Plugins($plugins);
 }
 
 // BigQueryプラグインのテスト情報表示

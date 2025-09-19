@@ -13,3 +13,8 @@ adminer-plugins.php
 
 .env
 
+# Google Cloud credentials
+**/google_credentials.json
+**/google_credential.json
+**/*_credentials.json
+

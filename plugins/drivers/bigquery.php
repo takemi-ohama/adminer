@@ -19,6 +19,9 @@ if (isset($_GET["bigquery"])) {
  * BigQuery database connection handler
  */
 class Db {
+    /** @var Db */ 
+    static $instance;
+
     /** @var BigQueryClient */
     public $bigQueryClient;
 
@@ -30,6 +33,15 @@ class Db {
 
     /** @var array Connection configuration */
     public $config = [];
+
+    /** @var string Database flavor/version info */
+    public $flavor = 'BigQuery';
+
+    /** @var string Server version info */
+    public $server_info = 'Google Cloud BigQuery';
+
+    /** @var string Extension name */
+    public $extension = 'BigQuery Driver';
 
     /**
      * Establish connection to BigQuery
@@ -50,7 +62,7 @@ class Db {
             $projectId = trim($parts[0]);
 
             // Validate project ID format
-            if (!preg_match('/^[a-z0-9][a-z0-9\-]{4,28}[a-z0-9]$/i', $projectId)) {
+            if (!preg_match('/^[a-z0-9][a-z0-9\\-]{4,28}[a-z0-9]$/i', $projectId)) {
                 throw new Exception('Invalid GCP Project ID format');
             }
 
@@ -110,7 +122,7 @@ class Db {
         } catch (ServiceException $e) {
             // Log detailed error for debugging while redacting sensitive info
             $errorMessage = $e->getMessage();
-            $safeMessage = preg_replace('/project[s]?\s*[:\-]\s*[a-z0-9\-]+/i', 'project: [REDACTED]', $errorMessage);
+            $safeMessage = preg_replace('/project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+/i', 'project: [REDACTED]', $errorMessage);
             error_log("BigQuery ServiceException: " . $safeMessage);
             
             // Check for common authentication issues
@@ -121,7 +133,7 @@ class Db {
             return false;
         } catch (Exception $e) {
             $errorMessage = $e->getMessage();
-            $safeMessage = preg_replace('/project[s]?\s*[:\-]\s*[a-z0-9\-]+/i', 'project: [REDACTED]', $errorMessage);
+            $safeMessage = preg_replace('/project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+/i', 'project: [REDACTED]', $errorMessage);
             error_log("BigQuery Exception: " . $safeMessage);
             
             // Provide helpful diagnostic information
@@ -143,20 +155,20 @@ class Db {
     private function validateReadOnlyQuery($query) {
         // Remove SQL comments to prevent bypass
         $cleanQuery = preg_replace('/--.*$/m', '', $query);
-        $cleanQuery = preg_replace('/\/\*.*?\*\//s', '', $cleanQuery);
+        $cleanQuery = preg_replace('/\\/\\*.*?\\*\\//s', '', $cleanQuery);
         $cleanQuery = trim($cleanQuery);
 
         // Must start with SELECT
-        if (!preg_match('/^\s*SELECT\s+/i', $cleanQuery)) {
+        if (!preg_match('/^\\s*SELECT\\s+/i', $cleanQuery)) {
             throw new Exception('Only SELECT queries are supported in read-only mode');
         }
 
         // Block dangerous operations that might be hidden in subqueries or CTEs
         $dangerousPatterns = [
-            '/\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE)\b/i',
-            '/\b(GRANT|REVOKE)\b/i',
-            '/\bCALL\s+/i',
-            '/\bEXEC(UTE)?\s+/i',
+            '/\\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE)\\b/i',
+            '/\\b(GRANT|REVOKE)\\b/i',
+            '/\\bCALL\\s+/i',
+            '/\\bEXEC(UTE)?\\s+/i',
         ];
 
         foreach ($dangerousPatterns as $pattern) {
@@ -179,27 +191,27 @@ class Db {
             // Validate query for read-only safety
             $this->validateReadOnlyQuery($query);
 
-            // Configure query job
-            $queryConfig = $this->bigQueryClient->query($query)
-                ->jobConfig(['location' => $this->config['location'] ?? 'US']);
-
-            // Run query synchronously
-            $queryResults = $this->bigQueryClient->runQuery($queryConfig);
+            // Configure query job with correct BigQuery API
+            $job = $this->bigQueryClient->runQuery(
+                $this->bigQueryClient->query($query)
+                    ->useLegacySql(false)
+                    ->location($this->config['location'] ?? 'US')
+            );
 
             // Wait for job completion if needed
-            if (!$queryResults->isComplete()) {
-                $queryResults->waitUntilComplete();
+            if (!$job->isComplete()) {
+                $job->waitUntilComplete();
             }
 
-            return new Result($queryResults);
+            return new Result($job);
 
         } catch (ServiceException $e) {
             // Log sanitized error message
-            $safeMessage = preg_replace('/project[s]?[\s:]+[a-z0-9\-]+/i', 'project: [REDACTED]', $e->getMessage());
+            $safeMessage = preg_replace('/project[s]?[\\s:]+[a-z0-9\\-]+/i', 'project: [REDACTED]', $e->getMessage());
             error_log("BigQuery query error: " . $safeMessage);
             return false;
         } catch (Exception $e) {
-            $safeMessage = preg_replace('/project[s]?[\s:]+[a-z0-9\-]+/i', 'project: [REDACTED]', $e->getMessage());
+            $safeMessage = preg_replace('/project[s]?[\\s:]+[a-z0-9\\-]+/i', 'project: [REDACTED]', $e->getMessage());
             error_log("BigQuery query error: " . $safeMessage);
             return false;
         }
@@ -230,7 +242,7 @@ class Db {
      * @return string Quoted identifier
      */
     public function quote($idf) {
-        return "`" . str_replace("`", "\\`", $idf) . "`";
+        return "`" . str_replace("`", "\\\\`", $idf) . "`";
     }
 
     /**
@@ -381,11 +393,21 @@ class Result {
  * Main BigQuery driver class
  */
 class Driver {
+    /** @var Driver */
+    static $instance;
+
     /** @var array Supported file extensions */
     static $extensions = ["BigQuery"];
 
     /** @var string Syntax highlighting identifier */
     static $jush = "sql";
+
+    /** @var array Supported operators */
+    static $operators = array(
+        "=", "!=", "<>", "<", "<=", ">", ">=",
+        "IN", "NOT IN", "IS NULL", "IS NOT NULL",
+        "LIKE", "NOT LIKE", "REGEXP", "NOT REGEXP"
+    );
 
     /**
      * Connect to BigQuery
@@ -402,6 +424,47 @@ class Driver {
         }
         return false;
     }
+
+    /**
+     * Get table help URL (not applicable for BigQuery)
+     *
+     * @param string $name Table name
+     * @param bool $is_view Whether table is a view
+     * @return string|null Help URL or null if not available
+     */
+    function tableHelp($name, $is_view = false) {
+        // BigQuery doesn't have built-in help URLs in Adminer
+        return null;
+    }
+
+    /**
+     * Get structured types (not applicable for BigQuery)
+     *
+     * @return array Empty array as BigQuery doesn't use traditional structured types
+     */
+    function structuredTypes() {
+        return [];
+    }
+
+    /**
+     * Check inheritance relationship (not applicable for BigQuery)
+     *
+     * @param string $table Table name
+     * @return array Empty array as BigQuery doesn't support table inheritance
+     */
+    function inheritsFrom($table) {
+        return [];
+    }
+
+    /**
+     * Get tables that inherit from the given table (not applicable for BigQuery)
+     *
+     * @param string $table Table name
+     * @return array Empty array as BigQuery doesn't support table inheritance
+     */
+    function inheritedTables($table) {
+        return [];
+    }
 }
 
 // Global support function for BigQuery features
@@ -415,8 +478,8 @@ function support($feature) {
     $unsupportedFeatures = [
         'foreignkeys', 'indexes', 'processlist', 'kill', 'transaction',
         'comment', 'drop_col', 'dump', 'event', 'move_col', 'privileges',
-        'procedure', 'routine', 'scheme', 'sequence', 'status', 'trigger',
-        'type', 'variables', 'descidx', 'check'
+        'procedure', 'routine', 'sequence', 'status', 'trigger',
+        'type', 'variables', 'descidx', 'check', 'schema'
     ];
 
     if (in_array($feature, $supportedFeatures)) {
@@ -429,6 +492,99 @@ function support($feature) {
 
     // Default to false for unknown features
     return false;
+}
+
+/**
+ * Get supported SQL operators for BigQuery
+ *
+ * @return array List of supported operators
+ */
+function operators() {
+    return array(
+        "=", "!=", "<>", "<", "<=", ">", ">=",
+        "IN", "NOT IN", "IS NULL", "IS NOT NULL",
+        "LIKE", "NOT LIKE", "REGEXP", "NOT REGEXP"
+    );
+}
+
+/**
+ * Get available collations (BigQuery doesn't use collations like traditional SQL databases)
+ * 
+ * @return array Empty array as BigQuery handles collation automatically
+ */
+function collations() {
+    // BigQuery handles collation automatically based on data types and locale settings
+    // Return empty array as traditional collation management is not applicable
+    return array();
+}
+
+/**
+ * Get database collation (not applicable for BigQuery)
+ * 
+ * @param string $db Database name
+ * @return string Empty string as BigQuery doesn't use collations
+ */
+function db_collation($db) {
+    // BigQuery does not use traditional database collations
+    return "";
+}
+
+/**
+ * Get information schema database name (not applicable for BigQuery)
+ * 
+ * @param string $db Database name  
+ * @return string Empty string as BigQuery doesn't have information_schema like traditional databases
+ */
+function information_schema($db) {
+    // BigQuery has its own metadata structure, not information_schema
+    return "";
+}
+
+/**
+ * Check if a table is a view (BigQuery has views, tables, and materialized views)
+ * 
+ * @param array $table_status Table status information
+ * @return bool True if table is a view
+ */
+function is_view($table_status) {
+    // In BigQuery context, check if table type indicates it's a view
+    return isset($table_status["Engine"]) && 
+           (strtolower($table_status["Engine"]) === "view" || 
+            strtolower($table_status["Engine"]) === "materialized view");
+}
+
+/**
+ * Check if foreign key support is available (BigQuery doesn't support foreign keys)
+ * 
+ * @param array $table_status Table status information
+ * @return bool False as BigQuery doesn't support foreign keys
+ */
+function fk_support($table_status) {
+    // BigQuery does not support foreign keys
+    return false;
+}
+
+/**
+ * Get table indexes (BigQuery doesn't use traditional indexes)
+ * 
+ * @param string $table Table name
+ * @param mixed $connection2 Optional connection parameter
+ * @return array Empty array as BigQuery doesn't support traditional indexes
+ */
+function indexes($table, $connection2 = null) {
+    // BigQuery does not use traditional database indexes
+    return [];
+}
+
+/**
+ * Get foreign keys for a table (BigQuery doesn't support foreign keys)
+ * 
+ * @param string $table Table name
+ * @return array Empty array as BigQuery doesn't support foreign keys
+ */
+function foreign_keys($table) {
+    // BigQuery does not support foreign keys
+    return [];
 }
 
 // Global functions for database operations
@@ -456,6 +612,7 @@ function get_databases($flush = false) {
     }
 }
 
+
 function tables_list($database = '') {
     global $connection;
 
@@ -464,7 +621,24 @@ function tables_list($database = '') {
     }
 
     try {
-        $dataset = $connection->bigQueryClient->dataset($database ?: $connection->datasetId);
+        // In BigQuery context: $database = dataset name
+        $actualDatabase = '';
+        
+        if (!empty($database)) {
+            $actualDatabase = $database;
+        } else {
+            // Try to get from URL parameters or connection
+            $actualDatabase = $_GET['db'] ?? $connection->datasetId ?? '';
+        }
+        
+        if (empty($actualDatabase)) {
+            error_log("tables_list: No database (dataset) context available");
+            return [];
+        }
+        
+        error_log("tables_list called with database: '$database', using actual: '$actualDatabase'");
+        
+        $dataset = $connection->bigQueryClient->dataset($actualDatabase);
         $tables = [];
 
         foreach ($dataset->tables() as $table) {
@@ -473,7 +647,7 @@ function tables_list($database = '') {
 
         return $tables;
     } catch (Exception $e) {
-        error_log("Error listing tables: " . $e->getMessage());
+        error_log("Error listing tables for database '$database' (actual: '$actualDatabase'): " . $e->getMessage());
         return [];
     }
 }
@@ -482,31 +656,108 @@ function table_status($database = '') {
     global $connection;
 
     if (!$connection || !$connection->bigQueryClient) {
+        error_log("table_status: No connection available, returning empty array");
         return [];
     }
 
     try {
-        $dataset = $connection->bigQueryClient->dataset($database ?: $connection->datasetId);
+        // In BigQuery context: we need to get the actual dataset, not the table name
+        // The $database parameter might incorrectly contain a table name when called by Adminer
+        $actualDatabase = '';
+        
+        // Always prioritize URL db parameter over the passed database parameter
+        if (!empty($_GET['db'])) {
+            $actualDatabase = $_GET['db'];
+        } elseif (!empty($connection->datasetId)) {
+            $actualDatabase = $connection->datasetId;
+        } elseif (!empty($database) && !isset($_GET['table'])) {
+            // Only use $database parameter if no table parameter is present
+            // This avoids the case where table name is passed as database
+            $actualDatabase = $database;
+        }
+        
+        if (empty($actualDatabase)) {
+            error_log("table_status: No database (dataset) context available, returning empty array");
+            return [];
+        }
+        
+        // Check if we're requesting info for a specific table
+        $specificTable = $_GET['table'] ?? '';
+        
+        error_log("table_status called with database param: '$database', URL db: '" . ($_GET['db'] ?? 'not set') . "', URL table: '" . ($_GET['table'] ?? 'not set') . "', using actual database: '$actualDatabase', specific table: '$specificTable'");
+        
+        $dataset = $connection->bigQueryClient->dataset($actualDatabase);
         $tables = [];
 
-        foreach ($dataset->tables() as $table) {
-            $tableInfo = $table->info();
-            $tables[] = [
-                'Name' => $table->id(),
-                'Engine' => 'BigQuery',
-                'Rows' => $tableInfo['numRows'] ?? 0,
-                'Data_length' => $tableInfo['numBytes'] ?? 0,
-                'Comment' => $tableInfo['description'] ?? '',
-                'Type' => $tableInfo['type'] ?? 'TABLE'
-            ];
+        if ($specificTable) {
+            // Get info for specific table only - return as indexed array for Adminer compatibility
+            try {
+                $table = $dataset->table($specificTable);
+                $tableInfo = $table->info();
+                $result = [
+                    'Name' => $table->id(),
+                    'Engine' => 'BigQuery',
+                    'Rows' => $tableInfo['numRows'] ?? 0,
+                    'Data_length' => $tableInfo['numBytes'] ?? 0,
+                    'Comment' => $tableInfo['description'] ?? '',
+                    'Type' => $tableInfo['type'] ?? 'TABLE',
+                    // Add additional fields that Adminer may expect
+                    'Collation' => '',
+                    'Auto_increment' => '',
+                    'Create_time' => $tableInfo['creationTime'] ?? '',
+                    'Update_time' => $tableInfo['lastModifiedTime'] ?? '',
+                    'Check_time' => '',
+                    'Data_free' => 0,
+                    'Index_length' => 0,
+                    'Max_data_length' => 0,
+                    'Avg_row_length' => $tableInfo['numRows'] > 0 ? intval(($tableInfo['numBytes'] ?? 0) / $tableInfo['numRows']) : 0,
+                ];
+                // Return as indexed array with table name as key for Adminer compatibility
+                $tables[$table->id()] = $result;
+                error_log("table_status: returning specific table info as indexed array");
+            } catch (Exception $e) {
+                error_log("Error getting specific table '$specificTable' info: " . $e->getMessage() . ", returning empty array");
+                return [];
+            }
+        } else {
+            // Get info for all tables in the dataset
+            foreach ($dataset->tables() as $table) {
+                $tableInfo = $table->info();
+                $result = [
+                    'Name' => $table->id(),
+                    'Engine' => 'BigQuery', 
+                    'Rows' => $tableInfo['numRows'] ?? 0,
+                    'Data_length' => $tableInfo['numBytes'] ?? 0,
+                    'Comment' => $tableInfo['description'] ?? '',
+                    'Type' => $tableInfo['type'] ?? 'TABLE',
+                    // Add additional fields that Adminer may expect
+                    'Collation' => '',
+                    'Auto_increment' => '',
+                    'Create_time' => $tableInfo['creationTime'] ?? '',
+                    'Update_time' => $tableInfo['lastModifiedTime'] ?? '',
+                    'Check_time' => '',
+                    'Data_free' => 0,
+                    'Index_length' => 0,
+                    'Max_data_length' => 0,
+                    'Avg_row_length' => $tableInfo['numRows'] > 0 ? intval(($tableInfo['numBytes'] ?? 0) / $tableInfo['numRows']) : 0,
+                ];
+                // Use table name as key for Adminer compatibility
+                $tables[$table->id()] = $result;
+            }
+            error_log("table_status: returning " . count($tables) . " tables as indexed array");
         }
 
-        return $tables;
+        // Ensure we always return an array, never null
+        $result = is_array($tables) ? $tables : [];
+        error_log("table_status: final result type: " . gettype($result) . ", count: " . count($result) . ", keys: " . implode(',', array_keys($result)));
+        return $result;
+        
     } catch (Exception $e) {
-        error_log("Error getting table status: " . $e->getMessage());
+        error_log("Error getting table status for database param '$database' (actual: '$actualDatabase'): " . $e->getMessage() . ", returning empty array");
         return [];
     }
 }
+
 
 function fields($table) {
     global $connection;
@@ -516,12 +767,18 @@ function fields($table) {
     }
 
     try {
-        $parts = explode('.', $table);
-        $datasetId = count($parts) > 1 ? $parts[0] : $connection->datasetId;
-        $tableId = count($parts) > 1 ? $parts[1] : $parts[0];
+        // Get database (dataset) from URL parameters or connection
+        $database = $_GET['db'] ?? $connection->datasetId ?? '';
+        
+        if (empty($database)) {
+            error_log("fields: No database (dataset) context available for table '$table'");
+            return [];
+        }
 
-        $dataset = $connection->bigQueryClient->dataset($datasetId);
-        $tableObj = $dataset->table($tableId);
+        error_log("fields called for table: '$table' in database: '$database'");
+
+        $dataset = $connection->bigQueryClient->dataset($database);
+        $tableObj = $dataset->table($table);
         $tableInfo = $tableObj->info();
 
         $fields = [];
@@ -531,13 +788,14 @@ function fields($table) {
                 'type' => strtolower($field['type']),
                 'null' => ($field['mode'] ?? 'NULLABLE') !== 'REQUIRED',
                 'default' => null,
-                'comment' => $field['description'] ?? ''
+                'comment' => $field['description'] ?? '',
+                'privileges' => [] // Add empty privileges array to prevent null + array error
             ];
         }
 
         return $fields;
     } catch (Exception $e) {
-        error_log("Error getting table fields: " . $e->getMessage());
+        error_log("Error getting table fields for '$table': " . $e->getMessage());
         return [];
     }
 }
