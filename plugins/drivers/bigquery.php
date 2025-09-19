@@ -3,9 +3,6 @@
 namespace Adminer;
 
 use Google\Cloud\BigQuery\BigQueryClient;
-use Google\Cloud\BigQuery\Dataset;
-use Google\Cloud\BigQuery\Table;
-use Google\Cloud\BigQuery\Job;
 use Google\Cloud\Core\Exception\ServiceException;
 use Exception;
 use InvalidArgumentException;
