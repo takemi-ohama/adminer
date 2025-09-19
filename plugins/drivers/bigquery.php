@@ -173,21 +173,52 @@ class Db {
 
     /**
      * Auto-detect BigQuery location from existing datasets
+     * Enhanced with caching to improve performance and reduce N+1 queries
      *
      * @return string|null Detected location or null if detection failed
      */
     private function detectLocationFromDatasets() {
+        // Check if we already have cached location detection results
+        static $locationCache = [];
+        $cacheKey = $this->projectId;
+        
+        if (isset($locationCache[$cacheKey])) {
+            error_log("BigQuery: Using cached location detection result: " . $locationCache[$cacheKey]);
+            return $locationCache[$cacheKey];
+        }
+        
         try {
-            $datasets = $this->bigQueryClient->datasets(['maxResults' => 10]);
+            // Limit to fewer datasets for performance - most projects have consistent location
+            $datasets = $this->bigQueryClient->datasets(['maxResults' => 5]);
             $locationCounts = [];
+            $processedCount = 0;
             
+            // Process datasets in batch to minimize API calls
             foreach ($datasets as $dataset) {
-                $datasetInfo = $dataset->info();
-                $location = $datasetInfo['location'] ?? 'US';
-                $locationCounts[$location] = ($locationCounts[$location] ?? 0) + 1;
+                // Early exit if we have enough samples
+                if ($processedCount >= 3) {
+                    break;
+                }
+                
+                try {
+                    $datasetInfo = $dataset->info();
+                    $location = $datasetInfo['location'] ?? 'US';
+                    $locationCounts[$location] = ($locationCounts[$location] ?? 0) + 1;
+                    $processedCount++;
+                    
+                    // If we find a clear majority early, use it
+                    if ($locationCounts[$location] >= 2) {
+                        break;
+                    }
+                } catch (Exception $e) {
+                    // Skip individual dataset errors but continue processing
+                    error_log("BigQuery: Failed to get info for dataset " . $dataset->id() . ": " . $e->getMessage());
+                    continue;
+                }
             }
             
             if (empty($locationCounts)) {
+                $locationCache[$cacheKey] = null;
                 return null;
             }
             
@@ -195,13 +226,17 @@ class Db {
             arsort($locationCounts);
             $mostCommonLocation = array_key_first($locationCounts);
             
-            error_log("BigQuery: Location distribution in project: " . json_encode($locationCounts) . 
-                     ", selected: $mostCommonLocation");
+            // Cache the result to avoid repeated API calls
+            $locationCache[$cacheKey] = $mostCommonLocation;
+            
+            error_log("BigQuery: Location distribution in project (sample of $processedCount): " . 
+                     json_encode($locationCounts) . ", selected: $mostCommonLocation");
             
             return $mostCommonLocation;
             
         } catch (Exception $e) {
             error_log("BigQuery: Failed to auto-detect location: " . $e->getMessage());
+            $locationCache[$cacheKey] = null;
             return null;
         }
     }
@@ -665,6 +700,7 @@ class Driver {
 
     /**
      * Execute a SELECT query with BigQuery-compatible SQL
+     * Enhanced with security validations and better error handling
      *
      * @param string $table Table name
      * @param array $select Selected columns (* for all)
@@ -680,10 +716,54 @@ class Driver {
         global $connection;
         
         if (!$connection || !$connection->bigQueryClient) {
+            error_log("BigQuery: No valid connection available for select operation");
             return false;
         }
 
         try {
+            // Input validation for security
+            if (!is_string($table) || empty($table)) {
+                throw new InvalidArgumentException('Table name must be a non-empty string');
+            }
+            
+            // Validate table name format (alphanumeric, underscore, dash)
+            if (!preg_match('/^[a-zA-Z0-9_-]+$/', $table)) {
+                throw new InvalidArgumentException('Invalid table name format');
+            }
+            
+            // Validate column names for security
+            foreach ($select as $col) {
+                if ($col !== '*' && !preg_match('/^[a-zA-Z0-9_]+$/', $col)) {
+                    throw new InvalidArgumentException('Invalid column name format: ' . $col);
+                }
+            }
+            
+            // Validate GROUP BY columns
+            foreach ($group as $col) {
+                if (!preg_match('/^[a-zA-Z0-9_]+$/', $col)) {
+                    throw new InvalidArgumentException('Invalid GROUP BY column format: ' . $col);
+                }
+            }
+            
+            // Validate ORDER BY specifications
+            foreach ($order as $orderSpec) {
+                if (!preg_match('/^[a-zA-Z0-9_]+(\s+(ASC|DESC))?$/i', $orderSpec)) {
+                    throw new InvalidArgumentException('Invalid ORDER BY specification: ' . $orderSpec);
+                }
+            }
+            
+            // Validate LIMIT and page parameters
+            $limit = (int)$limit;
+            $page = (int)$page;
+            
+            if ($limit < 0 || $limit > 10000) {
+                throw new InvalidArgumentException('LIMIT must be between 0 and 10000');
+            }
+            
+            if ($page < 0 || $page > 1000) {
+                throw new InvalidArgumentException('Page must be between 0 and 1000');
+            }
+
             // Build BigQuery-compatible SELECT statement
             $selectClause = ($select == array("*")) ? "*" : implode(", ", array_map(function($col) {
                 return "`" . str_replace("`", "``", $col) . "`";
@@ -691,6 +771,7 @@ class Driver {
 
             $database = $_GET['db'] ?? $connection->datasetId ?? '';
             if (empty($database)) {
+                error_log("BigQuery: No database context available for select operation");
                 return false;
             }
 
@@ -699,11 +780,11 @@ class Driver {
             
             $query = "SELECT $selectClause FROM $fullTableName";
 
-            // Add WHERE conditions
+            // Add WHERE conditions (each condition will be validated by convertAdminerWhereToBigQuery)
             if (!empty($where)) {
                 $whereClause = [];
                 foreach ($where as $condition) {
-                    // Convert Adminer WHERE format to BigQuery format
+                    // This function now includes security validation
                     $whereClause[] = convertAdminerWhereToBigQuery($condition);
                 }
                 $query .= " WHERE " . implode(" AND ", $whereClause);
@@ -732,22 +813,25 @@ class Driver {
 
             // Add LIMIT and OFFSET
             if ($limit > 0) {
-                $query .= " LIMIT " . (int)$limit;
+                $query .= " LIMIT " . $limit;
                 if ($page > 0) {
                     $offset = $page * $limit;
-                    $query .= " OFFSET " . (int)$offset;
+                    $query .= " OFFSET " . $offset;
                 }
             }
 
             if ($print) {
-                echo "<p><code>$query</code></p>";
+                echo "<p><code>" . htmlspecialchars($query) . "</code></p>";
             }
 
-            error_log("BigQuery SELECT: $query");
+            logQuerySafely($query, "SELECT");
             
             // Execute query using the connection's query method
             return $connection->query($query);
 
+        } catch (InvalidArgumentException $e) {
+            error_log("BigQuery select validation error: " . $e->getMessage());
+            return false;
         } catch (Exception $e) {
             error_log("BigQuery select error: " . $e->getMessage());
             return false;
@@ -1112,21 +1196,81 @@ function table_status($name = '', $fast = false) {
 
 /**
  * Convert Adminer WHERE condition format to BigQuery SQL format
+ * Enhanced with security validations to prevent SQL injection
  *
  * @param string $condition Adminer WHERE condition (e.g., "`column` = 'value'")
  * @return string BigQuery compatible WHERE condition
+ * @throws InvalidArgumentException If condition contains suspicious patterns
  */
 function convertAdminerWhereToBigQuery($condition) {
+    // Input validation for security
+    if (!is_string($condition)) {
+        throw new InvalidArgumentException('WHERE condition must be a string');
+    }
+    
+    if (strlen($condition) > 1000) {
+        throw new InvalidArgumentException('WHERE condition exceeds maximum length');
+    }
+    
+    // Check for suspicious SQL injection patterns
+    $suspiciousPatterns = [
+        '/;\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\s+/i',
+        '/UNION\s+(ALL\s+)?SELECT/i',
+        '/\/\*.*?\*\//i', // Block comments
+        '/--[^\r\n]*/i',  // Line comments
+        '/\bEXEC\b/i',
+        '/\bEXECUTE\b/i',
+        '/\bSP_/i'
+    ];
+    
+    foreach ($suspiciousPatterns as $pattern) {
+        if (preg_match($pattern, $condition)) {
+            error_log("BigQuery: Blocked suspicious WHERE condition pattern: " . substr($condition, 0, 100) . "...");
+            throw new InvalidArgumentException('WHERE condition contains prohibited SQL patterns');
+        }
+    }
+    
     // Handle basic operators and quoted identifiers
     // Convert MySQL-style backticks to BigQuery format if needed
     $condition = preg_replace('/`([^`]+)`/', '`$1`', $condition);
     
     // Handle string literals - ensure proper escaping for BigQuery
     $condition = preg_replace_callback("/'([^']*)'/", function($matches) {
-        return "'" . str_replace("'", "\\'", $matches[1]) . "'";
+        // Additional escaping for BigQuery safety
+        $escaped = str_replace("'", "\\'", $matches[1]);
+        $escaped = str_replace("\\", "\\\\", $escaped);
+        return "'" . $escaped . "'";
     }, $condition);
     
     return $condition;
+}
+
+/**
+ * Safely log BigQuery queries by masking sensitive data
+ *
+ * @param string $query The SQL query to log
+ * @param string $context Optional context for logging (e.g., "SELECT", "QUERY")
+ * @return void
+ */
+function logQuerySafely($query, $context = "QUERY") {
+    // Mask sensitive data in WHERE clauses and string literals
+    $safeQuery = $query;
+    
+    // Mask string literals that might contain sensitive data
+    $safeQuery = preg_replace('/([\'"])[^\'"]*\1/', '$1***REDACTED***$1', $safeQuery);
+    
+    // Mask potential sensitive patterns in WHERE clauses
+    $safeQuery = preg_replace('/(WHERE\s+[^=]+\s*=\s*)[\'"][^\'"]*[\'"]/', '$1***REDACTED***', $safeQuery);
+    
+    // Mask email patterns
+    $safeQuery = preg_replace('/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/', '***EMAIL_REDACTED***', $safeQuery);
+    
+    // Limit query length in logs
+    if (strlen($safeQuery) > 200) {
+        $safeQuery = substr($safeQuery, 0, 200) . '... [TRUNCATED]';
+    }
+    
+    error_log("BigQuery $context: $safeQuery");
 }
 
 /**
@@ -1345,7 +1489,7 @@ function select($table, array $select, array $where, array $group, array $order 
             echo "<p><code>" . htmlspecialchars($query) . "</code></p>";
         }
 
-        error_log("BigQuery SELECT: $query");
+        logQuerySafely($query, "SELECT");
         
         // Execute query using the connection's query method
         return $connection->query($query);
