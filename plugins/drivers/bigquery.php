@@ -274,6 +274,21 @@ if (isset($_GET["bigquery"])) {
         /** @var array キャッシュタイムスタンプ */
         private static array $cacheTimestamps = [];
 
+        /** @var bool APCu利用可能フラグ（キャッシュ） */
+        private static ?bool $apcuAvailable = null;
+
+        /**
+         * APCu利用可能性チェック（キャッシュ付き）
+         * @return bool
+         */
+        private static function isApcuAvailable(): bool
+        {
+            if (self::$apcuAvailable === null) {
+                self::$apcuAvailable = function_exists('apcu_exists') && function_exists('apcu_fetch') && function_exists('apcu_store');
+            }
+            return self::$apcuAvailable;
+        }
+
         /**
          * キャッシュから値を取得
          * @param string $key
@@ -283,7 +298,7 @@ if (isset($_GET["bigquery"])) {
         public static function get(string $key, int $ttl = 300)
         {
             // APCu優先
-            if (function_exists('apcu_exists') && apcu_exists($key)) {
+            if (self::isApcuAvailable() && apcu_exists($key)) {
                 return apcu_fetch($key);
             }
 
@@ -310,7 +325,7 @@ if (isset($_GET["bigquery"])) {
             $success = false;
 
             // APCu優先
-            if (function_exists('apcu_store')) {
+            if (self::isApcuAvailable()) {
                 $success = apcu_store($key, $value, $ttl);
             }
 
@@ -330,7 +345,7 @@ if (isset($_GET["bigquery"])) {
         {
             if ($pattern === null) {
                 // 全クリア
-                if (function_exists('apcu_clear_cache')) {
+                if (self::isApcuAvailable()) {
                     apcu_clear_cache();
                 }
                 self::$staticCache = [];
@@ -352,11 +367,11 @@ if (isset($_GET["bigquery"])) {
          */
         public static function getStats(): array
         {
-            $apcuInfo = function_exists('apcu_cache_info') ? apcu_cache_info() : [];
+            $apcuInfo = self::isApcuAvailable() && function_exists('apcu_cache_info') ? apcu_cache_info() : [];
 
             return [
                 'static_cache_size' => count(self::$staticCache),
-                'apcu_available' => function_exists('apcu_exists'),
+                'apcu_available' => self::isApcuAvailable(),
                 'apcu_info' => $apcuInfo,
                 'cache_keys' => array_keys(self::$staticCache)
             ];
@@ -441,18 +456,8 @@ if (isset($_GET["bigquery"])) {
             }, $condition);
         }
 
-        /**
-         * 複雑な型データを表示用に変換（統一された型処理）
-         * @param mixed $value
-         * @param array $field
-         * @return mixed
-         */
         public static function formatComplexValue($value, array $field)
         {
-            if ($value === null) {
-                return null;
-            }
-
             $fieldType = strtolower($field['type'] ?? 'text');
 
             // 型別処理のMap化（効率化とメンテナンス性向上）
@@ -644,7 +649,7 @@ if (isset($_GET["bigquery"])) {
             $parts = explode(':', $server);
 
             // 1. サーバーパラメータから位置を取得
-            if (isset($parts[1]) && !empty($parts[1])) {
+            if (isset($parts[1])) {
                 return $parts[1];
             }
 
@@ -734,7 +739,7 @@ if (isset($_GET["bigquery"])) {
 
             if (file_exists($cacheFile)) {
                 $cacheData = json_decode(file_get_contents($cacheFile), true);
-                if ($cacheData && isset($cacheData['location']) && isset($cacheData['expires'])) {
+                if ($cacheData && isset($cacheData['location'], $cacheData['expires'])) {
                     if (time() < $cacheData['expires']) {
                         return $cacheData['location'];
                     } else {
@@ -1566,30 +1571,20 @@ if (isset($_GET["bigquery"])) {
     {
         global $connection;
 
-        // 【永続キャッシュ】APCuによるプロセス間キャッシュ共有
         $cacheKey = 'bq_databases_' . ($connection ? $connection->projectId : 'default');
         $cacheTime = 300; // 5分間キャッシュ
 
-        // APCuキャッシュから取得を試行
-        if (!$flush && function_exists('apcu_exists') && apcu_exists($cacheKey)) {
-            $cached = apcu_fetch($cacheKey);
+        // キャッシュから取得を試行
+        if (!$flush) {
+            $cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
             if ($cached !== false) {
-                error_log("get_databases: Using APCu cached result (" . count($cached) . " datasets)");
+                error_log("get_databases: Using cached result (" . count($cached) . " datasets)");
                 return $cached;
             }
         }
 
-        // 【フォールバック】静的キャッシュ
-        static $staticCache = [];
-        $staticKey = $connection ? $connection->projectId : 'default';
-
-        if (!$flush && isset($staticCache[$staticKey])) {
-            error_log("get_databases: Using static cached result (" . count($staticCache[$staticKey]) . " datasets)");
-            return $staticCache[$staticKey];
-        }
-
         try {
-            // 【最適化】maxResultsで制限して大量取得を避ける
+            // maxResultsで制限して大量取得を避ける
             $datasets = [];
             $datasetsIterator = $connection->bigQueryClient->datasets([
                 'maxResults' => 100  // 一度に大量取得を避ける
@@ -1600,15 +1595,8 @@ if (isset($_GET["bigquery"])) {
             }
             sort($datasets);
 
-            // 【永続キャッシュ】APCuに保存
-            if (function_exists('apcu_store')) {
-                apcu_store($cacheKey, $datasets, $cacheTime);
-                error_log("get_databases: Stored to APCu cache (" . count($datasets) . " datasets)");
-            }
-
-            // 静的キャッシュにも保存（フォールバック用）
-            $staticCache[$staticKey] = $datasets;
-
+            // キャッシュに保存
+            BigQueryCacheManager::set($cacheKey, $datasets, $cacheTime);
             error_log("get_databases: Retrieved and cached " . count($datasets) . " datasets");
 
             return $datasets;
@@ -1639,24 +1627,14 @@ if (isset($_GET["bigquery"])) {
                 return [];
             }
 
-            // 【永続キャッシュ】APCuによるプロセス間キャッシュ共有
             $cacheKey = 'bq_tables_' . $connection->projectId . '_' . $actualDatabase;
             $cacheTime = 300; // 5分間キャッシュ
 
-            // APCuキャッシュから取得を試行
-            if (function_exists('apcu_exists') && apcu_exists($cacheKey)) {
-                $cached = apcu_fetch($cacheKey);
-                if ($cached !== false) {
-                    error_log("tables_list: Using APCu cached result for dataset '$actualDatabase' (" . count($cached) . " tables)");
-                    return $cached;
-                }
-            }
-
-            // 【フォールバック】静的キャッシュ
-            static $staticCache = [];
-            if (isset($staticCache[$actualDatabase])) {
-                error_log("tables_list: Using static cached result for dataset '$actualDatabase' (" . count($staticCache[$actualDatabase]) . " tables)");
-                return $staticCache[$actualDatabase];
+            // キャッシュから取得を試行
+            $cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
+            if ($cached !== false) {
+                error_log("tables_list: Using cached result for dataset '$actualDatabase' (" . count($cached) . " tables)");
+                return $cached;
             }
 
             error_log("tables_list called with database: '$database', using actual: '$actualDatabase'");
@@ -1664,7 +1642,7 @@ if (isset($_GET["bigquery"])) {
             $dataset = $connection->bigQueryClient->dataset($actualDatabase);
             $tables = [];
 
-            // 【最適化】ページネーション付きで取得してN+1問題を回避
+            // ページネーション付きで取得してN+1問題を回避
             $pageToken = null;
             do {
                 $options = ['maxResults' => 100];
@@ -1679,15 +1657,8 @@ if (isset($_GET["bigquery"])) {
                 $pageToken = $result->nextResultToken();
             } while ($pageToken);
 
-            // 【永続キャッシュ】APCuに保存
-            if (function_exists('apcu_store')) {
-                apcu_store($cacheKey, $tables, $cacheTime);
-                error_log("tables_list: Stored to APCu cache (" . count($tables) . " tables)");
-            }
-
-            // 静的キャッシュにも保存（フォールバック用）
-            $staticCache[$actualDatabase] = $tables;
-
+            // キャッシュに保存
+            BigQueryCacheManager::set($cacheKey, $tables, $cacheTime);
             error_log("tables_list: Retrieved and cached " . count($tables) . " tables for dataset '$actualDatabase'");
 
             return $tables;
@@ -1859,27 +1830,14 @@ if (isset($_GET["bigquery"])) {
                 return [];
             }
 
-            // 【永続キャッシュ】APCuによるプロセス間キャッシュ共有
             $cacheKey = 'bq_fields_' . $connection->projectId . '_' . $database . '_' . $table;
             $cacheTime = 600; // 10分間キャッシュ（フィールド情報は変更頻度が低い）
 
-            // APCuキャッシュから取得を試行
-            if (function_exists('apcu_exists') && apcu_exists($cacheKey)) {
-                $cached = apcu_fetch($cacheKey);
-                if ($cached !== false) {
-                    error_log("fields: Using APCu cached result for table '$table' (" . count($cached) . " fields)");
-                    return $cached;
-                }
-            }
-
-            // 【フォールバック】静的キャッシュ
-            static $staticFieldCache = [];
-            static $typeCache = [];
-            $staticKey = "$database.$table";
-
-            if (isset($staticFieldCache[$staticKey])) {
-                error_log("fields: Using static cached result for table '$table' (" . count($staticFieldCache[$staticKey]) . " fields)");
-                return $staticFieldCache[$staticKey];
+            // キャッシュから取得を試行
+            $cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
+            if ($cached !== false) {
+                error_log("fields: Using cached result for table '$table' (" . count($cached) . " fields)");
+                return $cached;
             }
 
             error_log("fields called for table: '$table' in database: '$database'");
@@ -1887,7 +1845,7 @@ if (isset($_GET["bigquery"])) {
             $dataset = $connection->bigQueryClient->dataset($database);
             $tableObj = $dataset->table($table);
 
-            // 【最適化】不要なexists()チェックを削除し、直接info()を取得
+            // 不要なexists()チェックを削除し、直接info()を取得
             // テーブルが存在しない場合はExceptionでキャッチ
             try {
                 $tableInfo = $tableObj->info();
@@ -1902,8 +1860,10 @@ if (isset($_GET["bigquery"])) {
             }
 
             $fields = [];
+            static $typeCache = [];
+            
             foreach ($tableInfo['schema']['fields'] as $field) {
-                // 【最適化】型変換結果をキャッシュ
+                // 型変換結果をキャッシュ
                 $bigQueryType = $field['type'] ?? 'STRING';
                 if (!isset($typeCache[$bigQueryType])) {
                     $typeCache[$bigQueryType] = BigQueryConfig::mapType($bigQueryType);
@@ -1936,15 +1896,8 @@ if (isset($_GET["bigquery"])) {
                 ];
             }
 
-            // 【永続キャッシュ】APCuに保存
-            if (function_exists('apcu_store')) {
-                apcu_store($cacheKey, $fields, $cacheTime);
-                error_log("fields: Stored to APCu cache (" . count($fields) . " fields)");
-            }
-
-            // 静的キャッシュにも保存（フォールバック用）
-            $staticFieldCache[$staticKey] = $fields;
-
+            // キャッシュに保存
+            BigQueryCacheManager::set($cacheKey, $fields, $cacheTime);
             error_log("fields: Successfully retrieved and cached " . count($fields) . " fields for table '$table'");
 
             return $fields;
