@@ -33,6 +33,9 @@
         "php": ">=7.4",
         "google/cloud-bigquery": "^1.34"
     },
+    "suggest": {
+        "ext-apcu": "Required for APCu caching functionality"
+    },
     "scripts": {
         "check": [
             "phpcs",
