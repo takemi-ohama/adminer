@@ -46,6 +46,8 @@ RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \
     apt-get install -y --no-install-recommends \
+    # ビルド必須ツール
+    make build-essential \
     # PHP 8.x とWeb開発に必要な拡張
     php8.3 php8.3-cli php8.3-common php8.3-curl php8.3-mbstring \
     php8.3-xml php8.3-zip php8.3-intl php8.3-bcmath \
