@@ -117,7 +117,8 @@ class AdminerLoginBigQuery extends Adminer\Plugin {
             }
         }
 
-        if (!array_reduce($validations, fn($carry, $v) => $carry || $v(), false)) {
+        $failed = array_filter($validations, fn($v) => $v());
+        if (count($failed) === 0) {
             error_log("BigQuery Login: Credentials validation successful");
         }
     }

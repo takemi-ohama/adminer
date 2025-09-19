@@ -81,6 +81,20 @@ if (isset($_GET["bigquery"])) {
 			}
 			return $stats;
 		}
+
+		/**
+		 * プールから既存の接続を取得（shutdown時用）
+		 * @param string $key
+		 * @return BigQueryClient|null
+		 */
+		static function getConnectionFromPool($key)
+		{
+			if (isset(self::$pool[$key])) {
+				self::$usageTimestamps[$key] = time();
+				return self::$pool[$key];
+			}
+			return null;
+		}
 	}
 	class BigQueryConfig
 	{
@@ -492,16 +506,19 @@ if (isset($_GET["bigquery"])) {
 			if ($this->getCachedLocation($projectId)) {
 				return;
 			}
-			$detectionFunc = function () use ($projectId, $defaultLocation) {
-				$this->performLightweightLocationDetection($projectId, $defaultLocation);
-			};
+
+			// 静的データとして必要な情報を保存
+			$clientKey = md5($projectId . ($this->config['credentialsPath'] ?? '') . ($this->config['location'] ?? ''));
+
 			if (function_exists('fastcgi_finish_request')) {
-				register_shutdown_function(function () use ($detectionFunc) {
+				register_shutdown_function(function () use ($projectId, $defaultLocation, $clientKey) {
 					fastcgi_finish_request();
-					$detectionFunc();
+					self::performBackgroundLocationDetection($projectId, $defaultLocation, $clientKey);
 				});
 			} else {
-				register_shutdown_function($detectionFunc);
+				register_shutdown_function(function () use ($projectId, $defaultLocation, $clientKey) {
+					self::performBackgroundLocationDetection($projectId, $defaultLocation, $clientKey);
+				});
 			}
 		}
 		private function performLightweightLocationDetection($projectId, $defaultLocation)
@@ -526,6 +543,56 @@ if (isset($_GET["bigquery"])) {
 			} catch (Exception $e) {
 				error_log("BigQuery: Background location detection failed: " . $e->getMessage());
 			}
+		}
+
+		/**
+		 * 背景位置検出の静的実行（shutdown時の安全な実行）
+		 * @param string $projectId
+		 * @param string $defaultLocation
+		 * @param string $clientKey
+		 */
+		private static function performBackgroundLocationDetection($projectId, $defaultLocation, $clientKey)
+		{
+			try {
+				// 接続プールから既存のクライアントを取得
+				$client = BigQueryConnectionPool::getConnectionFromPool($clientKey);
+				if (!$client) {
+					return; // クライアントが利用できない場合は静かに終了
+				}
+
+				$datasets = $client->datasets(['maxResults' => 1]);
+				foreach ($datasets as $dataset) {
+					try {
+						$datasetInfo = $dataset->info();
+						$detectedLocation = $datasetInfo['location'] ?? $defaultLocation;
+						if ($detectedLocation !== $defaultLocation) {
+							self::setCachedLocationStatic($projectId, $detectedLocation);
+							error_log("BigQuery: Background location detection: '$detectedLocation' for project '$projectId'");
+						}
+						break;
+					} catch (Exception $e) {
+						error_log("BigQuery: Background location detection failed: " . $e->getMessage());
+						break;
+					}
+				}
+			} catch (Exception $e) {
+				error_log("BigQuery: Background location detection error: " . $e->getMessage());
+			}
+		}
+
+		/**
+		 * 静的キャッシュ保存（shutdown時用）
+		 * @param string $projectId
+		 * @param string $location
+		 */
+		private static function setCachedLocationStatic($projectId, $location)
+		{
+			$cacheFile = sys_get_temp_dir() . "/bq_location_" . md5($projectId) . ".cache";
+			$cacheData = array(
+				'location' => $location,
+				'expires' => time() + 86400
+			);
+			@file_put_contents($cacheFile, json_encode($cacheData), LOCK_EX);
 		}
 		function query($query)
 		{
