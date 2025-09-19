@@ -1,0 +1,99 @@
+{
+	"php.format.enable": true,
+	"php.validate.enable": true,
+	"php.suggest.basic": false,
+	"editor.formatOnSave": true,
+	"editor.formatOnType": true,
+	"editor.insertSpaces": false,
+	"editor.tabSize": 4,
+	"editor.detectIndentation": false,
+	"editor.rulers": [120],
+	"editor.trimAutoWhitespace": true,
+	"files.trimTrailingWhitespace": true,
+	"files.insertFinalNewline": true,
+	"files.trimFinalNewlines": true,
+	"phpcs.enable": true,
+	"phpcs.standard": "${workspaceFolder}/phpcs.xml",
+	"phpcs.executablePath": "phpcs",
+	"phpcs.showSources": true,
+	"phpcs.showWarnings": true,
+	"phpcs.ignorePatterns": [
+		"**/externals/**",
+		"**/designs/**",
+		"**/adminer-*",
+		"**/editor-*"
+	],
+	"php-cs-fixer.enable": true,
+	"php-cs-fixer.executablePath": "php-cs-fixer",
+	"php-cs-fixer.config": "${workspaceFolder}/.php_cs",
+	"php-cs-fixer.allowRisky": false,
+	"php-cs-fixer.onsave": true,
+	"intelephense.format.enable": true,
+	"intelephense.format.braces": "k&r",
+	"intelephense.diagnostics.enable": true,
+	"intelephense.diagnostics.run": "onSave",
+	"intelephense.diagnostics.embeddedLanguages": false,
+	"intelephense.completion.maxItems": 100,
+	"intelephense.completion.insertUseDeclaration": true,
+	"intelephense.completion.fullyQualifyGlobalConstantsAndFunctions": false,
+	"intelephense.files.maxSize": 1000000,
+	"intelephense.files.associations": [
+		"*.php",
+		"*.inc"
+	],
+	"intelephense.files.exclude": [
+		"**/externals/**",
+		"**/designs/**",
+		"**/adminer-*",
+		"**/editor-*",
+		"**/vendor/**",
+		"**/node_modules/**",
+		"**/.git/**",
+		"**/.svn/**"
+	],
+	"phpstan.enabled": true,
+	"phpstan.configPath": "${workspaceFolder}/phpstan.neon",
+	"phpstan.level": "6",
+	"phpstan.showErrorsOnSave": true,
+	"phpstan.memoryLimit": "1G",
+	"phpstan.timeout": 60,
+	"files.associations": {
+		"*.php": "php",
+		"*.inc": "php",
+		"*.phtml": "php",
+		"phpcs.xml": "xml",
+		"phpstan.neon": "yaml",
+		".php_cs": "php",
+		".php_cs.dist": "php"
+	},
+	"emmet.includeLanguages": {
+		"php": "html"
+	},
+	"[php]": {
+		"editor.defaultFormatter": "DEVSENSE.phptools-vscode",
+		"editor.insertSpaces": false,
+		"editor.tabSize": 4,
+		"editor.detectIndentation": false,
+		"editor.formatOnSave": true,
+		"editor.formatOnPaste": true,
+		"editor.formatOnType": true,
+		"editor.wordWrap": "wordWrapColumn",
+		"editor.wordWrapColumn": 120,
+		"editor.rulers": [120],
+		"files.trimTrailingWhitespace": true,
+		"files.insertFinalNewline": true
+	},
+	"[json]": {
+		"editor.insertSpaces": true,
+		"editor.tabSize": 2
+	},
+	"[yaml]": {
+		"editor.insertSpaces": true,
+		"editor.tabSize": 2
+	},
+	"[xml]": {
+		"editor.insertSpaces": false,
+		"editor.tabSize": 4
+	},
+	"php.version": "8.4"
+}
