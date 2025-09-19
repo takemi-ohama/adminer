@@ -14,10 +14,10 @@ services:
       - BASE_URL=http://adminer-bigquery-test
       - BIGQUERY_PROJECT_ID=nyle-carmo-analysis
     networks:
-      - adminer-net
+      - adminer_net
 
   # Adminer service reference - external container managed by web directory
 
 networks:
-  adminer-net:
+  adminer_net:
     external: true

@@ -1,0 +1,19 @@
+{
+    "snapshotOptions": {
+        "selector": "main, #main, article, #content, .content",
+        "format": "aria"
+    },
+    "diffOptions": {
+        "enabled": true,
+        "format": "minimal"
+    },
+    "output": {
+        "maxChars": 20000,
+        "overflow": "to_file",
+        "summary": true
+    },
+    "expectation": {
+        "includeSnapshot": true,
+        "includeCode": false
+    }
+}

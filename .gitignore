@@ -26,3 +26,6 @@ container/tests/e2e/playwright-report/
 **/node_modules/
 
 container/*/google_credentials.json
+
+# Playwright MCP outputs
+.playwright-mcp/
