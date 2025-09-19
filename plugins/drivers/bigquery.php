@@ -544,7 +544,6 @@ class Db {
      * @return bool Connection success
      */
     public function connect($server, $username, $password) {
-        BigQueryProfiler::start('connect');
         
         try {
             // 1. プロジェクトIDの検証と解析
@@ -571,17 +570,14 @@ class Db {
             }
 
             error_log("BigQuery: Connected to project '{$this->projectId}' with location '{$this->config['location']}'");
-            
-            BigQueryProfiler::end('connect');
+
             return true;
 
         } catch (ServiceException $e) {
             $this->logConnectionError($e, 'ServiceException');
-            BigQueryProfiler::end('connect');
             return false;
         } catch (Exception $e) {
             $this->logConnectionError($e, 'Exception');
-            BigQueryProfiler::end('connect');
             return false;
         }
     }
@@ -1453,9 +1449,6 @@ function logged_user() {
 function get_databases($flush = false) {
     global $connection;
     
-    // パフォーマンス計測開始
-    BigQueryProfiler::start('get_databases');
-    
     // 【永続キャッシュ】APCuによるプロセス間キャッシュ共有
     $cacheKey = 'bq_databases_' . ($connection ? $connection->projectId : 'default');
     $cacheTime = 300; // 5分間キャッシュ
@@ -1465,7 +1458,6 @@ function get_databases($flush = false) {
         $cached = apcu_fetch($cacheKey);
         if ($cached !== false) {
             error_log("get_databases: Using APCu cached result (" . count($cached) . " datasets)");
-            BigQueryProfiler::end('get_databases');
             return $cached;
         }
     }
@@ -1476,12 +1468,10 @@ function get_databases($flush = false) {
     
     if (!$flush && isset($staticCache[$staticKey])) {
         error_log("get_databases: Using static cached result (" . count($staticCache[$staticKey]) . " datasets)");
-        BigQueryProfiler::end('get_databases');
         return $staticCache[$staticKey];
     }
 
     if (!$connection || !$connection->bigQueryClient) {
-        BigQueryProfiler::end('get_databases');
         return [];
     }
 
@@ -1507,12 +1497,10 @@ function get_databases($flush = false) {
         $staticCache[$staticKey] = $datasets;
         
         error_log("get_databases: Retrieved and cached " . count($datasets) . " datasets");
-        
-        BigQueryProfiler::end('get_databases');
+
         return $datasets;
     } catch (Exception $e) {
         error_log("Error listing datasets: " . $e->getMessage());
-        BigQueryProfiler::end('get_databases');
         return [];
     }
 }
@@ -1521,11 +1509,7 @@ function get_databases($flush = false) {
 function tables_list($database = '') {
     global $connection;
 
-    // パフォーマンス計測開始
-    BigQueryProfiler::start('tables_list');
-    
     if (!$connection || !$connection->bigQueryClient) {
-        BigQueryProfiler::end('tables_list');
         return [];
     }
 
@@ -1542,7 +1526,6 @@ function tables_list($database = '') {
         
         if (empty($actualDatabase)) {
             error_log("tables_list: No database (dataset) context available");
-            BigQueryProfiler::end('tables_list');
             return [];
         }
         
@@ -1555,7 +1538,6 @@ function tables_list($database = '') {
             $cached = apcu_fetch($cacheKey);
             if ($cached !== false) {
                 error_log("tables_list: Using APCu cached result for dataset '$actualDatabase' (" . count($cached) . " tables)");
-                BigQueryProfiler::end('tables_list');
                 return $cached;
             }
         }
@@ -1564,7 +1546,6 @@ function tables_list($database = '') {
         static $staticCache = [];
         if (isset($staticCache[$actualDatabase])) {
             error_log("tables_list: Using static cached result for dataset '$actualDatabase' (" . count($staticCache[$actualDatabase]) . " tables)");
-            BigQueryProfiler::end('tables_list');
             return $staticCache[$actualDatabase];
         }
         
@@ -1598,12 +1579,10 @@ function tables_list($database = '') {
         $staticCache[$actualDatabase] = $tables;
         
         error_log("tables_list: Retrieved and cached " . count($tables) . " tables for dataset '$actualDatabase'");
-        
-        BigQueryProfiler::end('tables_list');
+
         return $tables;
     } catch (Exception $e) {
         error_log("Error listing tables for database '$database' (actual: '$actualDatabase'): " . $e->getMessage());
-        BigQueryProfiler::end('tables_list');
         return [];
     }
 }
@@ -1764,11 +1743,8 @@ function convertAdminerWhereToBigQuery($condition) {
 function fields($table) {
     global $connection;
 
-    // パフォーマンス計測開始
-    BigQueryProfiler::start('fields');
 
     if (!$connection || !$connection->bigQueryClient) {
-        BigQueryProfiler::end('fields');
         return [];
     }
 
@@ -1778,7 +1754,6 @@ function fields($table) {
         
         if (empty($database)) {
             error_log("fields: No database (dataset) context available for table '$table'");
-            BigQueryProfiler::end('fields');
             return [];
         }
 
@@ -1791,7 +1766,6 @@ function fields($table) {
             $cached = apcu_fetch($cacheKey);
             if ($cached !== false) {
                 error_log("fields: Using APCu cached result for table '$table' (" . count($cached) . " fields)");
-                BigQueryProfiler::end('fields');
                 return $cached;
             }
         }
@@ -1803,7 +1777,6 @@ function fields($table) {
         
         if (isset($staticFieldCache[$staticKey])) {
             error_log("fields: Using static cached result for table '$table' (" . count($staticFieldCache[$staticKey]) . " fields)");
-            BigQueryProfiler::end('fields');
             return $staticFieldCache[$staticKey];
         }
 
@@ -1818,13 +1791,11 @@ function fields($table) {
             $tableInfo = $tableObj->info();
         } catch (Exception $e) {
             error_log("Table '$table' does not exist in dataset '$database' or access error: " . $e->getMessage());
-            BigQueryProfiler::end('fields');
             return [];
         }
 
         if (!isset($tableInfo['schema']['fields'])) {
             error_log("No schema fields found for table '$table'");
-            BigQueryProfiler::end('fields');
             return [];
         }
 
@@ -1873,12 +1844,10 @@ function fields($table) {
         $staticFieldCache[$staticKey] = $fields;
         
         error_log("fields: Successfully retrieved and cached " . count($fields) . " fields for table '$table'");
-        
-        BigQueryProfiler::end('fields');
+
         return $fields;
     } catch (Exception $e) {
         error_log("Error getting table fields for '$table': " . $e->getMessage());
-        BigQueryProfiler::end('fields');
         return [];
     }
 }
@@ -2034,154 +2003,8 @@ if (!function_exists('found_rows')) {
         return null;
     }
 
-/**
- * BigQuery Performance Profiler
- * 各操作の実行時間を計測し、パフォーマンスボトルネックを特定する
- */
-class BigQueryProfiler {
-    /** @var array 計測開始時刻を格納 */
-    private static $timers = [];
-    
-    /** @var array 操作実行回数を格納 */
-    private static $counters = [];
-    
-    /** @var array 累計実行時間を格納 */
-    private static $totalTimes = [];
-    
-    /** @var float パフォーマンス警告閾値（秒） */
-    private static $warningThreshold = 2.0;
-    
-    /** @var float 深刻なパフォーマンス問題閾値（秒） */
-    private static $criticalThreshold = 5.0;
 
-    /**
-     * 操作の計測を開始
-     *
-     * @param string $operation 操作名
-     * @return void
-     */
-    public static function start($operation) {
-        self::$timers[$operation] = microtime(true);
-        self::$counters[$operation] = (self::$counters[$operation] ?? 0) + 1;
-    }
 
-    /**
-     * 操作の計測を終了し、結果をログに記録
-     *
-     * @param string $operation 操作名
-     * @return float|null 実行時間（秒）、計測が開始されていない場合はnull
-     */
-    public static function end($operation) {
-        if (!isset(self::$timers[$operation])) {
-            error_log("BigQuery Profiler: Timer not started for operation '$operation'");
-            return null;
-        }
-
-        $duration = microtime(true) - self::$timers[$operation];
-        unset(self::$timers[$operation]);
-        
-        // 累計時間を更新
-        self::$totalTimes[$operation] = (self::$totalTimes[$operation] ?? 0) + $duration;
-        
-        // 基本的な実行時間ログ
-        error_log(sprintf("BigQuery %s: %.3fs (call #%d)", 
-            $operation, 
-            $duration, 
-            self::$counters[$operation]
-        ));
-
-        // パフォーマンス警告の判定
-        if ($duration >= self::$criticalThreshold) {
-            error_log(sprintf("CRITICAL PERFORMANCE WARNING: %s took %.3fs - investigate immediately!", 
-                $operation, $duration));
-        } elseif ($duration >= self::$warningThreshold) {
-            error_log(sprintf("PERFORMANCE WARNING: %s took %.3fs - consider optimization", 
-                $operation, $duration));
-        }
-        
-        return $duration;
-    }
-
-    /**
-     * 操作統計の取得
-     *
-     * @param string|null $operation 特定操作の統計、nullの場合は全操作
-     * @return array 統計情報
-     */
-    public static function getStats($operation = null) {
-        if ($operation !== null) {
-            return [
-                'operation' => $operation,
-                'call_count' => self::$counters[$operation] ?? 0,
-                'total_time' => self::$totalTimes[$operation] ?? 0,
-                'average_time' => self::$counters[$operation] > 0 
-                    ? (self::$totalTimes[$operation] ?? 0) / self::$counters[$operation] 
-                    : 0
-            ];
-        }
-
-        $stats = [];
-        foreach (self::$counters as $op => $count) {
-            $totalTime = self::$totalTimes[$op] ?? 0;
-            $stats[$op] = [
-                'call_count' => $count,
-                'total_time' => $totalTime,
-                'average_time' => $count > 0 ? $totalTime / $count : 0
-            ];
-        }
-        
-        return $stats;
-    }
-
-    /**
-     * パフォーマンスサマリーをログに出力
-     *
-     * @return void
-     */
-    public static function logSummary() {
-        $stats = self::getStats();
-        
-        if (empty($stats)) {
-            error_log("BigQuery Profiler: No performance data available");
-            return;
-        }
-
-        error_log("=== BigQuery Performance Summary ===");
-        
-        // 実行時間順にソート
-        uasort($stats, function($a, $b) {
-            return $b['total_time'] <=> $a['total_time'];
-        });
-        
-        foreach ($stats as $operation => $data) {
-            error_log(sprintf("  %s: %d calls, %.3fs total, %.3fs avg", 
-                $operation,
-                $data['call_count'],
-                $data['total_time'],
-                $data['average_time']
-            ));
-        }
-        
-        error_log("=== End Performance Summary ===");
-    }
-
-    /**
-     * 全統計データをクリア
-     *
-     * @return void
-     */
-    public static function reset() {
-        self::$timers = [];
-        self::$counters = [];
-        self::$totalTimes = [];
-        error_log("BigQuery Profiler: Statistics reset");
-    }
-}
-
-// シャットダウン時にパフォーマンスサマリーを自動出力
-register_shutdown_function(function() {
-    BigQueryProfiler::logSummary();
-});
 }
 
 // Close the if block for BigQuery driver
