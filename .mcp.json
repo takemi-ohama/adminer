@@ -10,14 +10,6 @@
       "env": {},
       "disabled": false
     },
-    "mcp-server-git": {
-      "command": "uvx",
-      "args": [
-        "mcp-server-git@latest"
-      ],
-      "env": {},
-      "disabled": false
-    },
     "serena": {
       "command": "uvx",
       "args": [
@@ -68,6 +60,14 @@
         "--from",
         "git+https://github.com/hanweg/mcp-pdf-tools.git",
         "pdf-tools"
+      ],
+      "env": {},
+      "disabled": false
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@modelcontextprotocol/server-playwright@latest"
       ],
       "env": {},
       "disabled": false
