@@ -9,6 +9,10 @@ RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get install -y --no-install-recommends \
     locales git wget unzip vim sudo nano \
     curl apt-transport-https ca-certificates gnupg lsb-release \
+    # Playwright/Chrome依存関係
+    libnss3 libatk-bridge2.0-0 libdrm2 libxkbcommon0 \
+    libxcomposite1 libxdamage1 libxrandr2 libgbm1 \
+    libxss1 libasound2t64 \
     && \
     # Dockerリポジトリの設定
     install -m 0755 -d /etc/apt/keyrings && \
@@ -62,7 +66,8 @@ RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
 
 RUN npm install -g  \
     @anthropic-ai/claude-code \
-    aws-cdk aws-cdk-lib typescript && \
+    aws-cdk aws-cdk-lib typescript @playwright/test && \
+    npx playwright install chrome && \
     npm cache clean --force
 
 # gcloud CLI
