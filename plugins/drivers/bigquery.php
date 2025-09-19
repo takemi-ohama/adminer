@@ -1,23 +1,5 @@
 <?php
-/**
- * BigQuery driver for Adminer
- *
- * This driver provides READ-ONLY access to Google Cloud BigQuery datasets and tables.
- * It supports basic operations like dataset browsing, table schema viewing, and SELECT queries.
- *
- * Requirements:
- * - PHP 7.4+
- * - google/cloud-bigquery package via Composer
- * - GOOGLE_APPLICATION_CREDENTIALS environment variable set
- *
- * @author Claude Code
- * @license Apache-2.0, GPL-2.0-only
- */
-
-// Define driver constant
-if (!defined('DRIVER')) {
-    define('DRIVER', 'bigquery');
-}
+namespace Adminer;
 
 // Import required BigQuery classes
 use Google\Cloud\BigQuery\BigQueryClient;
@@ -25,6 +7,13 @@ use Google\Cloud\BigQuery\Dataset;
 use Google\Cloud\BigQuery\Table;
 use Google\Cloud\BigQuery\Job;
 use Google\Cloud\Core\Exception\ServiceException;
+
+if (function_exists('Adminer\\add_driver')) {
+    add_driver("bigquery", "Google BigQuery");
+}
+
+if (isset($_GET["bigquery"])) {
+	define('Adminer\DRIVER', "bigquery");
 
 /**
  * BigQuery database connection handler
@@ -78,9 +67,36 @@ class Db {
                 'location' => $location
             ];
 
-            // Check for authentication credentials
-            if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') && !getenv('GOOGLE_CLOUD_PROJECT')) {
-                throw new Exception('BigQuery authentication not configured. Set GOOGLE_APPLICATION_CREDENTIALS environment variable.');
+            // Check for custom credentials path from form input
+            $customCredentialsPath = $_POST['auth']['credentials'] ?? null;
+            $credentialsPath = null;
+            
+            if ($customCredentialsPath && !empty($customCredentialsPath)) {
+                // Use custom credentials path if provided via form
+                $credentialsPath = $customCredentialsPath;
+                putenv("GOOGLE_APPLICATION_CREDENTIALS=" . $credentialsPath);
+                $_ENV['GOOGLE_APPLICATION_CREDENTIALS'] = $credentialsPath;
+            } else {
+                // Fall back to existing environment variable
+                $credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
+            }
+
+            // Enhanced authentication check with detailed diagnostics
+            if (!$credentialsPath && !getenv('GOOGLE_CLOUD_PROJECT')) {
+                throw new Exception('BigQuery authentication not configured. Set GOOGLE_APPLICATION_CREDENTIALS environment variable or provide credentials file path.');
+            }
+            
+            if ($credentialsPath && !file_exists($credentialsPath)) {
+                throw new Exception("Service account file not found: {$credentialsPath}");
+            }
+            
+            if ($credentialsPath && !is_readable($credentialsPath)) {
+                throw new Exception("Service account file not readable: {$credentialsPath}");
+            }
+
+            // Log successful authentication setup (debug info)
+            if ($credentialsPath) {
+                error_log("BigQuery: Using service account file: {$credentialsPath}");
             }
 
             $this->bigQueryClient = new BigQueryClient($this->config);
@@ -92,13 +108,27 @@ class Db {
             return true;
 
         } catch (ServiceException $e) {
-            // Log sanitized error message to prevent information disclosure
-            $safeMessage = preg_replace('/project[s]?[\s:]+[a-z0-9\-]+/i', 'project: [REDACTED]', $e->getMessage());
-            error_log("BigQuery connection error: " . $safeMessage);
+            // Log detailed error for debugging while redacting sensitive info
+            $errorMessage = $e->getMessage();
+            $safeMessage = preg_replace('/project[s]?\s*[:\-]\s*[a-z0-9\-]+/i', 'project: [REDACTED]', $errorMessage);
+            error_log("BigQuery ServiceException: " . $safeMessage);
+            
+            // Check for common authentication issues
+            if (strpos($errorMessage, 'UNAUTHENTICATED') !== false || strpos($errorMessage, '401') !== false) {
+                error_log("BigQuery: Authentication failed. Check service account credentials.");
+            }
+            
             return false;
         } catch (Exception $e) {
-            $safeMessage = preg_replace('/project[s]?[\s:]+[a-z0-9\-]+/i', 'project: [REDACTED]', $e->getMessage());
-            error_log("BigQuery setup error: " . $safeMessage);
+            $errorMessage = $e->getMessage();
+            $safeMessage = preg_replace('/project[s]?\s*[:\-]\s*[a-z0-9\-]+/i', 'project: [REDACTED]', $errorMessage);
+            error_log("BigQuery Exception: " . $safeMessage);
+            
+            // Provide helpful diagnostic information
+            if (strpos($errorMessage, 'OpenSSL') !== false) {
+                error_log("BigQuery: Invalid private key in service account file.");
+            }
+            
             return false;
         }
     }
@@ -352,10 +382,10 @@ class Result {
  */
 class Driver {
     /** @var array Supported file extensions */
-    public $extensions = ["BigQuery"];
+    static $extensions = ["BigQuery"];
 
     /** @var string Syntax highlighting identifier */
-    public $jush = "sql";
+    static $jush = "sql";
 
     /**
      * Connect to BigQuery
@@ -365,7 +395,7 @@ class Driver {
      * @param string $password Not used
      * @return Db|false Database connection
      */
-    public function connect($server, $username, $password) {
+    static function connect($server, $username, $password) {
         $db = new Db();
         if ($db->connect($server, $username, $password)) {
             return $db;
@@ -512,10 +542,5 @@ function fields($table) {
     }
 }
 
-// Initialize driver
-if (class_exists('Adminer') || interface_exists('AdminerPlugin')) {
-    // Register BigQuery driver only if AdminerPlugin class exists
-    if (class_exists('AdminerPlugin')) {
-        new AdminerPlugin();
-    }
+// Close the if block for BigQuery driver
 }
