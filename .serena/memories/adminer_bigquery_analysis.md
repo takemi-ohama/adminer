@@ -2,7 +2,7 @@
 
 ## プロジェクト構造の把握結果
 
-### ワークスペース構造
+### ワークスペース構造（2025-09-19更新）
 ```
 adminer/
 ├── adminer/                    # Adminerコア
@@ -13,8 +13,12 @@ adminer/
 ├── plugins/                   # プラグイン群
 │   ├── drivers/              # ドライバープラグイン (elastic, mongo, clickhouse, etc.)
 │   └── [その他プラグイン]
-├── issues/                   # プロジェクト管理用
-├── container/                # Docker開発環境
+├── container/                # プロジェクト管理・開発環境（統合済み）
+│   ├── dev/                  # 開発環境設定
+│   ├── web/                  # Webアプリケーション（旧tests）
+│   ├── e2e/                  # E2Eテスト環境
+│   ├── docs/                 # プロジェクトドキュメント
+│   └── issues/               # プロジェクト管理
 └── composer.json            # 依存関係管理（google/cloud-bigquery既に追加済み）
 ```
 
@@ -78,7 +82,21 @@ adminer/
 - ✅ Composer依存関係: google/cloud-bigquery導入済み
 - ✅ プロジェクト構造: 理解完了
 - ✅ 既存実装パターン: 分析完了
+- ✅ ディレクトリ構造整理: container/配下統合完了
+- ✅ テスト環境: Playwright MCP検証済み
 - 🔄 BigQueryドライバー実装: 次フェーズ
+
+## テスト・検証状況
+### Playwright MCPテスト実績（2025-09-19）
+- BigQuery接続・認証: 成功
+- データセット表示: 成功（nyle-carmo-analysis）
+- テーブル一覧表示: 成功（181件）
+- テーブル構造表示: 成功
+
+### ドキュメント整備完了
+- `container/docs/playwright-mcp-testing-guide.md`: 詳細テスト手順
+- `container/docs/testing-guide.md`: 包括的テストガイド
+- `container/docs/development-workflow.md`: 開発ワークフロー
 
 ## 実装優先度
 1. **Phase 1**: 接続・基本機能 (connect, support)

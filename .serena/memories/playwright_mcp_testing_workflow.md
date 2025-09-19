@@ -3,6 +3,11 @@
 ## 概要
 DooD環境でのAdminer BigQueryドライバーのPlaywright MCPを使用したE2Eテスト手順
 
+## ファイル構成（更新済み）
+- 設定ファイル: `container/dev/playwright-mcp.config.json`
+- テストガイド: `container/docs/playwright-mcp-testing-guide.md`  
+- 記録保存: `.serena/memories/playwright_mcp_testing_workflow.md`
+
 ## 基本テストフロー
 
 ### 1. 事前確認
@@ -40,6 +45,17 @@ DooD環境でのAdminer BigQueryドライバーのPlaywright MCPを使用したE
 - テーブル構造表示
 - データ選択インターフェース
 
-### 5. 制限事項
+### 5. 実際の検証結果（2025-09-19実施）
+✅ BigQuery接続・認証プロセス: 成功
+✅ データセット表示: 成功（nyle-carmo-analysis プロジェクト）
+✅ テーブル一覧表示: 成功（prod_carmo_db データセットで181件）
+✅ テーブル構造表示: 成功（member_info テーブルの詳細構造確認）
+✅ Adminer UIナビゲーション: 成功
+
+### 6. 制限事項
 - BigQueryの権限設定による一部テーブルアクセス制限
 - 非同期処理によるナビゲーション遅延
+- 一部テーブルで「Unable to select the table」エラー
+
+### 7. ドキュメント参照
+詳細な手順については `container/docs/playwright-mcp-testing-guide.md` を参照
