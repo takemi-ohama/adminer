@@ -205,7 +205,7 @@ if (isset($_GET["bigquery"])) {
 		}
 		static function get($key, $ttl = 300)
 		{
-			if (self::isApcuAvailable() && function_exists('\apcu_exists') && \apcu_exists($key)) {
+			if (self::isApcuAvailable()) {
 				return \apcu_fetch($key);
 			}
 			if (
@@ -245,7 +245,7 @@ if (isset($_GET["bigquery"])) {
 		}
 		static function getStats()
 		{
-			$apcuInfo = self::isApcuAvailable() && function_exists('\apcu_cache_info') ? \apcu_cache_info() : array();
+			$apcuInfo = self::isApcuAvailable() ? \apcu_cache_info() : array();
 			return array(
 				'static_cache_size' => count(self::$staticCache),
 				'apcu_available' => self::isApcuAvailable(),
