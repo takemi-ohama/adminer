@@ -465,6 +465,113 @@ class Driver {
     function inheritedTables($table) {
         return [];
     }
+
+    /**
+     * Execute a SELECT query with BigQuery-compatible SQL
+     *
+     * @param string $table Table name
+     * @param array $select Selected columns (* for all)
+     * @param array $where WHERE conditions
+     * @param array $group GROUP BY columns  
+     * @param array $order ORDER BY specifications
+     * @param int $limit LIMIT count
+     * @param int $page Page number (for OFFSET calculation)
+     * @param bool $print Whether to print query
+     * @return Result|false Query result or false on error
+     */
+    function select($table, array $select, array $where, array $group, array $order = array(), $limit = 1, $page = 0, $print = false) {
+        global $connection;
+        
+        if (!$connection || !$connection->bigQueryClient) {
+            return false;
+        }
+
+        try {
+            // Build BigQuery-compatible SELECT statement
+            $selectClause = ($select == array("*")) ? "*" : implode(", ", array_map(function($col) {
+                return "`" . str_replace("`", "``", $col) . "`";
+            }, $select));
+
+            $database = $_GET['db'] ?? $connection->datasetId ?? '';
+            if (empty($database)) {
+                return false;
+            }
+
+            // Construct fully qualified table name for BigQuery
+            $fullTableName = "`" . $connection->projectId . "`.`" . $database . "`.`" . $table . "`";
+            
+            $query = "SELECT $selectClause FROM $fullTableName";
+
+            // Add WHERE conditions
+            if (!empty($where)) {
+                $whereClause = [];
+                foreach ($where as $condition) {
+                    // Convert Adminer WHERE format to BigQuery format
+                    $whereClause[] = convertAdminerWhereToBigQuery($condition);
+                }
+                $query .= " WHERE " . implode(" AND ", $whereClause);
+            }
+
+            // Add GROUP BY
+            if (!empty($group)) {
+                $query .= " GROUP BY " . implode(", ", array_map(function($col) {
+                    return "`" . str_replace("`", "``", $col) . "`";
+                }, $group));
+            }
+
+            // Add ORDER BY
+            if (!empty($order)) {
+                $orderClause = [];
+                foreach ($order as $orderSpec) {
+                    // Handle "column DESC" format
+                    if (preg_match('/^(.+?)\s+(DESC|ASC)$/i', $orderSpec, $matches)) {
+                        $orderClause[] = "`" . str_replace("`", "``", $matches[1]) . "` " . $matches[2];
+                    } else {
+                        $orderClause[] = "`" . str_replace("`", "``", $orderSpec) . "`";
+                    }
+                }
+                $query .= " ORDER BY " . implode(", ", $orderClause);
+            }
+
+            // Add LIMIT and OFFSET
+            if ($limit > 0) {
+                $query .= " LIMIT " . (int)$limit;
+                if ($page > 0) {
+                    $offset = $page * $limit;
+                    $query .= " OFFSET " . (int)$offset;
+                }
+            }
+
+            if ($print) {
+                echo "<p><code>$query</code></p>";
+            }
+
+            error_log("BigQuery SELECT: $query");
+            
+            // Execute query using the connection's query method
+            return $connection->query($query);
+
+        } catch (Exception $e) {
+            error_log("BigQuery select error: " . $e->getMessage());
+            return false;
+        }
+    }
+
+	/** Convert field in select and edit
+	* @param array $field
+	* @return string|void
+	*/
+	function convert_field(array $field) {
+		// BigQuery specific field conversions for display
+		if (preg_match('~geography~i', $field['type'])) {
+			return "ST_AsText(" . idf_escape($field['field']) . ")";
+		}
+		if (preg_match('~json~i', $field['type'])) {
+			return "TO_JSON_STRING(" . idf_escape($field['field']) . ")";
+		}
+		// Default: no conversion needed for most BigQuery types
+		return null;
+	}
 }
 
 // Global support function for BigQuery features
@@ -759,6 +866,86 @@ function table_status($database = '') {
 }
 
 
+/**
+ * Convert Adminer WHERE condition format to BigQuery SQL format
+ *
+ * @param string $condition Adminer WHERE condition (e.g., "`column` = 'value'")
+ * @return string BigQuery compatible WHERE condition
+ */
+function convertAdminerWhereToBigQuery($condition) {
+    // Handle basic operators and quoted identifiers
+    // Convert MySQL-style backticks to BigQuery format if needed
+    $condition = preg_replace('/`([^`]+)`/', '`$1`', $condition);
+    
+    // Handle string literals - ensure proper escaping for BigQuery
+    $condition = preg_replace_callback("/'([^']*)'/", function($matches) {
+        return "'" . str_replace("'", "\\'", $matches[1]) . "'";
+    }, $condition);
+    
+    return $condition;
+}
+
+/**
+ * Map BigQuery data types to Adminer-compatible types
+ *
+ * @param string $bigQueryType BigQuery type string
+ * @return array Type information with 'type' and optional 'length'
+ */
+function mapBigQueryTypeToAdminer($bigQueryType) {
+    // Handle parameterized types (e.g., STRING(100), NUMERIC(10,2))
+    $baseType = preg_replace('/\(.*\)/', '', $bigQueryType);
+    
+    switch (strtoupper($baseType)) {
+        case 'STRING':
+        case 'BYTES':
+            return ['type' => 'varchar', 'length' => null];
+        
+        case 'INT64':
+        case 'INTEGER':
+            return ['type' => 'bigint', 'length' => null];
+        
+        case 'FLOAT64':
+        case 'FLOAT':
+            return ['type' => 'double', 'length' => null];
+        
+        case 'NUMERIC':
+        case 'BIGNUMERIC':
+            return ['type' => 'decimal', 'length' => null];
+        
+        case 'BOOLEAN':
+        case 'BOOL':
+            return ['type' => 'tinyint', 'length' => 1];
+        
+        case 'DATE':
+            return ['type' => 'date', 'length' => null];
+        
+        case 'TIME':
+            return ['type' => 'time', 'length' => null];
+        
+        case 'DATETIME':
+            return ['type' => 'datetime', 'length' => null];
+        
+        case 'TIMESTAMP':
+            return ['type' => 'timestamp', 'length' => null];
+        
+        case 'GEOGRAPHY':
+            return ['type' => 'geometry', 'length' => null];
+        
+        case 'JSON':
+            return ['type' => 'json', 'length' => null];
+        
+        case 'ARRAY':
+            return ['type' => 'text', 'length' => null]; // Arrays displayed as text
+        
+        case 'STRUCT':
+        case 'RECORD':
+            return ['type' => 'text', 'length' => null]; // Structs displayed as text
+        
+        default:
+            return ['type' => 'text', 'length' => null]; // Fallback for unknown types
+    }
+}
+
 function fields($table) {
     global $connection;
 
@@ -779,24 +966,178 @@ function fields($table) {
 
         $dataset = $connection->bigQueryClient->dataset($database);
         $tableObj = $dataset->table($table);
+        
+        // Check if table exists first
+        if (!$tableObj->exists()) {
+            error_log("Table '$table' does not exist in dataset '$database'");
+            return [];
+        }
+        
         $tableInfo = $tableObj->info();
+
+        if (!isset($tableInfo['schema']['fields'])) {
+            error_log("No schema fields found for table '$table'");
+            return [];
+        }
 
         $fields = [];
         foreach ($tableInfo['schema']['fields'] as $field) {
-            $fields[] = [
+            // Map BigQuery types to MySQL-compatible types for Adminer
+            $bigQueryType = $field['type'] ?? 'STRING';
+            $adminerTypeInfo = mapBigQueryTypeToAdminer($bigQueryType);
+            
+            // Extract length information if present in BigQuery type
+            $length = null;
+            if (preg_match('/\((\d+(?:,\d+)?)\)/', $bigQueryType, $matches)) {
+                $length = $matches[1];
+            }
+            
+            // Build type string in Adminer expected format
+            $typeStr = $adminerTypeInfo['type'];
+            if ($length !== null) {
+                $typeStr .= "($length)";
+            } elseif (isset($adminerTypeInfo['length']) && $adminerTypeInfo['length'] !== null) {
+                $typeStr .= "(" . $adminerTypeInfo['length'] . ")";
+            }
+            
+            $fields[$field['name']] = [
                 'field' => $field['name'],
-                'type' => strtolower($field['type']),
+                'type' => $typeStr,
+                'full_type' => $typeStr,
                 'null' => ($field['mode'] ?? 'NULLABLE') !== 'REQUIRED',
                 'default' => null,
+                'auto_increment' => false,
                 'comment' => $field['description'] ?? '',
-                'privileges' => [] // Add empty privileges array to prevent null + array error
+                'privileges' => ['select' => 1, 'insert' => 1, 'update' => 1, 'where' => 1, 'order' => 1]
             ];
         }
 
+        error_log("fields: Successfully retrieved " . count($fields) . " fields for table '$table'");
         return $fields;
     } catch (Exception $e) {
         error_log("Error getting table fields for '$table': " . $e->getMessage());
         return [];
+    }
+}
+
+/**
+ * Global select function for BigQuery driver
+ * Executes SELECT queries in Adminer
+ *
+ * @param string $table Table name
+ * @param array $select Selected columns (* for all)
+ * @param array $where WHERE conditions
+ * @param array $group GROUP BY columns  
+ * @param array $order ORDER BY specifications
+ * @param int $limit LIMIT count
+ * @param int $page Page number (for OFFSET calculation)
+ * @param bool $print Whether to print query
+ * @return Result|false Query result or false on error
+ */
+function select($table, array $select, array $where, array $group, array $order = array(), $limit = 1, $page = 0, $print = false) {
+    global $connection;
+    
+    if (!$connection || !$connection->bigQueryClient) {
+        return false;
+    }
+
+    try {
+        // Build BigQuery-compatible SELECT statement
+        $selectClause = ($select == array("*")) ? "*" : implode(", ", array_map(function($col) {
+            return "`" . str_replace("`", "``", $col) . "`";
+        }, $select));
+
+        $database = $_GET['db'] ?? $connection->datasetId ?? '';
+        if (empty($database)) {
+            return false;
+        }
+
+        // Construct fully qualified table name for BigQuery
+        $fullTableName = "`" . $connection->projectId . "`.`" . $database . "`.`" . $table . "`";
+        
+        $query = "SELECT $selectClause FROM $fullTableName";
+
+        // Add WHERE conditions
+        if (!empty($where)) {
+            $whereClause = [];
+            foreach ($where as $condition) {
+                // Convert Adminer WHERE format to BigQuery format
+                $whereClause[] = convertAdminerWhereToBigQuery($condition);
+            }
+            $query .= " WHERE " . implode(" AND ", $whereClause);
+        }
+
+        // Add GROUP BY
+        if (!empty($group)) {
+            $query .= " GROUP BY " . implode(", ", array_map(function($col) {
+                return "`" . str_replace("`", "``", $col) . "`";
+            }, $group));
+        }
+
+        // Add ORDER BY
+        if (!empty($order)) {
+            $orderClause = [];
+            foreach ($order as $orderSpec) {
+                // Handle "column DESC" format
+                if (preg_match('/^(.+?)\s+(DESC|ASC)$/i', $orderSpec, $matches)) {
+                    $orderClause[] = "`" . str_replace("`", "``", $matches[1]) . "` " . $matches[2];
+                } else {
+                    $orderClause[] = "`" . str_replace("`", "``", $orderSpec) . "`";
+                }
+            }
+            $query .= " ORDER BY " . implode(", ", $orderClause);
+        }
+
+        // Add LIMIT and OFFSET
+        if ($limit > 0) {
+            $query .= " LIMIT " . (int)$limit;
+            if ($page > 0) {
+                $offset = $page * $limit;
+                $query .= " OFFSET " . (int)$offset;
+            }
+        }
+
+        if ($print) {
+            echo "<p><code>" . htmlspecialchars($query) . "</code></p>";
+        }
+
+        error_log("BigQuery SELECT: $query");
+        
+        // Execute query using the connection's query method
+        return $connection->query($query);
+
+    } catch (Exception $e) {
+        error_log("BigQuery select error: " . $e->getMessage());
+        return false;
+    }
+}
+
+/** Convert field in select and edit (global function for Adminer)
+* @param array $field
+* @return string|void
+*/
+if (!function_exists('convert_field')) {
+    function convert_field(array $field) {
+        // BigQuery specific field conversions for display
+        if (preg_match('~geography~i', $field['type'])) {
+            return "ST_AsText(" . idf_escape($field['field']) . ")";
+        }
+        if (preg_match('~json~i', $field['type'])) {
+            return "TO_JSON_STRING(" . idf_escape($field['field']) . ")";
+        }
+        // Default: no conversion needed for most BigQuery types
+        return null;
+    }
+}
+
+/** Get escaped error message (global function for Adminer) */
+if (!function_exists('error')) {
+    function error() {
+        global $connection;
+        if ($connection) {
+            return h($connection->error());
+        }
+        return '';
     }
 }
 
