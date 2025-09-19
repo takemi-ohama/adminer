@@ -55,6 +55,13 @@ function adminer_object() {
         require_once __DIR__ . '/plugins/drivers/bigquery.php';
     }
 
+    // BigQuery用のidf_escape関数を定義（Adminerコア側で必要）
+    if (!function_exists('\\Adminer\\idf_escape')) {
+        function idf_escape($idf) {
+            return "`" . str_replace("`", "``", $idf) . "`";
+        }
+    }
+
     // BigQueryログインプラグインの読み込み
     if (file_exists(__DIR__ . '/plugins/login-bigquery.php')) {
         require_once __DIR__ . '/plugins/login-bigquery.php';
