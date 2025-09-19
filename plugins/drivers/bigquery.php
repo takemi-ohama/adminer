@@ -19,7 +19,7 @@ if (isset($_GET["bigquery"])) {
 		private static $maxConnections = 3;
 		private static $usageTimestamps = array();
 		private static $creationTimes = array();
-		function getConnection($key, $config)
+		static function getConnection($key, $config)
 		{
 			if (isset(self::$pool[$key])) {
 				self::$usageTimestamps[$key] = time();
@@ -167,12 +167,12 @@ if (isset($_GET["bigquery"])) {
 			'apcu_shm_size' => '64M',
 			'connection_pool_max' => 3,
 		);
-		function mapType($bigQueryType)
+		static function mapType($bigQueryType)
 		{
 			$baseType = strtoupper(preg_replace('/\\(.*\\)/', '', $bigQueryType));
 			return self::TYPE_MAPPING[$baseType] ?? array('type' => 'text', 'length' => null);
 		}
-		function isDangerousQuery($query)
+		static function isDangerousQuery($query)
 		{
 			foreach (self::DANGEROUS_SQL_PATTERNS as $pattern) {
 				if (preg_match($pattern, $query)) {
@@ -181,7 +181,7 @@ if (isset($_GET["bigquery"])) {
 			}
 			return false;
 		}
-		function isFeatureSupported($feature)
+		static function isFeatureSupported($feature)
 		{
 			return self::SUPPORTED_FEATURES[$feature] ??
 				(self::UNSUPPORTED_FEATURES[$feature] ?? false);
@@ -196,13 +196,16 @@ if (isset($_GET["bigquery"])) {
 		private static function isApcuAvailable()
 		{
 			if (self::$apcuAvailable === null) {
-				self::$apcuAvailable = function_exists('\apcu_exists') && function_exists('\apcu_fetch') && function_exists('\apcu_store');
+				self::$apcuAvailable = extension_loaded('apcu')
+					&& function_exists('\apcu_exists')
+					&& function_exists('\apcu_fetch')
+					&& function_exists('\apcu_store');
 			}
 			return self::$apcuAvailable;
 		}
-		function get($key, $ttl = 300)
+		static function get($key, $ttl = 300)
 		{
-			if (self::isApcuAvailable() && \apcu_exists($key)) {
+			if (self::isApcuAvailable() && function_exists('\apcu_exists') && \apcu_exists($key)) {
 				return \apcu_fetch($key);
 			}
 			if (
@@ -213,7 +216,7 @@ if (isset($_GET["bigquery"])) {
 			}
 			return false;
 		}
-		function set($key, $value, $ttl = 300)
+		static function set($key, $value, $ttl = 300)
 		{
 			$success = false;
 			if (self::isApcuAvailable()) {
@@ -223,7 +226,7 @@ if (isset($_GET["bigquery"])) {
 			self::$cacheTimestamps[$key] = time();
 			return $success;
 		}
-		function clear($pattern = null)
+		static function clear($pattern = null)
 		{
 			if ($pattern === null) {
 				if (self::isApcuAvailable()) {
@@ -240,7 +243,7 @@ if (isset($_GET["bigquery"])) {
 				}
 			}
 		}
-		function getStats()
+		static function getStats()
 		{
 			$apcuInfo = self::isApcuAvailable() && function_exists('\apcu_cache_info') ? \apcu_cache_info() : array();
 			return array(
@@ -254,19 +257,19 @@ if (isset($_GET["bigquery"])) {
 	class BigQueryUtils
 	{
 
-		function validateProjectId($projectId)
+		static function validateProjectId($projectId)
 		{
 			return preg_match('/^[a-z0-9][a-z0-9\\-]{4,28}[a-z0-9]$/i', $projectId) &&
 				strlen($projectId) <= 30;
 		}
-		function escapeIdentifier($identifier)
+		static function escapeIdentifier($identifier)
 		{
 			return "`" . str_replace("`", "``", $identifier) . "`";
 		}
-		function logQuerySafely($query, $context = "QUERY")
+		static function logQuerySafely($query, $context = "QUERY")
 		{
 			$sanitizers = array(
-				'/([\\\'"])[^\\\'\"]*\\1/' => '$1***REDACTED***$1',
+				'/([\'"])[^\'\"]*\\1/' => '$1***REDACTED***$1',
 				'/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/' => '***EMAIL_REDACTED***'
 			);
 			$safeQuery = preg_replace(array_keys($sanitizers), array_values($sanitizers), $query);
@@ -275,7 +278,7 @@ if (isset($_GET["bigquery"])) {
 			}
 			error_log("BigQuery $context: $safeQuery");
 		}
-		function convertWhereCondition($condition)
+		static function convertWhereCondition($condition)
 		{
 			if (!is_string($condition) || strlen($condition) > 1000) {
 				throw new InvalidArgumentException('Invalid WHERE condition format');
@@ -291,7 +294,7 @@ if (isset($_GET["bigquery"])) {
 				return "'" . $escaped . "'";
 			}, $condition);
 		}
-		function formatComplexValue($value, $field)
+		static function formatComplexValue($value, $field)
 		{
 			$fieldType = strtolower($field['type'] ?? 'text');
 			$typePatterns = array(
@@ -328,7 +331,7 @@ if (isset($_GET["bigquery"])) {
 					return $value;
 			}
 		}
-		function generateFieldConversion($field)
+		static function generateFieldConversion($field)
 		{
 			$fieldName = self::escapeIdentifier($field['field']);
 			$fieldType = strtolower($field['type'] ?? '');
