@@ -73,7 +73,7 @@
         "--no-sandbox",
         "--isolated",
         "--config",
-        "./playwright-mcp.config.json"
+        "./container/dev/playwright-mcp.config.json"
       ],
       "env": {},
       "disabled": false
