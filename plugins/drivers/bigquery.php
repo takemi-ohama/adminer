@@ -698,6 +698,25 @@ class Driver {
         return [];
     }
 
+    /**
+     * Execute a SELECT query (delegating to global function)
+     * This method is required by Adminer's Driver interface
+     *
+     * @param string $table Table name
+     * @param array $select Selected columns (* for all)
+     * @param array $where WHERE conditions
+     * @param array $group GROUP BY columns  
+     * @param array $order ORDER BY specifications
+     * @param int $limit LIMIT count
+     * @param int $page Page number (for OFFSET calculation)
+     * @param bool $print Whether to print query
+     * @return Result|false Query result or false on error
+     */
+    function select($table, array $select, array $where, array $group, array $order = array(), $limit = 1, $page = 0, $print = false) {
+        // Delegate to the global select function which contains all the enhanced security and validation
+        return select($table, $select, $where, $group, $order, $limit, $page, $print);
+    }
+
 
     /**
      * Format field value for display and processing
