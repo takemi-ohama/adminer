@@ -18,3 +18,11 @@ adminer-plugins.php
 **/google_credential.json
 **/*_credentials.json
 
+# E2E Test outputs
+container/tests/test-results/
+container/tests/playwright-report/
+container/tests/e2e/test-results/
+container/tests/e2e/playwright-report/
+**/node_modules/
+
+container/*/google_credentials.json

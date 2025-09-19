@@ -24,9 +24,9 @@ COPY composer.lock ./
 COPY Makefile ./
 
 # Copy test-specific files to the web root
-COPY container/tests/index.php ./
+COPY container/web/index.php ./
 # Copy test-specific plugins (overwrite existing plugins)
-COPY container/tests/plugins/ ./plugins/
+COPY container/web/plugins/ ./plugins/
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader

@@ -1,0 +1,23 @@
+services:
+  playwright-e2e:
+    build:
+      context: ../../
+      dockerfile: container/e2e/Dockerfile
+    container_name: playwright-e2e
+    volumes:
+      # テストファイルをマウント
+      - ./tests:/app/tests
+      # 結果出力用
+      - ./test-results:/app/test-results
+      - ./playwright-report:/app/playwright-report
+    environment:
+      - BASE_URL=http://adminer-bigquery-test
+      - BIGQUERY_PROJECT_ID=nyle-carmo-analysis
+    networks:
+      - adminer-net
+
+  # Adminer service reference - external container managed by web directory
+
+networks:
+  adminer-net:
+    external: true

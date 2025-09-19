@@ -15,7 +15,7 @@ AdminerのドライバープラグインとしてBigQueryに接続し、最低�
 2. **READ-ONLY MVP**: 最初は読み取り中心で安定化、後にDML対応
 3. **Adminerドライバーインターフェース準拠**: 既存の`mysql.inc.php`のシグネチャを参考
 
-## ワークスペース構造
+## ワークスペース構造 (2025-09更新)
 ```
 adminer/
 ├── adminer/                    # Adminerコア
@@ -23,9 +23,22 @@ adminer/
 ├── plugins/                   # プラグイン群
 │   ├── drivers/              # ドライバープラグイン (elastic, mongo, etc.)
 │   └── login-servers.php     # ログインサーバー設定
+├── container/                 # コンテナ環境（役割別分離）
+│   ├── dev/                  # 開発環境関連
+│   ├── web/                  # Webアプリケーション関連（旧tests）
+│   │   ├── compose.yml       # Adminerサービス定義
+│   │   ├── Dockerfile        # Webコンテナ設定
+│   │   └── index.php         # Adminer設定
+│   └── e2e/                  # E2Eテスト環境（新規分離）
+│       ├── compose.yml       # Playwrightテストサービス
+│       ├── tests/            # E2Eテストスクリプト
+│       └── run-*.sh          # テスト実行スクリプト
+├── docs/                     # ドキュメント
+│   ├── testing-guide.md      # テスト方法ガイド
+│   └── development-workflow.md # 開発ワークフローガイド
 ├── issues/                   # プロジェクト管理
 │   ├── i01.md               # 開発指示書
-│   └── report01.md          # 実装方針詳細
+│   └── report*.md           # 実装方針詳細
 └── composer.json            # 依存関係管理
 ```
 
@@ -57,11 +70,19 @@ adminer/
 - Composer: 利用可能
 - BigQueryクライアント: google/cloud-bigquery v1.34 (導入済み)
 
-## 分析完了事項 (2025-09-18)
+## 分析完了事項 (2025-09-18/19)
 ### ワークスペース構造分析結果
 - Adminerコア: `adminer/` ディレクトリ（drivers/, include/, lang/, static/）
 - プラグイン: `plugins/` ディレクトリ（既存ドライバープラグイン6個確認）
-- 開発管理: `issues/`, `container/`, 設定ファイル群
+- 開発管理: `issues/`, `container/` （役割別分離完了）, 設定ファイル群
+- ドキュメント: `docs/` （テスト・開発ガイド整備完了）
+
+### ディレクトリ構造改善 (2025-09-19)
+- **container/tests** → **container/web** （役割明確化）
+- **container/e2e** 新規作成（E2E環境分離）
+- **Playwright E2E テスト環境** 構築完了
+- **モンキーテスト** 実装・検証完了
+- **開発ワークフロー** 文書化完了
 
 ### 既存ドライバー実装パターン分析
 - **Elasticsearchプラグイン**: plugins/drivers/elastic.php (参考実装)
@@ -132,5 +153,38 @@ mcp__serena__write_memory [name]     # 新しい分析結果保存
 ### 現在保存されているメモリー
 - `adminer_bigquery_analysis`: 詳細なプロジェクト分析結果
 - `pr_creation_workflow`: PR作成手順の記録
+- `directory_structure_update_2025-09`: ディレクトリ構造変更の完全記録
 
 このSerena MCPの活用により、大規模なコードベースでも効率的かつ精密な開発を実現します。
+
+## 開発・テスト手順 (2025-09更新)
+
+### 基本開発フロー
+```bash
+# 1. Webアプリケーション起動
+cd container/web
+docker compose up --build -d
+
+# 2. 開発・コード修正
+# BigQueryドライバープラグインの実装・修正
+
+# 3. 基本動作確認
+curl -I http://localhost:8080
+
+# 4. E2Eテスト実行
+cd ../e2e
+./run-e2e-tests.sh
+
+# 5. 安定性テスト（必要に応じて）
+./run-monkey-test.sh
+```
+
+### テスト環境の使い分け
+- **高速確認**: Docker Container テスト（curl）
+- **包括検証**: Playwright E2E テスト
+- **安定性検証**: モンキーテスト（ランダム操作）
+
+### 開発効率化のポイント
+1. **環境分離**: Web開発とE2Eテストが独立
+2. **段階的テスト**: 軽量→包括的の順でテスト実行
+3. **自動化**: スクリプトによるワンコマンド実行
