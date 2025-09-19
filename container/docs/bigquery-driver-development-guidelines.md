@@ -20,8 +20,8 @@ adminer/
 ├── container/                 # 開発・テスト用コンテナ
 │   ├── dev/                  # 開発環境
 │   └── tests/                # テスト環境
-├── docs/                     # ドキュメント
-├── issues/                   # プロジェクト管理
+├── container/docs/           # ドキュメント
+├── container/issues/         # プロジェクト管理
 └── vendor/                   # Composer依存関係
 ```
 

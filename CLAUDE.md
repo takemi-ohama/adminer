@@ -34,10 +34,10 @@ adminer/
 │       ├── compose.yml       # Playwrightテストサービス
 │       ├── tests/            # E2Eテストスクリプト
 │       └── run-*.sh          # テスト実行スクリプト
-├── docs/                     # ドキュメント
+├── container/docs/           # ドキュメント
 │   ├── testing-guide.md      # テスト方法ガイド
 │   └── development-workflow.md # 開発ワークフローガイド
-├── issues/                   # プロジェクト管理
+├── container/issues/         # プロジェクト管理
 │   ├── i01.md               # 開発指示書
 │   └── report*.md           # 実装方針詳細
 └── composer.json            # 依存関係管理
@@ -75,8 +75,8 @@ adminer/
 ### ワークスペース構造分析結果
 - Adminerコア: `adminer/` ディレクトリ（drivers/, include/, lang/, static/）
 - プラグイン: `plugins/` ディレクトリ（既存ドライバープラグイン6個確認）
-- 開発管理: `issues/`, `container/` （役割別分離完了）, 設定ファイル群
-- ドキュメント: `docs/` （テスト・開発ガイド整備完了）
+- 開発管理: `container/issues/`, `container/` （役割別分離完了）, 設定ファイル群
+- ドキュメント: `container/docs/` （テスト・開発ガイド整備完了）
 
 ### ディレクトリ構造改善 (2025-09-19)
 - **container/tests** → **container/web** （役割明確化）
