@@ -49,15 +49,30 @@ RUN --mount=type=cache,target=/var/lib/apt,sharing=locked \
     # PHP 8.x とWeb開発に必要な拡張
     php8.3 php8.3-cli php8.3-common php8.3-curl php8.3-mbstring \
     php8.3-xml php8.3-zip php8.3-intl php8.3-bcmath \
+    # APCu拡張のインストール
+    php8.3-dev php-pear \
     # Composer (PHP依存関係管理)
     composer \
     # Web開発用
     apache2 libapache2-mod-php8.3 \
     && \
+    # APCu拡張のインストール
+    pecl install apcu && \
+    echo "extension=apcu.so" >> /etc/php/8.3/cli/php.ini && \
+    echo "extension=apcu.so" >> /etc/php/8.3/apache2/php.ini && \
     # PHP設定の最適化
     echo "date.timezone = UTC" >> /etc/php/8.3/cli/php.ini && \
     echo "memory_limit = 512M" >> /etc/php/8.3/cli/php.ini && \
     echo "max_execution_time = 300" >> /etc/php/8.3/cli/php.ini && \
+    # APCu設定
+    echo "apc.enabled=1" >> /etc/php/8.3/cli/php.ini && \
+    echo "apc.shm_size=64M" >> /etc/php/8.3/cli/php.ini && \
+    echo "apc.ttl=7200" >> /etc/php/8.3/cli/php.ini && \
+    echo "apc.enable_cli=1" >> /etc/php/8.3/cli/php.ini && \
+    # Apache用APCu設定
+    echo "apc.enabled=1" >> /etc/php/8.3/apache2/php.ini && \
+    echo "apc.shm_size=64M" >> /etc/php/8.3/apache2/php.ini && \
+    echo "apc.ttl=7200" >> /etc/php/8.3/apache2/php.ini && \
     # Apache設定 (開発用)
     a2enmod php8.3 && \
     a2enmod rewrite && \

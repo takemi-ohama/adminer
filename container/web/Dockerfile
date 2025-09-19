@@ -7,6 +7,8 @@ RUN apt-get update && apt-get install -y \
     git \
     make \
     && docker-php-ext-install pdo \
+    && pecl install apcu \
+    && docker-php-ext-enable apcu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Composer
@@ -39,6 +41,10 @@ RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 RUN echo "date.timezone = UTC" >> /usr/local/etc/php/php.ini-production && \
     echo "memory_limit = 512M" >> /usr/local/etc/php/php.ini-production && \
     echo "max_execution_time = 300" >> /usr/local/etc/php/php.ini-production && \
+    echo "apc.enabled=1" >> /usr/local/etc/php/php.ini-production && \
+    echo "apc.shm_size=64M" >> /usr/local/etc/php/php.ini-production && \
+    echo "apc.ttl=7200" >> /usr/local/etc/php/php.ini-production && \
+    echo "apc.enable_cli=1" >> /usr/local/etc/php/php.ini-production && \
     cp /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
 
 # BigQuery設定用の環境変数

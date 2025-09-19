@@ -11,87 +11,177 @@
  * @license Apache License, Version 2.0
  */
 class AdminerLoginBigQuery extends Adminer\Plugin {
-    protected $project_id;
-    protected $credentials_path;
+    /** @var array Default configuration */
+    private const DEFAULT_CONFIG = [
+        'project_id' => '',
+        'credentials_path' => '/etc/google_credentials.json'
+    ];
+
+    protected $config;
 
     /** Set default BigQuery configuration
-     * @param string $project_id Default GCP Project ID
-     * @param string $credentials_path Default credentials file path
+     * @param array $config Configuration options
      */
-    function __construct($project_id = 'nyle-carmo-analysis', $credentials_path = '/etc/google_credentials.json') {
-        $this->project_id = $project_id;
-        $this->credentials_path = $credentials_path;
+    function __construct($config = []) {
+        $this->config = array_merge(self::DEFAULT_CONFIG, $config);
 
-        // Force BigQuery driver selection
-        if ($_POST["auth"]) {
-            $_POST["auth"]["driver"] = 'bigquery';
-            // Store credentials path from password field
-            if (isset($_POST["auth"]["password"]) && !empty($_POST["auth"]["password"])) {
-                $_POST["auth"]["credentials"] = $_POST["auth"]["password"];
-            }
+        $this->initializeDriverSelection();
+    }
+
+    /**
+     * Initialize BigQuery driver selection and credentials handling
+     */
+    private function initializeDriverSelection() {
+        if (!isset($_POST["auth"])) {
+            return;
+        }
+
+        $_POST["auth"]["driver"] = 'bigquery';
+
+        // Store credentials path from password field
+        if (isset($_POST["auth"]["password"]) && !empty($_POST["auth"]["password"])) {
+            $_POST["auth"]["credentials"] = $_POST["auth"]["password"];
         }
     }
 
     function credentials() {
         // Return: [server, username, password]
-        $server = $_GET["server"] ?? $_POST["auth"]["server"] ?? $this->project_id;
-        $credentials = $_GET["credentials"] ?? $_POST["auth"]["credentials"] ?? $this->credentials_path;
+        $server = $this->getProjectId();
+        $credentials = $this->getCredentialsPath();
 
-        // Set environment variable for BigQuery connection
-        if ($credentials) {
-            putenv("GOOGLE_APPLICATION_CREDENTIALS=" . $credentials);
-            $_ENV['GOOGLE_APPLICATION_CREDENTIALS'] = $credentials;
-        }
+        $this->setEnvironmentCredentials($credentials);
 
         return array($server, '', ''); // No username/password for BigQuery
     }
 
-    function login($login, $password) {
-        $credentials_path = $_POST["auth"]["password"] ?? $this->credentials_path;
+    /**
+     * Get project ID from various sources
+     */
+    private function getProjectId() {
+        return $_GET["server"] ??
+               $_POST["auth"]["server"] ??
+               $this->config['project_id'];
+    }
 
-        // 検証は行うが、エラーはログに記録するのみ
-        if (empty($credentials_path)) {
-            error_log("BigQuery Login: Credentials file path is empty");
-        } elseif (!file_exists($credentials_path)) {
-            error_log("BigQuery Login: Credentials file not found: " . $credentials_path);
-        } elseif (!is_readable($credentials_path)) {
-            error_log("BigQuery Login: Credentials file not readable: " . $credentials_path);
-        } else {
-            // JSON検証も追加
-            $json_content = file_get_contents($credentials_path);
-            $credentials_data = json_decode($json_content, true);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                error_log("BigQuery Login: Invalid JSON in credentials file");
-            } elseif (!isset($credentials_data['type']) || $credentials_data['type'] !== 'service_account') {
-                error_log("BigQuery Login: Credentials file must be a service account key");
-            } else {
-                error_log("BigQuery Login: Credentials validation successful");
-            }
+    /**
+     * Get credentials path from various sources
+     */
+    private function getCredentialsPath() {
+        return $_GET["credentials"] ??
+               $_POST["auth"]["credentials"] ??
+               $this->config['credentials_path'];
+    }
+
+    /**
+     * Set environment variable for BigQuery connection
+     */
+    private function setEnvironmentCredentials($credentials) {
+        if ($credentials) {
+            putenv("GOOGLE_APPLICATION_CREDENTIALS=" . $credentials);
+            $_ENV['GOOGLE_APPLICATION_CREDENTIALS'] = $credentials;
         }
+    }
+
+    function login($login, $password) {
+        $credentials_path = $_POST["auth"]["password"] ?? $this->config['credentials_path'];
+
+        $this->validateCredentials($credentials_path);
 
         return true; // 必ずtrueを返してAdminer標準チェックをバイパス
     }
 
-    function loginFormField($name, $heading, $value) {
-        if ($name == 'driver') {
-            // Fixed BigQuery selection
-            return $heading . '<select name="auth[driver]" readonly><option value="bigquery" selected>Google BigQuery</option></select>' . "\n";
-        } elseif ($name == 'server') {
-            // Project ID input
-            $default_value = htmlspecialchars($_GET["server"] ?? $_POST["auth"]["server"] ?? $this->project_id);
-            return '<tr><th>Project ID<td><input name="auth[server]" value="' . $default_value . '" title="GCP Project ID" placeholder="your-project-id" autocapitalize="off" required>' . "\n";
-        } elseif ($name == 'username') {
-            // Hide username field
-            return '<input type="hidden" name="auth[username]" value="">' . "\n";
-        } elseif ($name == 'password') {
-            // Credentials file path input
-            $default_value = htmlspecialchars($_POST["auth"]["password"] ?? $this->credentials_path);
-            return '<tr><th>Credentials File<td><input type="text" name="auth[password]" value="' . $default_value . '" title="Path to Google Application Credentials JSON file" placeholder="/path/to/credentials.json" autocapitalize="off" required>' . "\n";
-        } elseif ($name == 'db') {
-            // Hide database field
-            return '<input type="hidden" name="auth[db]" value="">' . "\n";
+    /**
+     * Validate BigQuery credentials file
+     * @param string $credentials_path Path to credentials file
+     */
+    private function validateCredentials($credentials_path) {
+        // 検証ルールのマップ
+        $validations = [
+            'empty' => fn() => empty($credentials_path),
+            'file_exists' => fn() => !file_exists($credentials_path),
+            'readable' => fn() => !is_readable($credentials_path),
+            'json_valid' => fn() => $this->isValidJsonCredentials($credentials_path)
+        ];
+
+        $errorMessages = [
+            'empty' => "Credentials file path is empty",
+            'file_exists' => "Credentials file not found: {$credentials_path}",
+            'readable' => "Credentials file not readable: {$credentials_path}",
+            'json_valid' => "Invalid credentials file format"
+        ];
+
+        foreach ($validations as $type => $validation) {
+            if ($validation()) {
+                error_log("BigQuery Login: " . $errorMessages[$type]);
+                if ($type === 'json_valid') break; // 他の検証が通った場合のみJSONチェック
+            }
         }
-        return '';
+
+        $failed = array_filter($validations, fn($v) => $v());
+        if (count($failed) === 0) {
+            error_log("BigQuery Login: Credentials validation successful");
+        }
+    }
+
+    /**
+     * Validate JSON credentials file format
+     * @param string $credentials_path Path to credentials file
+     * @return bool True if invalid
+     */
+    private function isValidJsonCredentials($credentials_path) {
+        if (empty($credentials_path) || !file_exists($credentials_path) || !is_readable($credentials_path)) {
+            return false; // Skip JSON validation if file issues exist
+        }
+
+        $json_content = file_get_contents($credentials_path);
+        $credentials_data = json_decode($json_content, true);
+
+        return json_last_error() !== JSON_ERROR_NONE ||
+               !isset($credentials_data['type']) ||
+               $credentials_data['type'] !== 'service_account';
+    }
+
+    function loginFormField($name, $heading, $value) {
+        // フィールド処理ハンドラーのマップ
+        $fieldHandlers = [
+            'driver' => fn() => $this->renderDriverField($heading),
+            'server' => fn() => $this->renderProjectIdField(),
+            'username' => fn() => $this->renderHiddenField('username'),
+            'password' => fn() => $this->renderCredentialsField(),
+            'db' => fn() => $this->renderHiddenField('db')
+        ];
+
+        return isset($fieldHandlers[$name]) ? $fieldHandlers[$name]() : '';
+    }
+
+    /**
+     * Render driver selection field
+     */
+    private function renderDriverField($heading) {
+        return $heading . '<select name="auth[driver]" readonly><option value="bigquery" selected>Google BigQuery</option></select>' . "\n";
+    }
+
+    /**
+     * Render Project ID input field
+     */
+    private function renderProjectIdField() {
+        $default_value = htmlspecialchars($this->getProjectId());
+        return '<tr><th>Project ID<td><input name="auth[server]" value="' . $default_value . '" title="GCP Project ID" placeholder="your-project-id" autocapitalize="off" required>' . "\n";
+    }
+
+    /**
+     * Render credentials file path input field
+     */
+    private function renderCredentialsField() {
+        $default_value = htmlspecialchars($_POST["auth"]["password"] ?? $this->config['credentials_path']);
+        return '<tr><th>Credentials File<td><input type="text" name="auth[password]" value="' . $default_value . '" title="Path to Google Application Credentials JSON file" placeholder="/path/to/credentials.json" autocapitalize="off" required>' . "\n";
+    }
+
+    /**
+     * Render hidden field
+     */
+    private function renderHiddenField($fieldName) {
+        return '<input type="hidden" name="auth[' . $fieldName . ']" value="">' . "\n";
     }
 
     function loginForm() {
@@ -101,11 +191,12 @@ class AdminerLoginBigQuery extends Adminer\Plugin {
     }
 
     function operators() {
-        return array(
+        // BigQueryConfigの標準オペレーターを使用
+        return [
             "=", "!=", "<>", "<", "<=", ">", ">=",
             "IN", "NOT IN", "IS NULL", "IS NOT NULL",
             "LIKE", "NOT LIKE", "REGEXP", "NOT REGEXP"
-        );
+        ];
     }
 
     protected $translations = array(
