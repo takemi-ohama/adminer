@@ -16,6 +16,498 @@ if (isset($_GET["bigquery"])) {
 	define('Adminer\DRIVER', "bigquery");
 
 /**
+ * BigQuery Connection Pool for client reuse
+ * 接続オブジェクトの再利用により初期化時間を大幅短縮
+ */
+class BigQueryConnectionPool {
+    /** @var array Connection pool storage */
+    private static $pool = [];
+    
+    /** @var int Maximum connections to keep in pool */
+    private static $maxConnections = 3;
+    
+    /** @var array Connection usage timestamps for LRU eviction */
+    private static $usageTimestamps = [];
+    
+    /** @var array Connection creation times for debugging */
+    private static $creationTimes = [];
+
+    /**
+     * Get a BigQuery client from pool or create new one
+     *
+     * @param string $key Connection identifier
+     * @param array $config Connection configuration
+     * @return BigQueryClient
+     */
+    public static function getConnection($key, $config) {
+        // Check if connection exists in pool
+        if (isset(self::$pool[$key])) {
+            self::$usageTimestamps[$key] = time();
+            $age = time() - self::$creationTimes[$key];
+            error_log("BigQuery ConnectionPool: Reusing connection (age: {$age}s, pool size: " . count(self::$pool) . ")");
+            return self::$pool[$key];
+        }
+
+        // Clean up pool if it's at capacity
+        if (count(self::$pool) >= self::$maxConnections) {
+            self::evictOldestConnection();
+        }
+
+        // Create new connection
+        $startTime = microtime(true);
+        
+        $clientConfig = [
+            'projectId' => $config['projectId'],
+            'location' => $config['location']
+        ];
+        
+        // Add credentials path if provided
+        if (isset($config['credentialsPath'])) {
+            $clientConfig['keyFilePath'] = $config['credentialsPath'];
+        }
+
+        $client = new BigQueryClient($clientConfig);
+        
+        $creationTime = microtime(true) - $startTime;
+        
+        // Store in pool
+        self::$pool[$key] = $client;
+        self::$usageTimestamps[$key] = time();
+        self::$creationTimes[$key] = time();
+        
+        error_log("BigQuery ConnectionPool: Created new connection in {$creationTime}s (pool size: " . count(self::$pool) . ")");
+        
+        return $client;
+    }
+
+    /**
+     * Evict the least recently used connection
+     */
+    private static function evictOldestConnection() {
+        if (empty(self::$usageTimestamps)) {
+            return;
+        }
+
+        // Find LRU connection
+        $oldestKey = array_keys(self::$usageTimestamps, min(self::$usageTimestamps))[0];
+        
+        // Remove from all tracking arrays
+        unset(self::$pool[$oldestKey]);
+        unset(self::$usageTimestamps[$oldestKey]);
+        unset(self::$creationTimes[$oldestKey]);
+        
+        error_log("BigQuery ConnectionPool: Evicted LRU connection '$oldestKey' (pool size: " . count(self::$pool) . ")");
+    }
+
+    /**
+     * Clear all connections from pool
+     */
+    public static function clearPool() {
+        $count = count(self::$pool);
+        self::$pool = [];
+        self::$usageTimestamps = [];
+        self::$creationTimes = [];
+        error_log("BigQuery ConnectionPool: Cleared all connections ($count removed)");
+    }
+
+    /**
+     * Get pool statistics for debugging
+     */
+    public static function getStats() {
+        $stats = [
+            'pool_size' => count(self::$pool),
+            'max_size' => self::$maxConnections,
+            'connections' => []
+        ];
+        
+        foreach (self::$pool as $key => $client) {
+            $stats['connections'][] = [
+                'key' => substr($key, 0, 8) . '...',
+                'age' => time() - self::$creationTimes[$key],
+                'last_used' => time() - self::$usageTimestamps[$key]
+            ];
+        }
+        
+        return $stats;
+    }
+}
+
+/**
+ * BigQuery Configuration and Constants
+ * 設定値とマッピング定数を管理
+ */
+class BigQueryConfig {
+    /** @var array データ型マッピング（Map化） */
+    public const TYPE_MAPPING = [
+        'STRING' => ['type' => 'varchar', 'length' => null],
+        'BYTES' => ['type' => 'varchar', 'length' => null],
+        'INT64' => ['type' => 'bigint', 'length' => null],
+        'INTEGER' => ['type' => 'bigint', 'length' => null],
+        'FLOAT64' => ['type' => 'double', 'length' => null],
+        'FLOAT' => ['type' => 'double', 'length' => null],
+        'NUMERIC' => ['type' => 'decimal', 'length' => null],
+        'BIGNUMERIC' => ['type' => 'decimal', 'length' => null],
+        'BOOLEAN' => ['type' => 'tinyint', 'length' => 1],
+        'BOOL' => ['type' => 'tinyint', 'length' => 1],
+        'DATE' => ['type' => 'date', 'length' => null],
+        'TIME' => ['type' => 'time', 'length' => null],
+        'DATETIME' => ['type' => 'datetime', 'length' => null],
+        'TIMESTAMP' => ['type' => 'timestamp', 'length' => null],
+        'GEOGRAPHY' => ['type' => 'geometry', 'length' => null],
+        'JSON' => ['type' => 'json', 'length' => null],
+        'ARRAY' => ['type' => 'text', 'length' => null],
+        'STRUCT' => ['type' => 'text', 'length' => null],
+        'RECORD' => ['type' => 'text', 'length' => null],
+    ];
+
+    /** @var array 危険なSQLパターン（Map化） */
+    public const DANGEROUS_SQL_PATTERNS = [
+        'ddl_dml' => '/;\\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
+        'union_injection' => '/UNION\\s+(ALL\\s+)?SELECT/i',
+        'block_comments' => '/\\/\\*.*?\\*\\//i',
+        'line_comments' => '/--[^\\r\\n]*/i',
+        'execute_commands' => '/\\b(EXEC|EXECUTE|SP_)\\b/i',
+    ];
+
+    /** @var array サポート機能リスト（Map化） */
+    public const SUPPORTED_FEATURES = [
+        'database' => true,
+        'table' => true,
+        'columns' => true,
+        'sql' => true,
+        'view' => true,
+        'materializedview' => true,
+    ];
+
+    /** @var array 非サポート機能リスト（Map化） */
+    public const UNSUPPORTED_FEATURES = [
+        'foreignkeys' => false,
+        'indexes' => false,
+        'processlist' => false,
+        'kill' => false,
+        'transaction' => false,
+        'comment' => false,
+        'drop_col' => false,
+        'dump' => false,
+        'event' => false,
+        'move_col' => false,
+        'privileges' => false,
+        'procedure' => false,
+        'routine' => false,
+        'sequence' => false,
+        'status' => false,
+        'trigger' => false,
+        'type' => false,
+        'variables' => false,
+        'descidx' => false,
+        'check' => false,
+        'schema' => false,
+    ];
+
+    /** @var array キャッシュ設定（Map化） */
+    public const CACHE_CONFIG = [
+        'credentials_ttl' => 10,      // 認証情報キャッシュ（秒）
+        'location_ttl' => 86400,     // 位置情報キャッシュ（秒）
+        'databases_ttl' => 300,      // データベース一覧キャッシュ（秒）
+        'tables_ttl' => 300,         // テーブル一覧キャッシュ（秒）
+        'fields_ttl' => 600,         // フィールド情報キャッシュ（秒）
+        'apcu_shm_size' => '64M',    // APCu共有メモリサイズ
+        'connection_pool_max' => 3,   // 接続プール最大数
+    ];
+
+    /**
+     * BigQuery型をAdminer型にマッピング
+     * @param string $bigQueryType
+     * @return array
+     */
+    public static function mapType(string $bigQueryType): array {
+        $baseType = strtoupper(preg_replace('/\\(.*\\)/', '', $bigQueryType));
+        return self::TYPE_MAPPING[$baseType] ?? ['type' => 'text', 'length' => null];
+    }
+
+    /**
+     * 危険なSQLパターンをチェック
+     * @param string $query
+     * @return bool
+     */
+    public static function isDangerousQuery(string $query): bool {
+        foreach (self::DANGEROUS_SQL_PATTERNS as $pattern) {
+            if (preg_match($pattern, $query)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 機能サポート状況を取得
+     * @param string $feature
+     * @return bool
+     */
+    public static function isFeatureSupported(string $feature): bool {
+        return self::SUPPORTED_FEATURES[$feature] ?? 
+               (self::UNSUPPORTED_FEATURES[$feature] ?? false);
+    }
+}
+
+/**
+ * BigQuery Cache Manager
+ * キャッシュ機能を統合管理
+ */
+class BigQueryCacheManager {
+    /** @var array 静的キャッシュストレージ */
+    private static array $staticCache = [];
+    
+    /** @var array キャッシュタイムスタンプ */
+    private static array $cacheTimestamps = [];
+
+    /**
+     * キャッシュから値を取得
+     * @param string $key
+     * @param int $ttl
+     * @return mixed
+     */
+    public static function get(string $key, int $ttl = 300) {
+        // APCu優先
+        if (function_exists('apcu_exists') && apcu_exists($key)) {
+            return apcu_fetch($key);
+        }
+        
+        // 静的キャッシュフォールバック
+        if (isset(self::$staticCache[$key]) && 
+            (time() - (self::$cacheTimestamps[$key] ?? 0)) < $ttl) {
+            return self::$staticCache[$key];
+        }
+        
+        return false;
+    }
+
+    /**
+     * キャッシュに値を設定
+     * @param string $key
+     * @param mixed $value
+     * @param int $ttl
+     * @return bool
+     */
+    public static function set(string $key, $value, int $ttl = 300): bool {
+        $success = false;
+        
+        // APCu優先
+        if (function_exists('apcu_store')) {
+            $success = apcu_store($key, $value, $ttl);
+        }
+        
+        // 静的キャッシュも更新
+        self::$staticCache[$key] = $value;
+        self::$cacheTimestamps[$key] = time();
+        
+        return $success;
+    }
+
+    /**
+     * キャッシュをクリア
+     * @param string|null $pattern
+     * @return void
+     */
+    public static function clear(?string $pattern = null): void {
+        if ($pattern === null) {
+            // 全クリア
+            if (function_exists('apcu_clear_cache')) {
+                apcu_clear_cache();
+            }
+            self::$staticCache = [];
+            self::$cacheTimestamps = [];
+        } else {
+            // パターンマッチでクリア
+            foreach (array_keys(self::$staticCache) as $key) {
+                if (strpos($key, $pattern) !== false) {
+                    unset(self::$staticCache[$key]);
+                    unset(self::$cacheTimestamps[$key]);
+                }
+            }
+        }
+    }
+
+    /**
+     * キャッシュ統計を取得
+     * @return array
+     */
+    public static function getStats(): array {
+        $apcuInfo = function_exists('apcu_cache_info') ? apcu_cache_info() : [];
+        
+        return [
+            'static_cache_size' => count(self::$staticCache),
+            'apcu_available' => function_exists('apcu_exists'),
+            'apcu_info' => $apcuInfo,
+            'cache_keys' => array_keys(self::$staticCache)
+        ];
+    }
+}
+
+/**
+ * BigQuery Utilities
+ * 共通ユーティリティ機能
+ */
+class BigQueryUtils {
+    /**
+     * プロジェクトID検証
+     * @param string $projectId
+     * @return bool
+     */
+    public static function validateProjectId(string $projectId): bool {
+        return preg_match('/^[a-z0-9][a-z0-9\\-]{4,28}[a-z0-9]$/i', $projectId) && 
+               strlen($projectId) <= 30;
+    }
+
+    /**
+     * 識別子をエスケープ
+     * @param string $identifier
+     * @return string
+     */
+    public static function escapeIdentifier(string $identifier): string {
+        return "`" . str_replace("`", "``", $identifier) . "`";
+    }
+
+    /**
+     * クエリを安全にログ出力
+     * @param string $query
+     * @param string $context
+     * @return void
+     */
+    public static function logQuerySafely(string $query, string $context = "QUERY"): void {
+        // セキュリティ情報のサニタイズ処理をまとめて実行
+        $sanitizers = [
+            '/([\\\'"])[^\\\'\"]*\\1/' => '$1***REDACTED***$1',
+            '/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/' => '***EMAIL_REDACTED***'
+        ];
+
+        $safeQuery = preg_replace(array_keys($sanitizers), array_values($sanitizers), $query);
+        
+        if (strlen($safeQuery) > 200) {
+            $safeQuery = substr($safeQuery, 0, 200) . '... [TRUNCATED]';
+        }
+        
+        error_log("BigQuery $context: $safeQuery");
+    }
+
+    /**
+     * WHERE条件をBigQuery形式に変換
+     * @param string $condition
+     * @return string
+     * @throws InvalidArgumentException
+     */
+    public static function convertWhereCondition(string $condition): string {
+        if (!is_string($condition) || strlen($condition) > 1000) {
+            throw new InvalidArgumentException('Invalid WHERE condition format');
+        }
+
+        if (BigQueryConfig::isDangerousQuery($condition)) {
+            error_log("BigQuery: Blocked suspicious WHERE condition: " . substr($condition, 0, 100) . "...");
+            throw new InvalidArgumentException('WHERE condition contains prohibited SQL patterns');
+        }
+
+        // MySQL形式バッククォートをBigQuery形式に変換
+        $condition = preg_replace('/`([^`]+)`/', '`$1`', $condition);
+        
+        // 文字列リテラルの安全なエスケープ
+        return preg_replace_callback("/'([^']*)'/", function($matches) {
+            $escaped = str_replace("'", "\\'", $matches[1]);
+            $escaped = str_replace("\\", "\\\\", $escaped);
+            return "'" . $escaped . "'";
+        }, $condition);
+    }
+
+    /**
+     * 複雑な型データを表示用に変換（統一された型処理）
+     * @param mixed $value
+     * @param array $field
+     * @return mixed
+     */
+    public static function formatComplexValue($value, array $field) {
+        if ($value === null) {
+            return null;
+        }
+
+        $fieldType = strtolower($field['type'] ?? 'text');
+
+        // 型別処理のMap化（効率化とメンテナンス性向上）
+        $typePatterns = [
+            'json' => ['json', 'struct', 'record', 'array'],
+            'geography' => ['geography'],
+            'binary' => ['bytes', 'blob'],
+        ];
+
+        foreach ($typePatterns as $handlerType => $patterns) {
+            if (self::matchesTypePattern($fieldType, $patterns)) {
+                return self::handleTypeConversion($value, $handlerType);
+            }
+        }
+
+        return $value;
+    }
+
+    /**
+     * 型パターンマッチング
+     * @param string $fieldType
+     * @param array $patterns
+     * @return bool
+     */
+    private static function matchesTypePattern(string $fieldType, array $patterns): bool {
+        foreach ($patterns as $pattern) {
+            if (strpos($fieldType, $pattern) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 型変換処理（統一化）
+     * @param mixed $value
+     * @param string $handlerType
+     * @return mixed
+     */
+    private static function handleTypeConversion($value, string $handlerType) {
+        switch ($handlerType) {
+            case 'json':
+                return is_string($value) && (substr($value, 0, 1) === '{' || substr($value, 0, 1) === '[')
+                    ? $value : json_encode($value);
+            
+            case 'geography':
+            case 'binary':
+                return is_string($value) ? $value : (string)$value;
+                
+            default:
+                return $value;
+        }
+    }
+
+    /**
+     * フィールド変換用SQL生成（統一化）
+     * @param array $field
+     * @return string|null
+     */
+    public static function generateFieldConversion(array $field): ?string {
+        $fieldName = self::escapeIdentifier($field['field']);
+        $fieldType = strtolower($field['type'] ?? '');
+
+        // 変換が必要な型のマッピング
+        $conversions = [
+            'geography' => "ST_AsText($fieldName)",
+            'json' => "TO_JSON_STRING($fieldName)"
+        ];
+
+        foreach ($conversions as $typePattern => $conversion) {
+            if (strpos($fieldType, $typePattern) !== false) {
+                return $conversion;
+            }
+        }
+
+        return null;
+    }
+}
+
+/**
  * BigQuery database connection handler
  */
 class Db {
@@ -52,192 +544,356 @@ class Db {
      * @return bool Connection success
      */
     public function connect($server, $username, $password) {
+        BigQueryProfiler::start('connect');
+        
         try {
-            // Validate and parse project ID and optional location from server parameter
-            if (empty($server)) {
-                throw new Exception('Project ID is required');
-            }
-
-            $parts = explode(':', $server);
-            $projectId = trim($parts[0]);
-
-            // Validate project ID format
-            if (!preg_match('/^[a-z0-9][a-z0-9\\-]{4,28}[a-z0-9]$/i', $projectId)) {
-                throw new Exception('Invalid GCP Project ID format');
-            }
-
-            if (strlen($projectId) > 30) {
-                throw new Exception('Project ID too long (max 30 characters)');
-            }
-
-            $this->projectId = $projectId;
+            // 1. プロジェクトIDの検証と解析
+            $this->projectId = $this->validateAndParseProjectId($server);
             
-            // Determine location priority order:
-            // 1. Explicit location in server parameter (project:location)
-            // 2. Environment variable BIGQUERY_LOCATION
-            // 3. Detect from first dataset location
-            // 4. Use 'US' as fallback
-            $location = null;
+            // 2. 位置情報の決定
+            $location = $this->determineLocation($server, $this->projectId);
             
-            if (isset($parts[1]) && !empty($parts[1])) {
-                $location = $parts[1];
-            } elseif (getenv('BIGQUERY_LOCATION')) {
-                $location = getenv('BIGQUERY_LOCATION');
-            }
-            
-            // If no explicit location, we'll auto-detect from datasets later
-            // For now, use 'US' as temporary default for client initialization
-            $defaultLocation = $location ?? 'US';
-
-            // Initialize BigQuery client with service account authentication
-            $this->config = [
-                'projectId' => $this->projectId,
-                'location' => $defaultLocation
-            ];
-
-            // Check for custom credentials path from form input
-            $customCredentialsPath = $_POST['auth']['credentials'] ?? null;
-            $credentialsPath = null;
-            
-            if ($customCredentialsPath && !empty($customCredentialsPath)) {
-                // Use custom credentials path if provided via form
-                $credentialsPath = $customCredentialsPath;
-                putenv("GOOGLE_APPLICATION_CREDENTIALS=" . $credentialsPath);
-                $_ENV['GOOGLE_APPLICATION_CREDENTIALS'] = $credentialsPath;
-            } else {
-                // Fall back to existing environment variable
-                $credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
-            }
-
-            // Enhanced authentication check with detailed diagnostics
-            if (!$credentialsPath && !getenv('GOOGLE_CLOUD_PROJECT')) {
+            // 3. 認証設定の取得
+            $credentialsPath = $this->getCredentialsPath();
+            if (!$credentialsPath) {
                 throw new Exception('BigQuery authentication not configured. Set GOOGLE_APPLICATION_CREDENTIALS environment variable or provide credentials file path.');
             }
-            
-            if ($credentialsPath && !file_exists($credentialsPath)) {
-                throw new Exception("Service account file not found: {$credentialsPath}");
-            }
-            
-            if ($credentialsPath && !is_readable($credentialsPath)) {
-                throw new Exception("Service account file not readable: {$credentialsPath}");
-            }
 
-            // Log successful authentication setup (debug info)
-            if ($credentialsPath) {
-                error_log("BigQuery: Using service account file: {$credentialsPath}");
+            // 4. 設定の初期化
+            $this->initializeConfiguration($location);
+
+            // 5. BigQueryクライアントの作成
+            $this->createBigQueryClient($credentialsPath, $location);
+
+            // 6. バックグラウンド位置検出のスケジューリング
+            if (!$this->isLocationExplicitlySet($server)) {
+                $this->scheduleLocationDetection($this->projectId, $location);
             }
-
-            $this->bigQueryClient = new BigQueryClient($this->config);
-
-            // If location was not explicitly set, try to auto-detect from datasets
-            if (!$location) {
-                $autoDetectedLocation = $this->detectLocationFromDatasets();
-                if ($autoDetectedLocation && $autoDetectedLocation !== $defaultLocation) {
-                    $this->config['location'] = $autoDetectedLocation;
-                    error_log("BigQuery: Auto-detected location '$autoDetectedLocation' from project datasets");
-                }
-            }
-
-            // Test connection by attempting to list datasets
-            $datasets = $this->bigQueryClient->datasets(['maxResults' => 1]);
-            iterator_to_array($datasets); // Force API call
 
             error_log("BigQuery: Connected to project '{$this->projectId}' with location '{$this->config['location']}'");
+            
+            BigQueryProfiler::end('connect');
             return true;
 
         } catch (ServiceException $e) {
-            // Log detailed error for debugging while redacting sensitive info
-            $errorMessage = $e->getMessage();
-            $safeMessage = preg_replace('/project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+/i', 'project: [REDACTED]', $errorMessage);
-            error_log("BigQuery ServiceException: " . $safeMessage);
-            
-            // Check for common authentication issues
-            if (strpos($errorMessage, 'UNAUTHENTICATED') !== false || strpos($errorMessage, '401') !== false) {
-                error_log("BigQuery: Authentication failed. Check service account credentials.");
-            }
-            
+            $this->logConnectionError($e, 'ServiceException');
+            BigQueryProfiler::end('connect');
             return false;
         } catch (Exception $e) {
-            $errorMessage = $e->getMessage();
-            $safeMessage = preg_replace('/project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+/i', 'project: [REDACTED]', $errorMessage);
-            error_log("BigQuery Exception: " . $safeMessage);
-            
-            // Provide helpful diagnostic information
-            if (strpos($errorMessage, 'OpenSSL') !== false) {
-                error_log("BigQuery: Invalid private key in service account file.");
-            }
-            
+            $this->logConnectionError($e, 'Exception');
+            BigQueryProfiler::end('connect');
             return false;
         }
     }
 
     /**
-     * Auto-detect BigQuery location from existing datasets
-     * Enhanced with caching to improve performance and reduce N+1 queries
-     *
-     * @return string|null Detected location or null if detection failed
+     * プロジェクトIDの検証と解析
+     * @param string $server
+     * @return string
+     * @throws Exception
      */
-    private function detectLocationFromDatasets() {
-        // Check if we already have cached location detection results
-        static $locationCache = [];
-        $cacheKey = $this->projectId;
+    private function validateAndParseProjectId($server) {
+        if (empty($server)) {
+            throw new Exception('Project ID is required');
+        }
+
+        $parts = explode(':', $server);
+        $projectId = trim($parts[0]);
+
+        if (!BigQueryUtils::validateProjectId($projectId)) {
+            throw new Exception('Invalid GCP Project ID format');
+        }
+
+        return $projectId;
+    }
+
+    /**
+     * 位置情報の決定
+     * @param string $server
+     * @param string $projectId
+     * @return string
+     */
+    private function determineLocation($server, $projectId) {
+        $parts = explode(':', $server);
         
-        if (isset($locationCache[$cacheKey])) {
-            error_log("BigQuery: Using cached location detection result: " . $locationCache[$cacheKey]);
-            return $locationCache[$cacheKey];
+        // 1. サーバーパラメータから位置を取得
+        if (isset($parts[1]) && !empty($parts[1])) {
+            return $parts[1];
         }
         
-        try {
-            // Limit to fewer datasets for performance - most projects have consistent location
-            $datasets = $this->bigQueryClient->datasets(['maxResults' => 5]);
-            $locationCounts = [];
-            $processedCount = 0;
-            
-            // Process datasets in batch to minimize API calls
-            foreach ($datasets as $dataset) {
-                // Early exit if we have enough samples
-                if ($processedCount >= 3) {
-                    break;
+        // 2. 環境変数から取得
+        if (getenv('BIGQUERY_LOCATION')) {
+            return getenv('BIGQUERY_LOCATION');
+        }
+        
+        // 3. キャッシュから取得
+        $cachedLocation = $this->getCachedLocation($projectId);
+        if ($cachedLocation) {
+            error_log("BigQuery: Using cached location '$cachedLocation' for project '$projectId'");
+            return $cachedLocation;
+        }
+        
+        // 4. デフォルト
+        return 'US';
+    }
+
+    /**
+     * 位置が明示的に設定されているかチェック
+     * @param string $server
+     * @return bool
+     */
+    private function isLocationExplicitlySet($server) {
+        return strpos($server, ':') !== false || getenv('BIGQUERY_LOCATION');
+    }
+
+    /**
+     * 設定の初期化
+     * @param string $location
+     */
+    private function initializeConfiguration($location) {
+        $this->config = [
+            'projectId' => $this->projectId,
+            'location' => $location
+        ];
+    }
+
+    /**
+     * BigQueryクライアントの作成
+     * @param string $credentialsPath
+     * @param string $location
+     */
+    private function createBigQueryClient($credentialsPath, $location) {
+        $clientKey = md5($this->projectId . $credentialsPath . $location);
+        $this->bigQueryClient = BigQueryConnectionPool::getConnection($clientKey, [
+            'projectId' => $this->projectId,
+            'location' => $location,
+            'credentialsPath' => $credentialsPath
+        ]);
+
+        error_log("BigQuery: Using connection pool for project '{$this->projectId}' (key: " . substr($clientKey, 0, 8) . "...)");
+    }
+
+    /**
+     * 接続エラーのログ出力
+     * @param Exception $e
+     * @param string $type
+     */
+    private function logConnectionError($e, $type) {
+        $errorMessage = $e->getMessage();
+        $safeMessage = preg_replace('/project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+/i', 'project: [REDACTED]', $errorMessage);
+        error_log("BigQuery $type: " . $safeMessage);
+        
+        // 特定エラーの診断情報
+        if (strpos($errorMessage, 'UNAUTHENTICATED') !== false || strpos($errorMessage, '401') !== false) {
+            error_log("BigQuery: Authentication failed. Check service account credentials.");
+        } elseif (strpos($errorMessage, 'OpenSSL') !== false) {
+            error_log("BigQuery: Invalid private key in service account file.");
+        }
+    }
+
+    /**
+     * 永続キャッシュから位置情報を取得
+     *
+     * @param string $projectId プロジェクトID
+     * @return string|null キャッシュされた位置情報
+     */
+    private function getCachedLocation($projectId) {
+        $cacheFile = sys_get_temp_dir() . "/bq_location_" . md5($projectId) . ".cache";
+        
+        if (file_exists($cacheFile)) {
+            $cacheData = json_decode(file_get_contents($cacheFile), true);
+            if ($cacheData && isset($cacheData['location']) && isset($cacheData['expires'])) {
+                if (time() < $cacheData['expires']) {
+                    return $cacheData['location'];
+                } else {
+                    @unlink($cacheFile);
                 }
-                
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * 位置情報をキャッシュに保存
+     *
+     * @param string $projectId プロジェクトID
+     * @param string $location 位置情報
+     */
+    private function setCachedLocation($projectId, $location) {
+        $cacheFile = sys_get_temp_dir() . "/bq_location_" . md5($projectId) . ".cache";
+        $cacheData = [
+            'location' => $location,
+            'expires' => time() + 86400  // 24時間後
+        ];
+        
+        @file_put_contents($cacheFile, json_encode($cacheData), LOCK_EX);
+    }
+
+    /**
+     * 認証パス取得の最適化（キャッシュ付き）
+     *
+     * @return string|null 認証ファイルパス
+     * @throws Exception 認証設定エラー
+     */
+    private function getCredentialsPath() {
+        static $credentialsCache = null;
+        static $lastCheckTime = 0;
+        
+        // キャッシュが有効な場合（10秒間）
+        if ($credentialsCache !== null && (time() - $lastCheckTime) < 10) {
+            return $credentialsCache;
+        }
+
+        $customCredentialsPath = $_POST['auth']['credentials'] ?? null;
+        $credentialsPath = null;
+        
+        if ($customCredentialsPath && !empty($customCredentialsPath)) {
+            $credentialsPath = $customCredentialsPath;
+            putenv("GOOGLE_APPLICATION_CREDENTIALS=" . $credentialsPath);
+            $_ENV['GOOGLE_APPLICATION_CREDENTIALS'] = $credentialsPath;
+        } else {
+            $credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
+        }
+
+        if (!$credentialsPath && !getenv('GOOGLE_CLOUD_PROJECT')) {
+            $credentialsCache = null;
+            $lastCheckTime = time();
+            return null;
+        }
+        
+        if ($credentialsPath) {
+            $this->validateCredentialsFile($credentialsPath);
+        }
+        
+        $credentialsCache = $credentialsPath;
+        $lastCheckTime = time();
+        
+        return $credentialsPath;
+    }
+
+    /**
+     * 認証ファイルの検証
+     * @param string $credentialsPath
+     * @throws Exception
+     */
+    private function validateCredentialsFile($credentialsPath) {
+        $fileInfo = @stat($credentialsPath);
+        if ($fileInfo === false) {
+            throw new Exception("Service account file not found: {$credentialsPath}");
+        }
+        
+        if (!($fileInfo['mode'] & 0444)) {
+            throw new Exception("Service account file not readable: {$credentialsPath}");
+        }
+    }
+
+    /**
+     * 非ブロッキング位置検出のスケジュール（最適化版）
+     *
+     * @param string $projectId プロジェクトID
+     * @param string $defaultLocation デフォルト位置
+     */
+    private function scheduleLocationDetection($projectId, $defaultLocation) {
+        if ($this->getCachedLocation($projectId)) {
+            return;
+        }
+
+        $detectionFunc = function() use ($projectId, $defaultLocation) {
+            $this->performLightweightLocationDetection($projectId, $defaultLocation);
+        };
+
+        if (function_exists('fastcgi_finish_request')) {
+            register_shutdown_function(function() use ($detectionFunc) {
+                fastcgi_finish_request();
+                $detectionFunc();
+            });
+        } else {
+            register_shutdown_function($detectionFunc);
+        }
+    }
+
+    /**
+     * 軽量な位置検出処理（非ブロッキング用）
+     *
+     * @param string $projectId プロジェクトID
+     * @param string $defaultLocation デフォルト位置
+     */
+    private function performLightweightLocationDetection($projectId, $defaultLocation) {
+        try {
+            $datasets = $this->bigQueryClient->datasets(['maxResults' => 1]);
+            
+            foreach ($datasets as $dataset) {
                 try {
                     $datasetInfo = $dataset->info();
-                    $location = $datasetInfo['location'] ?? 'US';
-                    $locationCounts[$location] = ($locationCounts[$location] ?? 0) + 1;
-                    $processedCount++;
+                    $detectedLocation = $datasetInfo['location'] ?? $defaultLocation;
                     
-                    // If we find a clear majority early, use it
-                    if ($locationCounts[$location] >= 2) {
-                        break;
+                    if ($detectedLocation !== $defaultLocation) {
+                        $this->config['location'] = $detectedLocation;
+                        $this->setCachedLocation($projectId, $detectedLocation);
+                        error_log("BigQuery: Ultra-fast location detection: '$detectedLocation' for project '$projectId'");
                     }
+                    
+                    break;
+                    
                 } catch (Exception $e) {
-                    // Skip individual dataset errors but continue processing
-                    error_log("BigQuery: Failed to get info for dataset " . $dataset->id() . ": " . $e->getMessage());
-                    continue;
+                    error_log("BigQuery: Lightweight location detection failed: " . $e->getMessage());
+                    break;
                 }
             }
-            
-            if (empty($locationCounts)) {
-                $locationCache[$cacheKey] = null;
-                return null;
-            }
-            
-            // Return the most common location
-            arsort($locationCounts);
-            $mostCommonLocation = array_key_first($locationCounts);
-            
-            // Cache the result to avoid repeated API calls
-            $locationCache[$cacheKey] = $mostCommonLocation;
-            
-            error_log("BigQuery: Location distribution in project (sample of $processedCount): " . 
-                     json_encode($locationCounts) . ", selected: $mostCommonLocation");
-            
-            return $mostCommonLocation;
-            
         } catch (Exception $e) {
-            error_log("BigQuery: Failed to auto-detect location: " . $e->getMessage());
-            $locationCache[$cacheKey] = null;
-            return null;
+            error_log("BigQuery: Background location detection failed: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Execute a SELECT query
+     *
+     * @param string $query SQL query to execute
+     * @return Result|false Query result or false on error
+     */
+    public function query($query) {
+        try {
+            $this->validateReadOnlyQuery($query);
+            $queryLocation = $this->determineQueryLocation();
+            
+            $queryJob = $this->bigQueryClient->query($query)
+                ->useLegacySql(false)
+                ->location($queryLocation)
+                ->useQueryCache(true);
+
+            $job = $this->bigQueryClient->runQuery($queryJob);
+
+            if (!$job->isComplete()) {
+                $job->waitUntilComplete();
+            }
+
+            $this->checkJobStatus($job);
+            
+            error_log("BigQuery: Query executed successfully in location '$queryLocation'");
+            return new Result($job);
+
+        } catch (ServiceException $e) {
+            BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
+            return false;
+        } catch (Exception $e) {
+            BigQueryUtils::logQuerySafely($e->getMessage(), 'ERROR');
+            return false;
+        }
+    }
+
+    /**
+     * ジョブステータスのチェック
+     * @param object $job
+     * @throws Exception
+     */
+    private function checkJobStatus($job) {
+        $jobInfo = $job->info();
+        if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+            $errorResult = $jobInfo['status']['errorResult'] ?? null;
+            if ($errorResult) {
+                throw new Exception("BigQuery job failed: " . ($errorResult['message'] ?? 'Unknown error'));
+            }
         }
     }
 
@@ -249,22 +905,19 @@ class Db {
      * @throws Exception If query contains unsafe operations
      */
     private function validateReadOnlyQuery($query) {
-        // Remove SQL comments to prevent bypass
         $cleanQuery = preg_replace('/--.*$/m', '', $query);
-        $cleanQuery = preg_replace('/\\/\\*.*?\\*\\//s', '', $cleanQuery);
+        $cleanQuery = preg_replace('/\/\*.*?\*\//s', '', $cleanQuery);
         $cleanQuery = trim($cleanQuery);
 
-        // Must start with SELECT
-        if (!preg_match('/^\\s*SELECT\\s+/i', $cleanQuery)) {
+        if (!preg_match('/^\s*SELECT\s+/i', $cleanQuery)) {
             throw new Exception('Only SELECT queries are supported in read-only mode');
         }
 
-        // Block dangerous operations that might be hidden in subqueries or CTEs
         $dangerousPatterns = [
-            '/\\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE)\\b/i',
-            '/\\b(GRANT|REVOKE)\\b/i',
-            '/\\bCALL\\s+/i',
-            '/\\bEXEC(UTE)?\\s+/i',
+            '/\b(INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|TRUNCATE)\b/i',
+            '/\b(GRANT|REVOKE)\b/i',
+            '/\bCALL\s+/i',
+            '/\bEXEC(UTE)?\s+/i',
         ];
 
         foreach ($dangerousPatterns as $pattern) {
@@ -277,87 +930,21 @@ class Db {
     }
 
     /**
-     * Execute a SELECT query
-     *
-     * @param string $query SQL query to execute
-     * @return Result|false Query result or false on error
-     */
-    public function query($query) {
-        try {
-            // Validate query for read-only safety
-            $this->validateReadOnlyQuery($query);
-
-            // Determine the appropriate location for query execution
-            $queryLocation = $this->determineQueryLocation();
-
-            // Configure query job with correct BigQuery API
-            $queryJob = $this->bigQueryClient->query($query)
-                ->useLegacySql(false)
-                ->location($queryLocation)
-                ->useQueryCache(true); // Enable query cache for better performance
-
-            $job = $this->bigQueryClient->runQuery($queryJob);
-
-            // Wait for job completion if needed
-            if (!$job->isComplete()) {
-                $job->waitUntilComplete();
-            }
-
-            // Check for job errors
-            $jobInfo = $job->info();
-            if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
-                $errorResult = $jobInfo['status']['errorResult'] ?? null;
-                if ($errorResult) {
-                    throw new Exception("BigQuery job failed: " . ($errorResult['message'] ?? 'Unknown error'));
-                }
-            }
-
-            error_log("BigQuery: Query executed successfully in location '$queryLocation'");
-            return new Result($job);
-
-        } catch (ServiceException $e) {
-            // Log sanitized error message
-            $safeMessage = preg_replace('/project[s]?[\\s:]+[a-z0-9\\-]+/i', 'project: [REDACTED]', $e->getMessage());
-            error_log("BigQuery query error: " . $safeMessage);
-            
-            // Handle location-specific errors
-            if (strpos($e->getMessage(), 'location') !== false) {
-                error_log("BigQuery: Location-related error. Current location: " . ($this->config['location'] ?? 'NOT_SET'));
-            }
-            
-            return false;
-        } catch (Exception $e) {
-            $safeMessage = preg_replace('/project[s]?[\\s:]+[a-z0-9\\-]+/i', 'project: [REDACTED]', $e->getMessage());
-            error_log("BigQuery query error: " . $safeMessage);
-            return false;
-        }
-    }
-
-    /**
      * Determine the best location for query execution
      *
      * @return string Location to use for query execution
      */
     private function determineQueryLocation() {
-        // Priority order for location determination:
-        // 1. Current dataset location (if dataset is selected)
-        // 2. Connection config location
-        // 3. Environment variable
-        // 4. US as fallback
-        
-        // If we have a selected dataset, use its location
+        // 優先順位：選択されたデータセット位置 > 設定位置 > 環境変数 > US
         if (!empty($this->datasetId)) {
             try {
                 $dataset = $this->bigQueryClient->dataset($this->datasetId);
                 $datasetInfo = $dataset->info();
                 $datasetLocation = $datasetInfo['location'] ?? null;
                 
-                if ($datasetLocation) {
-                    // Update our config if dataset location differs
-                    if ($datasetLocation !== ($this->config['location'] ?? '')) {
-                        error_log("BigQuery: Using dataset location '$datasetLocation' for query execution");
-                        $this->config['location'] = $datasetLocation;
-                    }
+                if ($datasetLocation && $datasetLocation !== ($this->config['location'] ?? '')) {
+                    error_log("BigQuery: Using dataset location '$datasetLocation' for query execution");
+                    $this->config['location'] = $datasetLocation;
                     return $datasetLocation;
                 }
             } catch (Exception $e) {
@@ -365,24 +952,7 @@ class Db {
             }
         }
 
-        // Fall back to config location
-        $configLocation = $this->config['location'] ?? null;
-        if ($configLocation) {
-            return $configLocation;
-        }
-
-        // Fall back to environment variable
-        $envLocation = getenv('BIGQUERY_LOCATION');
-        if ($envLocation) {
-            error_log("BigQuery: Using environment location '$envLocation' for query execution");
-            $this->config['location'] = $envLocation;
-            return $envLocation;
-        }
-
-        // Final fallback to US
-        error_log("BigQuery: No specific location configured, using 'US' as fallback");
-        $this->config['location'] = 'US';
-        return 'US';
+        return $this->config['location'] ?? 'US';
     }
 
     /**
@@ -394,13 +964,11 @@ class Db {
     public function select_db($database) {
         try {
             $dataset = $this->bigQueryClient->dataset($database);
-            $dataset->reload(); // Test if dataset exists
+            $dataset->reload();
             
-            // Get dataset info to retrieve its location
             $datasetInfo = $dataset->info();
             $datasetLocation = $datasetInfo['location'] ?? 'US';
             
-            // Update our config location to match the dataset location
             $previousLocation = $this->config['location'] ?? 'US';
             if ($datasetLocation !== $previousLocation) {
                 error_log("BigQuery: Dataset '$database' is in location '$datasetLocation', updating connection from '$previousLocation'");
@@ -412,21 +980,27 @@ class Db {
             return true;
             
         } catch (ServiceException $e) {
-            $safeMessage = preg_replace('/dataset[s]?[\\s:]+[a-z0-9\\-_]+/i', 'dataset: [REDACTED]', $e->getMessage());
-            error_log("BigQuery dataset selection error: " . $safeMessage);
-            
-            // Provide more specific error information
-            if (strpos($e->getMessage(), '404') !== false || strpos($e->getMessage(), 'Not found') !== false) {
-                error_log("BigQuery: Dataset '$database' not found in project '{$this->projectId}'");
-            } elseif (strpos($e->getMessage(), 'permission') !== false || strpos($e->getMessage(), '403') !== false) {
-                error_log("BigQuery: Access denied to dataset '$database'");
-            }
-            
+            $this->logDatasetError($e, $database);
             return false;
         } catch (Exception $e) {
-            $safeMessage = preg_replace('/dataset[s]?[\\s:]+[a-z0-9\\-_]+/i', 'dataset: [REDACTED]', $e->getMessage());
-            error_log("BigQuery dataset selection error: " . $safeMessage);
+            BigQueryUtils::logQuerySafely($e->getMessage(), 'DATASET_ERROR');
             return false;
+        }
+    }
+
+    /**
+     * データセットエラーのログ出力
+     * @param ServiceException $e
+     * @param string $database
+     */
+    private function logDatasetError($e, $database) {
+        $message = $e->getMessage();
+        if (strpos($message, '404') !== false || strpos($message, 'Not found') !== false) {
+            error_log("BigQuery: Dataset '$database' not found in project '{$this->projectId}'");
+        } elseif (strpos($message, 'permission') !== false || strpos($message, '403') !== false) {
+            error_log("BigQuery: Access denied to dataset '$database'");
+        } else {
+            BigQueryUtils::logQuerySafely($message, 'DATASET_ERROR');
         }
     }
 
@@ -437,7 +1011,7 @@ class Db {
      * @return string Quoted identifier
      */
     public function quote($idf) {
-        return "`" . str_replace("`", "\\\\`", $idf) . "`";
+        return BigQueryUtils::escapeIdentifier($idf);
     }
 
     /**
@@ -446,7 +1020,6 @@ class Db {
      * @return string Error message
      */
     public function error() {
-        // Error logging is handled in individual methods
         return "Check server logs for detailed error information";
     }
 }
@@ -726,40 +1299,8 @@ class Driver {
      * @return mixed Formatted value
      */
     function value($val, array $field) {
-        // For BigQuery, handle specific data type conversions for display
-        
-        // Handle null values
-        if ($val === null) {
-            return null;
-        }
-        
-        // Handle complex types that may be JSON encoded
-        if (preg_match('~json~i', $field['type']) || preg_match('~struct|record|array~i', $field['type'])) {
-            // If it's already a JSON string, return as-is
-            if (is_string($val) && (substr($val, 0, 1) === '{' || substr($val, 0, 1) === '[')) {
-                return $val;
-            }
-            // If it's an array or object, convert to JSON
-            if (is_array($val) || is_object($val)) {
-                return json_encode($val);
-            }
-        }
-        
-        // Handle geography types - convert to text representation
-        if (preg_match('~geography~i', $field['type'])) {
-            if (is_string($val)) {
-                return $val; // Already converted to text by convert_field()
-            }
-        }
-        
-        // Handle binary data (bytes)
-        if (preg_match('~bytes|blob~i', $field['type']) && is_string($val)) {
-            // Return binary data as-is for download handling
-            return $val;
-        }
-        
-        // For all other types, return the value as-is
-        return $val;
+        // 統一された型処理を使用
+        return BigQueryUtils::formatComplexValue($val, $field);
     }
 
 	/** Convert field in select and edit
@@ -767,15 +1308,8 @@ class Driver {
 	* @return string|void
 	*/
 	function convert_field(array $field) {
-		// BigQuery specific field conversions for display
-		if (preg_match('~geography~i', $field['type'])) {
-			return "ST_AsText(" . idf_escape($field['field']) . ")";
-		}
-		if (preg_match('~json~i', $field['type'])) {
-			return "TO_JSON_STRING(" . idf_escape($field['field']) . ")";
-		}
-		// Default: no conversion needed for most BigQuery types
-		return null;
+		// 統一されたフィールド変換処理を使用
+		return BigQueryUtils::generateFieldConversion($field);
 	}
 
 	// Removed idf_escape method - using namespace-level function instead
@@ -918,20 +1452,67 @@ function logged_user() {
 
 function get_databases($flush = false) {
     global $connection;
+    
+    // パフォーマンス計測開始
+    BigQueryProfiler::start('get_databases');
+    
+    // 【永続キャッシュ】APCuによるプロセス間キャッシュ共有
+    $cacheKey = 'bq_databases_' . ($connection ? $connection->projectId : 'default');
+    $cacheTime = 300; // 5分間キャッシュ
+    
+    // APCuキャッシュから取得を試行
+    if (!$flush && function_exists('apcu_exists') && apcu_exists($cacheKey)) {
+        $cached = apcu_fetch($cacheKey);
+        if ($cached !== false) {
+            error_log("get_databases: Using APCu cached result (" . count($cached) . " datasets)");
+            BigQueryProfiler::end('get_databases');
+            return $cached;
+        }
+    }
+    
+    // 【フォールバック】静的キャッシュ
+    static $staticCache = [];
+    $staticKey = $connection ? $connection->projectId : 'default';
+    
+    if (!$flush && isset($staticCache[$staticKey])) {
+        error_log("get_databases: Using static cached result (" . count($staticCache[$staticKey]) . " datasets)");
+        BigQueryProfiler::end('get_databases');
+        return $staticCache[$staticKey];
+    }
 
     if (!$connection || !$connection->bigQueryClient) {
+        BigQueryProfiler::end('get_databases');
         return [];
     }
 
     try {
+        // 【最適化】maxResultsで制限して大量取得を避ける
         $datasets = [];
-        foreach ($connection->bigQueryClient->datasets() as $dataset) {
+        $datasetsIterator = $connection->bigQueryClient->datasets([
+            'maxResults' => 100  // 一度に大量取得を避ける
+        ]);
+        
+        foreach ($datasetsIterator as $dataset) {
             $datasets[] = $dataset->id();
         }
         sort($datasets);
+        
+        // 【永続キャッシュ】APCuに保存
+        if (function_exists('apcu_store')) {
+            apcu_store($cacheKey, $datasets, $cacheTime);
+            error_log("get_databases: Stored to APCu cache (" . count($datasets) . " datasets)");
+        }
+        
+        // 静的キャッシュにも保存（フォールバック用）
+        $staticCache[$staticKey] = $datasets;
+        
+        error_log("get_databases: Retrieved and cached " . count($datasets) . " datasets");
+        
+        BigQueryProfiler::end('get_databases');
         return $datasets;
     } catch (Exception $e) {
         error_log("Error listing datasets: " . $e->getMessage());
+        BigQueryProfiler::end('get_databases');
         return [];
     }
 }
@@ -940,7 +1521,11 @@ function get_databases($flush = false) {
 function tables_list($database = '') {
     global $connection;
 
+    // パフォーマンス計測開始
+    BigQueryProfiler::start('tables_list');
+    
     if (!$connection || !$connection->bigQueryClient) {
+        BigQueryProfiler::end('tables_list');
         return [];
     }
 
@@ -957,7 +1542,30 @@ function tables_list($database = '') {
         
         if (empty($actualDatabase)) {
             error_log("tables_list: No database (dataset) context available");
+            BigQueryProfiler::end('tables_list');
             return [];
+        }
+        
+        // 【永続キャッシュ】APCuによるプロセス間キャッシュ共有
+        $cacheKey = 'bq_tables_' . $connection->projectId . '_' . $actualDatabase;
+        $cacheTime = 300; // 5分間キャッシュ
+        
+        // APCuキャッシュから取得を試行
+        if (function_exists('apcu_exists') && apcu_exists($cacheKey)) {
+            $cached = apcu_fetch($cacheKey);
+            if ($cached !== false) {
+                error_log("tables_list: Using APCu cached result for dataset '$actualDatabase' (" . count($cached) . " tables)");
+                BigQueryProfiler::end('tables_list');
+                return $cached;
+            }
+        }
+        
+        // 【フォールバック】静的キャッシュ
+        static $staticCache = [];
+        if (isset($staticCache[$actualDatabase])) {
+            error_log("tables_list: Using static cached result for dataset '$actualDatabase' (" . count($staticCache[$actualDatabase]) . " tables)");
+            BigQueryProfiler::end('tables_list');
+            return $staticCache[$actualDatabase];
         }
         
         error_log("tables_list called with database: '$database', using actual: '$actualDatabase'");
@@ -965,13 +1573,37 @@ function tables_list($database = '') {
         $dataset = $connection->bigQueryClient->dataset($actualDatabase);
         $tables = [];
 
-        foreach ($dataset->tables() as $table) {
-            $tables[$table->id()] = 'table';
-        }
+        // 【最適化】ページネーション付きで取得してN+1問題を回避
+        $pageToken = null;
+        do {
+            $options = ['maxResults' => 100];
+            if ($pageToken) {
+                $options['pageToken'] = $pageToken;
+            }
 
+            $result = $dataset->tables($options);
+            foreach ($result as $table) {
+                $tables[$table->id()] = 'table';
+            }
+            $pageToken = $result->nextResultToken();
+        } while ($pageToken);
+
+        // 【永続キャッシュ】APCuに保存
+        if (function_exists('apcu_store')) {
+            apcu_store($cacheKey, $tables, $cacheTime);
+            error_log("tables_list: Stored to APCu cache (" . count($tables) . " tables)");
+        }
+        
+        // 静的キャッシュにも保存（フォールバック用）
+        $staticCache[$actualDatabase] = $tables;
+        
+        error_log("tables_list: Retrieved and cached " . count($tables) . " tables for dataset '$actualDatabase'");
+        
+        BigQueryProfiler::end('tables_list');
         return $tables;
     } catch (Exception $e) {
         error_log("Error listing tables for database '$database' (actual: '$actualDatabase'): " . $e->getMessage());
+        BigQueryProfiler::end('tables_list');
         return [];
     }
 }
@@ -1125,99 +1757,18 @@ function convertAdminerWhereToBigQuery($condition) {
     return $condition;
 }
 
-/**
- * Safely log BigQuery queries by masking sensitive data
- *
- * @param string $query The SQL query to log
- * @param string $context Optional context for logging (e.g., "SELECT", "QUERY")
- * @return void
- */
-function logQuerySafely($query, $context = "QUERY") {
-    // Mask sensitive data in WHERE clauses and string literals
-    $safeQuery = $query;
-    
-    // Mask string literals that might contain sensitive data
-    $safeQuery = preg_replace('/([\'"])[^\'"]*\1/', '$1***REDACTED***$1', $safeQuery);
-    
-    // Mask potential sensitive patterns in WHERE clauses
-    $safeQuery = preg_replace('/(WHERE\s+[^=]+\s*=\s*)[\'"][^\'"]*[\'"]/', '$1***REDACTED***', $safeQuery);
-    
-    // Mask email patterns
-    $safeQuery = preg_replace('/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/', '***EMAIL_REDACTED***', $safeQuery);
-    
-    // Limit query length in logs
-    if (strlen($safeQuery) > 200) {
-        $safeQuery = substr($safeQuery, 0, 200) . '... [TRUNCATED]';
-    }
-    
-    error_log("BigQuery $context: $safeQuery");
-}
+// 重複削除: logQuerySafely関数 -> BigQueryUtils::logQuerySafely()に統一
 
-/**
- * Map BigQuery data types to Adminer-compatible types
- *
- * @param string $bigQueryType BigQuery type string
- * @return array Type information with 'type' and optional 'length'
- */
-function mapBigQueryTypeToAdminer($bigQueryType) {
-    // Handle parameterized types (e.g., STRING(100), NUMERIC(10,2))
-    $baseType = preg_replace('/\(.*\)/', '', $bigQueryType);
-    
-    switch (strtoupper($baseType)) {
-        case 'STRING':
-        case 'BYTES':
-            return ['type' => 'varchar', 'length' => null];
-        
-        case 'INT64':
-        case 'INTEGER':
-            return ['type' => 'bigint', 'length' => null];
-        
-        case 'FLOAT64':
-        case 'FLOAT':
-            return ['type' => 'double', 'length' => null];
-        
-        case 'NUMERIC':
-        case 'BIGNUMERIC':
-            return ['type' => 'decimal', 'length' => null];
-        
-        case 'BOOLEAN':
-        case 'BOOL':
-            return ['type' => 'tinyint', 'length' => 1];
-        
-        case 'DATE':
-            return ['type' => 'date', 'length' => null];
-        
-        case 'TIME':
-            return ['type' => 'time', 'length' => null];
-        
-        case 'DATETIME':
-            return ['type' => 'datetime', 'length' => null];
-        
-        case 'TIMESTAMP':
-            return ['type' => 'timestamp', 'length' => null];
-        
-        case 'GEOGRAPHY':
-            return ['type' => 'geometry', 'length' => null];
-        
-        case 'JSON':
-            return ['type' => 'json', 'length' => null];
-        
-        case 'ARRAY':
-            return ['type' => 'text', 'length' => null]; // Arrays displayed as text
-        
-        case 'STRUCT':
-        case 'RECORD':
-            return ['type' => 'text', 'length' => null]; // Structs displayed as text
-        
-        default:
-            return ['type' => 'text', 'length' => null]; // Fallback for unknown types
-    }
-}
+// 重複削除: mapBigQueryTypeToAdminer関数 -> BigQueryConfig::mapType()に統一
 
 function fields($table) {
     global $connection;
 
+    // パフォーマンス計測開始
+    BigQueryProfiler::start('fields');
+
     if (!$connection || !$connection->bigQueryClient) {
+        BigQueryProfiler::end('fields');
         return [];
     }
 
@@ -1227,7 +1778,33 @@ function fields($table) {
         
         if (empty($database)) {
             error_log("fields: No database (dataset) context available for table '$table'");
+            BigQueryProfiler::end('fields');
             return [];
+        }
+
+        // 【永続キャッシュ】APCuによるプロセス間キャッシュ共有
+        $cacheKey = 'bq_fields_' . $connection->projectId . '_' . $database . '_' . $table;
+        $cacheTime = 600; // 10分間キャッシュ（フィールド情報は変更頻度が低い）
+        
+        // APCuキャッシュから取得を試行
+        if (function_exists('apcu_exists') && apcu_exists($cacheKey)) {
+            $cached = apcu_fetch($cacheKey);
+            if ($cached !== false) {
+                error_log("fields: Using APCu cached result for table '$table' (" . count($cached) . " fields)");
+                BigQueryProfiler::end('fields');
+                return $cached;
+            }
+        }
+        
+        // 【フォールバック】静的キャッシュ
+        static $staticFieldCache = [];
+        static $typeCache = [];
+        $staticKey = "$database.$table";
+        
+        if (isset($staticFieldCache[$staticKey])) {
+            error_log("fields: Using static cached result for table '$table' (" . count($staticFieldCache[$staticKey]) . " fields)");
+            BigQueryProfiler::end('fields');
+            return $staticFieldCache[$staticKey];
         }
 
         error_log("fields called for table: '$table' in database: '$database'");
@@ -1235,24 +1812,30 @@ function fields($table) {
         $dataset = $connection->bigQueryClient->dataset($database);
         $tableObj = $dataset->table($table);
         
-        // Check if table exists first
-        if (!$tableObj->exists()) {
-            error_log("Table '$table' does not exist in dataset '$database'");
+        // 【最適化】不要なexists()チェックを削除し、直接info()を取得
+        // テーブルが存在しない場合はExceptionでキャッチ
+        try {
+            $tableInfo = $tableObj->info();
+        } catch (Exception $e) {
+            error_log("Table '$table' does not exist in dataset '$database' or access error: " . $e->getMessage());
+            BigQueryProfiler::end('fields');
             return [];
         }
-        
-        $tableInfo = $tableObj->info();
 
         if (!isset($tableInfo['schema']['fields'])) {
             error_log("No schema fields found for table '$table'");
+            BigQueryProfiler::end('fields');
             return [];
         }
 
         $fields = [];
         foreach ($tableInfo['schema']['fields'] as $field) {
-            // Map BigQuery types to MySQL-compatible types for Adminer
+            // 【最適化】型変換結果をキャッシュ
             $bigQueryType = $field['type'] ?? 'STRING';
-            $adminerTypeInfo = mapBigQueryTypeToAdminer($bigQueryType);
+            if (!isset($typeCache[$bigQueryType])) {
+                $typeCache[$bigQueryType] = BigQueryConfig::mapType($bigQueryType);
+            }
+            $adminerTypeInfo = $typeCache[$bigQueryType];
             
             // Extract length information if present in BigQuery type
             $length = null;
@@ -1280,10 +1863,22 @@ function fields($table) {
             ];
         }
 
-        error_log("fields: Successfully retrieved " . count($fields) . " fields for table '$table'");
+        // 【永続キャッシュ】APCuに保存
+        if (function_exists('apcu_store')) {
+            apcu_store($cacheKey, $fields, $cacheTime);
+            error_log("fields: Stored to APCu cache (" . count($fields) . " fields)");
+        }
+        
+        // 静的キャッシュにも保存（フォールバック用）
+        $staticFieldCache[$staticKey] = $fields;
+        
+        error_log("fields: Successfully retrieved and cached " . count($fields) . " fields for table '$table'");
+        
+        BigQueryProfiler::end('fields');
         return $fields;
     } catch (Exception $e) {
         error_log("Error getting table fields for '$table': " . $e->getMessage());
+        BigQueryProfiler::end('fields');
         return [];
     }
 }
@@ -1374,7 +1969,7 @@ function select($table, array $select, array $where, array $group, array $order 
             }
         }
 
-        logQuerySafely($query, "SELECT");
+        BigQueryUtils::logQuerySafely($query, "SELECT");
         
         // Execute query using the connection's query method
         return $connection->query($query);
@@ -1391,15 +1986,8 @@ function select($table, array $select, array $where, array $group, array $order 
 */
 if (!function_exists('convert_field')) {
     function convert_field(array $field) {
-        // BigQuery specific field conversions for display
-        if (preg_match('~geography~i', $field['type'])) {
-            return "ST_AsText(" . idf_escape($field['field']) . ")";
-        }
-        if (preg_match('~json~i', $field['type'])) {
-            return "TO_JSON_STRING(" . idf_escape($field['field']) . ")";
-        }
-        // Default: no conversion needed for most BigQuery types
-        return null;
+        // 統一されたフィールド変換処理を使用
+        return BigQueryUtils::generateFieldConversion($field);
     }
 }
 
@@ -1445,6 +2033,155 @@ if (!function_exists('found_rows')) {
         // Return null to indicate count is not readily available
         return null;
     }
+
+/**
+ * BigQuery Performance Profiler
+ * 各操作の実行時間を計測し、パフォーマンスボトルネックを特定する
+ */
+class BigQueryProfiler {
+    /** @var array 計測開始時刻を格納 */
+    private static $timers = [];
+    
+    /** @var array 操作実行回数を格納 */
+    private static $counters = [];
+    
+    /** @var array 累計実行時間を格納 */
+    private static $totalTimes = [];
+    
+    /** @var float パフォーマンス警告閾値（秒） */
+    private static $warningThreshold = 2.0;
+    
+    /** @var float 深刻なパフォーマンス問題閾値（秒） */
+    private static $criticalThreshold = 5.0;
+
+    /**
+     * 操作の計測を開始
+     *
+     * @param string $operation 操作名
+     * @return void
+     */
+    public static function start($operation) {
+        self::$timers[$operation] = microtime(true);
+        self::$counters[$operation] = (self::$counters[$operation] ?? 0) + 1;
+    }
+
+    /**
+     * 操作の計測を終了し、結果をログに記録
+     *
+     * @param string $operation 操作名
+     * @return float|null 実行時間（秒）、計測が開始されていない場合はnull
+     */
+    public static function end($operation) {
+        if (!isset(self::$timers[$operation])) {
+            error_log("BigQuery Profiler: Timer not started for operation '$operation'");
+            return null;
+        }
+
+        $duration = microtime(true) - self::$timers[$operation];
+        unset(self::$timers[$operation]);
+        
+        // 累計時間を更新
+        self::$totalTimes[$operation] = (self::$totalTimes[$operation] ?? 0) + $duration;
+        
+        // 基本的な実行時間ログ
+        error_log(sprintf("BigQuery %s: %.3fs (call #%d)", 
+            $operation, 
+            $duration, 
+            self::$counters[$operation]
+        ));
+
+        // パフォーマンス警告の判定
+        if ($duration >= self::$criticalThreshold) {
+            error_log(sprintf("CRITICAL PERFORMANCE WARNING: %s took %.3fs - investigate immediately!", 
+                $operation, $duration));
+        } elseif ($duration >= self::$warningThreshold) {
+            error_log(sprintf("PERFORMANCE WARNING: %s took %.3fs - consider optimization", 
+                $operation, $duration));
+        }
+        
+        return $duration;
+    }
+
+    /**
+     * 操作統計の取得
+     *
+     * @param string|null $operation 特定操作の統計、nullの場合は全操作
+     * @return array 統計情報
+     */
+    public static function getStats($operation = null) {
+        if ($operation !== null) {
+            return [
+                'operation' => $operation,
+                'call_count' => self::$counters[$operation] ?? 0,
+                'total_time' => self::$totalTimes[$operation] ?? 0,
+                'average_time' => self::$counters[$operation] > 0 
+                    ? (self::$totalTimes[$operation] ?? 0) / self::$counters[$operation] 
+                    : 0
+            ];
+        }
+
+        $stats = [];
+        foreach (self::$counters as $op => $count) {
+            $totalTime = self::$totalTimes[$op] ?? 0;
+            $stats[$op] = [
+                'call_count' => $count,
+                'total_time' => $totalTime,
+                'average_time' => $count > 0 ? $totalTime / $count : 0
+            ];
+        }
+        
+        return $stats;
+    }
+
+    /**
+     * パフォーマンスサマリーをログに出力
+     *
+     * @return void
+     */
+    public static function logSummary() {
+        $stats = self::getStats();
+        
+        if (empty($stats)) {
+            error_log("BigQuery Profiler: No performance data available");
+            return;
+        }
+
+        error_log("=== BigQuery Performance Summary ===");
+        
+        // 実行時間順にソート
+        uasort($stats, function($a, $b) {
+            return $b['total_time'] <=> $a['total_time'];
+        });
+        
+        foreach ($stats as $operation => $data) {
+            error_log(sprintf("  %s: %d calls, %.3fs total, %.3fs avg", 
+                $operation,
+                $data['call_count'],
+                $data['total_time'],
+                $data['average_time']
+            ));
+        }
+        
+        error_log("=== End Performance Summary ===");
+    }
+
+    /**
+     * 全統計データをクリア
+     *
+     * @return void
+     */
+    public static function reset() {
+        self::$timers = [];
+        self::$counters = [];
+        self::$totalTimes = [];
+        error_log("BigQuery Profiler: Statistics reset");
+    }
+}
+
+// シャットダウン時にパフォーマンスサマリーを自動出力
+register_shutdown_function(function() {
+    BigQueryProfiler::logSummary();
+});
 }
 
 // Close the if block for BigQuery driver
