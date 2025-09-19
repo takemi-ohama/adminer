@@ -698,145 +698,6 @@ class Driver {
         return [];
     }
 
-    /**
-     * Execute a SELECT query with BigQuery-compatible SQL
-     * Enhanced with security validations and better error handling
-     *
-     * @param string $table Table name
-     * @param array $select Selected columns (* for all)
-     * @param array $where WHERE conditions
-     * @param array $group GROUP BY columns  
-     * @param array $order ORDER BY specifications
-     * @param int $limit LIMIT count
-     * @param int $page Page number (for OFFSET calculation)
-     * @param bool $print Whether to print query
-     * @return Result|false Query result or false on error
-     */
-    function select($table, array $select, array $where, array $group, array $order = array(), $limit = 1, $page = 0, $print = false) {
-        global $connection;
-        
-        if (!$connection || !$connection->bigQueryClient) {
-            error_log("BigQuery: No valid connection available for select operation");
-            return false;
-        }
-
-        try {
-            // Input validation for security
-            if (!is_string($table) || empty($table)) {
-                throw new InvalidArgumentException('Table name must be a non-empty string');
-            }
-            
-            // Validate table name format (alphanumeric, underscore, dash)
-            if (!preg_match('/^[a-zA-Z0-9_-]+$/', $table)) {
-                throw new InvalidArgumentException('Invalid table name format');
-            }
-            
-            // Validate column names for security
-            foreach ($select as $col) {
-                if ($col !== '*' && !preg_match('/^[a-zA-Z0-9_]+$/', $col)) {
-                    throw new InvalidArgumentException('Invalid column name format: ' . $col);
-                }
-            }
-            
-            // Validate GROUP BY columns
-            foreach ($group as $col) {
-                if (!preg_match('/^[a-zA-Z0-9_]+$/', $col)) {
-                    throw new InvalidArgumentException('Invalid GROUP BY column format: ' . $col);
-                }
-            }
-            
-            // Validate ORDER BY specifications
-            foreach ($order as $orderSpec) {
-                if (!preg_match('/^[a-zA-Z0-9_]+(\s+(ASC|DESC))?$/i', $orderSpec)) {
-                    throw new InvalidArgumentException('Invalid ORDER BY specification: ' . $orderSpec);
-                }
-            }
-            
-            // Validate LIMIT and page parameters
-            $limit = (int)$limit;
-            $page = (int)$page;
-            
-            if ($limit < 0 || $limit > 10000) {
-                throw new InvalidArgumentException('LIMIT must be between 0 and 10000');
-            }
-            
-            if ($page < 0 || $page > 1000) {
-                throw new InvalidArgumentException('Page must be between 0 and 1000');
-            }
-
-            // Build BigQuery-compatible SELECT statement
-            $selectClause = ($select == array("*")) ? "*" : implode(", ", array_map(function($col) {
-                return "`" . str_replace("`", "``", $col) . "`";
-            }, $select));
-
-            $database = $_GET['db'] ?? $connection->datasetId ?? '';
-            if (empty($database)) {
-                error_log("BigQuery: No database context available for select operation");
-                return false;
-            }
-
-            // Construct fully qualified table name for BigQuery
-            $fullTableName = "`" . $connection->projectId . "`.`" . $database . "`.`" . $table . "`";
-            
-            $query = "SELECT $selectClause FROM $fullTableName";
-
-            // Add WHERE conditions (each condition will be validated by convertAdminerWhereToBigQuery)
-            if (!empty($where)) {
-                $whereClause = [];
-                foreach ($where as $condition) {
-                    // This function now includes security validation
-                    $whereClause[] = convertAdminerWhereToBigQuery($condition);
-                }
-                $query .= " WHERE " . implode(" AND ", $whereClause);
-            }
-
-            // Add GROUP BY
-            if (!empty($group)) {
-                $query .= " GROUP BY " . implode(", ", array_map(function($col) {
-                    return "`" . str_replace("`", "``", $col) . "`";
-                }, $group));
-            }
-
-            // Add ORDER BY
-            if (!empty($order)) {
-                $orderClause = [];
-                foreach ($order as $orderSpec) {
-                    // Handle "column DESC" format
-                    if (preg_match('/^(.+?)\s+(DESC|ASC)$/i', $orderSpec, $matches)) {
-                        $orderClause[] = "`" . str_replace("`", "``", $matches[1]) . "` " . $matches[2];
-                    } else {
-                        $orderClause[] = "`" . str_replace("`", "``", $orderSpec) . "`";
-                    }
-                }
-                $query .= " ORDER BY " . implode(", ", $orderClause);
-            }
-
-            // Add LIMIT and OFFSET
-            if ($limit > 0) {
-                $query .= " LIMIT " . $limit;
-                if ($page > 0) {
-                    $offset = $page * $limit;
-                    $query .= " OFFSET " . $offset;
-                }
-            }
-
-            if ($print) {
-                echo "<p><code>" . htmlspecialchars($query) . "</code></p>";
-            }
-
-            logQuerySafely($query, "SELECT");
-            
-            // Execute query using the connection's query method
-            return $connection->query($query);
-
-        } catch (InvalidArgumentException $e) {
-            error_log("BigQuery select validation error: " . $e->getMessage());
-            return false;
-        } catch (Exception $e) {
-            error_log("BigQuery select error: " . $e->getMessage());
-            return false;
-        }
-    }
 
     /**
      * Format field value for display and processing
@@ -1486,7 +1347,12 @@ function select($table, array $select, array $where, array $group, array $order 
         }
 
         if ($print) {
-            echo "<p><code>" . htmlspecialchars($query) . "</code></p>";
+            // Use Adminer's h() function for XSS protection if available, otherwise fallback
+            if (function_exists('h')) {
+                echo "<p><code>" . h($query) . "</code></p>";
+            } else {
+                echo "<p><code>" . htmlspecialchars($query, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "</code></p>";
+            }
         }
 
         logQuerySafely($query, "SELECT");
@@ -1524,7 +1390,13 @@ if (!function_exists('error')) {
     function error() {
         global $connection;
         if ($connection) {
-            return h($connection->error());
+            $errorMsg = $connection->error();
+            // Use Adminer's h() function for XSS protection if available, otherwise fallback
+            if (function_exists('h')) {
+                return h($errorMsg);
+            } else {
+                return htmlspecialchars($errorMsg, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            }
         }
         return '';
     }
