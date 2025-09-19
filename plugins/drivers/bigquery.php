@@ -71,12 +71,28 @@ class Db {
             }
 
             $this->projectId = $projectId;
-            $location = isset($parts[1]) ? $parts[1] : 'US';
+            
+            // Determine location priority order:
+            // 1. Explicit location in server parameter (project:location)
+            // 2. Environment variable BIGQUERY_LOCATION
+            // 3. Detect from first dataset location
+            // 4. Use 'US' as fallback
+            $location = null;
+            
+            if (isset($parts[1]) && !empty($parts[1])) {
+                $location = $parts[1];
+            } elseif (getenv('BIGQUERY_LOCATION')) {
+                $location = getenv('BIGQUERY_LOCATION');
+            }
+            
+            // If no explicit location, we'll auto-detect from datasets later
+            // For now, use 'US' as temporary default for client initialization
+            $defaultLocation = $location ?? 'US';
 
             // Initialize BigQuery client with service account authentication
             $this->config = [
                 'projectId' => $this->projectId,
-                'location' => $location
+                'location' => $defaultLocation
             ];
 
             // Check for custom credentials path from form input
@@ -113,10 +129,20 @@ class Db {
 
             $this->bigQueryClient = new BigQueryClient($this->config);
 
+            // If location was not explicitly set, try to auto-detect from datasets
+            if (!$location) {
+                $autoDetectedLocation = $this->detectLocationFromDatasets();
+                if ($autoDetectedLocation && $autoDetectedLocation !== $defaultLocation) {
+                    $this->config['location'] = $autoDetectedLocation;
+                    error_log("BigQuery: Auto-detected location '$autoDetectedLocation' from project datasets");
+                }
+            }
+
             // Test connection by attempting to list datasets
             $datasets = $this->bigQueryClient->datasets(['maxResults' => 1]);
             iterator_to_array($datasets); // Force API call
 
+            error_log("BigQuery: Connected to project '{$this->projectId}' with location '{$this->config['location']}'");
             return true;
 
         } catch (ServiceException $e) {
@@ -142,6 +168,41 @@ class Db {
             }
             
             return false;
+        }
+    }
+
+    /**
+     * Auto-detect BigQuery location from existing datasets
+     *
+     * @return string|null Detected location or null if detection failed
+     */
+    private function detectLocationFromDatasets() {
+        try {
+            $datasets = $this->bigQueryClient->datasets(['maxResults' => 10]);
+            $locationCounts = [];
+            
+            foreach ($datasets as $dataset) {
+                $datasetInfo = $dataset->info();
+                $location = $datasetInfo['location'] ?? 'US';
+                $locationCounts[$location] = ($locationCounts[$location] ?? 0) + 1;
+            }
+            
+            if (empty($locationCounts)) {
+                return null;
+            }
+            
+            // Return the most common location
+            arsort($locationCounts);
+            $mostCommonLocation = array_key_first($locationCounts);
+            
+            error_log("BigQuery: Location distribution in project: " . json_encode($locationCounts) . 
+                     ", selected: $mostCommonLocation");
+            
+            return $mostCommonLocation;
+            
+        } catch (Exception $e) {
+            error_log("BigQuery: Failed to auto-detect location: " . $e->getMessage());
+            return null;
         }
     }
 
@@ -191,30 +252,102 @@ class Db {
             // Validate query for read-only safety
             $this->validateReadOnlyQuery($query);
 
+            // Determine the appropriate location for query execution
+            $queryLocation = $this->determineQueryLocation();
+
             // Configure query job with correct BigQuery API
-            $job = $this->bigQueryClient->runQuery(
-                $this->bigQueryClient->query($query)
-                    ->useLegacySql(false)
-                    ->location($this->config['location'] ?? 'US')
-            );
+            $queryJob = $this->bigQueryClient->query($query)
+                ->useLegacySql(false)
+                ->location($queryLocation)
+                ->useQueryCache(true); // Enable query cache for better performance
+
+            $job = $this->bigQueryClient->runQuery($queryJob);
 
             // Wait for job completion if needed
             if (!$job->isComplete()) {
                 $job->waitUntilComplete();
             }
 
+            // Check for job errors
+            $jobInfo = $job->info();
+            if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+                $errorResult = $jobInfo['status']['errorResult'] ?? null;
+                if ($errorResult) {
+                    throw new Exception("BigQuery job failed: " . ($errorResult['message'] ?? 'Unknown error'));
+                }
+            }
+
+            error_log("BigQuery: Query executed successfully in location '$queryLocation'");
             return new Result($job);
 
         } catch (ServiceException $e) {
             // Log sanitized error message
             $safeMessage = preg_replace('/project[s]?[\\s:]+[a-z0-9\\-]+/i', 'project: [REDACTED]', $e->getMessage());
             error_log("BigQuery query error: " . $safeMessage);
+            
+            // Handle location-specific errors
+            if (strpos($e->getMessage(), 'location') !== false) {
+                error_log("BigQuery: Location-related error. Current location: " . ($this->config['location'] ?? 'NOT_SET'));
+            }
+            
             return false;
         } catch (Exception $e) {
             $safeMessage = preg_replace('/project[s]?[\\s:]+[a-z0-9\\-]+/i', 'project: [REDACTED]', $e->getMessage());
             error_log("BigQuery query error: " . $safeMessage);
             return false;
         }
+    }
+
+    /**
+     * Determine the best location for query execution
+     *
+     * @return string Location to use for query execution
+     */
+    private function determineQueryLocation() {
+        // Priority order for location determination:
+        // 1. Current dataset location (if dataset is selected)
+        // 2. Connection config location
+        // 3. Environment variable
+        // 4. US as fallback
+        
+        // If we have a selected dataset, use its location
+        if (!empty($this->datasetId)) {
+            try {
+                $dataset = $this->bigQueryClient->dataset($this->datasetId);
+                $datasetInfo = $dataset->info();
+                $datasetLocation = $datasetInfo['location'] ?? null;
+                
+                if ($datasetLocation) {
+                    // Update our config if dataset location differs
+                    if ($datasetLocation !== ($this->config['location'] ?? '')) {
+                        error_log("BigQuery: Using dataset location '$datasetLocation' for query execution");
+                        $this->config['location'] = $datasetLocation;
+                    }
+                    return $datasetLocation;
+                }
+            } catch (Exception $e) {
+                error_log("BigQuery: Failed to get dataset location, falling back to config location");
+            }
+        }
+
+        // Fall back to config location
+        $configLocation = $this->config['location'] ?? null;
+        if ($configLocation) {
+            return $configLocation;
+        }
+
+        // Fall back to environment variable
+        $envLocation = getenv('BIGQUERY_LOCATION');
+        if ($envLocation) {
+            error_log("BigQuery: Using environment location '$envLocation' for query execution");
+            $this->config['location'] = $envLocation;
+            return $envLocation;
+        }
+
+        // Final fallback to US
+        error_log("BigQuery: No specific location configured, using 'US' as fallback");
+        $this->config['location'] = 'US';
+        return 'US';
     }
 
     /**
@@ -227,10 +360,37 @@ class Db {
         try {
             $dataset = $this->bigQueryClient->dataset($database);
             $dataset->reload(); // Test if dataset exists
+            
+            // Get dataset info to retrieve its location
+            $datasetInfo = $dataset->info();
+            $datasetLocation = $datasetInfo['location'] ?? 'US';
+            
+            // Update our config location to match the dataset location
+            $previousLocation = $this->config['location'] ?? 'US';
+            if ($datasetLocation !== $previousLocation) {
+                error_log("BigQuery: Dataset '$database' is in location '$datasetLocation', updating connection from '$previousLocation'");
+                $this->config['location'] = $datasetLocation;
+            }
+            
             $this->datasetId = $database;
+            error_log("BigQuery: Successfully selected dataset '$database' in location '$datasetLocation'");
             return true;
+            
         } catch (ServiceException $e) {
-            error_log("Dataset selection error: " . $e->getMessage());
+            $safeMessage = preg_replace('/dataset[s]?[\\s:]+[a-z0-9\\-_]+/i', 'dataset: [REDACTED]', $e->getMessage());
+            error_log("BigQuery dataset selection error: " . $safeMessage);
+            
+            // Provide more specific error information
+            if (strpos($e->getMessage(), '404') !== false || strpos($e->getMessage(), 'Not found') !== false) {
+                error_log("BigQuery: Dataset '$database' not found in project '{$this->projectId}'");
+            } elseif (strpos($e->getMessage(), 'permission') !== false || strpos($e->getMessage(), '403') !== false) {
+                error_log("BigQuery: Access denied to dataset '$database'");
+            }
+            
+            return false;
+        } catch (Exception $e) {
+            $safeMessage = preg_replace('/dataset[s]?[\\s:]+[a-z0-9\\-_]+/i', 'dataset: [REDACTED]', $e->getMessage());
+            error_log("BigQuery dataset selection error: " . $safeMessage);
             return false;
         }
     }
@@ -297,9 +457,46 @@ class Result {
             if ($this->iterator && $this->iterator->valid()) {
                 $row = $this->iterator->current();
                 $this->iterator->next();
-                $this->currentRow = $row;
+                
+                // Convert array values to strings for Adminer compatibility
+                $processedRow = [];
+                foreach ($row as $key => $value) {
+                    if (is_array($value)) {
+                        // Convert complex types (STRUCT, ARRAY, etc.) to JSON string
+                        $processedRow[$key] = json_encode($value);
+                    } elseif (is_object($value)) {
+                        // Handle DateTime objects specifically
+                        if ($value instanceof \DateTime) {
+                            $processedRow[$key] = $value->format('Y-m-d H:i:s');
+                        } elseif ($value instanceof \DateTimeInterface) {
+                            $processedRow[$key] = $value->format('Y-m-d H:i:s');
+                        } elseif (method_exists($value, 'format')) {
+                            // For Google Cloud DateTime objects that have format method
+                            try {
+                                $processedRow[$key] = $value->format('Y-m-d H:i:s');
+                            } catch (Exception $e) {
+                                // Fallback to string conversion
+                                $processedRow[$key] = (string) $value;
+                            }
+                        } elseif (method_exists($value, '__toString')) {
+                            // Use __toString if available
+                            $processedRow[$key] = (string) $value;
+                        } else {
+                            // Last resort: serialize or convert to string representation
+                            $processedRow[$key] = json_encode($value);
+                        }
+                    } elseif (is_null($value)) {
+                        // Keep null as is
+                        $processedRow[$key] = null;
+                    } else {
+                        // Keep scalar values as is
+                        $processedRow[$key] = $value;
+                    }
+                }
+                
+                $this->currentRow = $processedRow;
                 $this->rowNumber++;
-                return $row;
+                return $processedRow;
             }
             return false;
         } catch (Exception $e) {
@@ -557,6 +754,50 @@ class Driver {
         }
     }
 
+    /**
+     * Format field value for display and processing
+     *
+     * @param mixed $val Field value
+     * @param array $field Field information
+     * @return mixed Formatted value
+     */
+    function value($val, array $field) {
+        // For BigQuery, handle specific data type conversions for display
+        
+        // Handle null values
+        if ($val === null) {
+            return null;
+        }
+        
+        // Handle complex types that may be JSON encoded
+        if (preg_match('~json~i', $field['type']) || preg_match('~struct|record|array~i', $field['type'])) {
+            // If it's already a JSON string, return as-is
+            if (is_string($val) && (substr($val, 0, 1) === '{' || substr($val, 0, 1) === '[')) {
+                return $val;
+            }
+            // If it's an array or object, convert to JSON
+            if (is_array($val) || is_object($val)) {
+                return json_encode($val);
+            }
+        }
+        
+        // Handle geography types - convert to text representation
+        if (preg_match('~geography~i', $field['type'])) {
+            if (is_string($val)) {
+                return $val; // Already converted to text by convert_field()
+            }
+        }
+        
+        // Handle binary data (bytes)
+        if (preg_match('~bytes|blob~i', $field['type']) && is_string($val)) {
+            // Return binary data as-is for download handling
+            return $val;
+        }
+        
+        // For all other types, return the value as-is
+        return $val;
+    }
+
 	/** Convert field in select and edit
 	* @param array $field
 	* @return string|void
@@ -572,6 +813,18 @@ class Driver {
 		// Default: no conversion needed for most BigQuery types
 		return null;
 	}
+
+	// Removed idf_escape method - using namespace-level function instead
+}
+
+/**
+ * Escape identifier for BigQuery
+ *
+ * @param string $idf Identifier to escape
+ * @return string Escaped identifier
+ */
+function idf_escape($idf) {
+    return "`" . str_replace("`", "``", $idf) . "`";
 }
 
 // Global support function for BigQuery features
@@ -759,7 +1012,7 @@ function tables_list($database = '') {
     }
 }
 
-function table_status($database = '') {
+function table_status($name = '', $fast = false) {
     global $connection;
 
     if (!$connection || !$connection->bigQueryClient) {
@@ -768,38 +1021,23 @@ function table_status($database = '') {
     }
 
     try {
-        // In BigQuery context: we need to get the actual dataset, not the table name
-        // The $database parameter might incorrectly contain a table name when called by Adminer
-        $actualDatabase = '';
+        // Get the dataset from URL parameter
+        $database = $_GET['db'] ?? $connection->datasetId ?? '';
         
-        // Always prioritize URL db parameter over the passed database parameter
-        if (!empty($_GET['db'])) {
-            $actualDatabase = $_GET['db'];
-        } elseif (!empty($connection->datasetId)) {
-            $actualDatabase = $connection->datasetId;
-        } elseif (!empty($database) && !isset($_GET['table'])) {
-            // Only use $database parameter if no table parameter is present
-            // This avoids the case where table name is passed as database
-            $actualDatabase = $database;
-        }
-        
-        if (empty($actualDatabase)) {
+        if (empty($database)) {
             error_log("table_status: No database (dataset) context available, returning empty array");
             return [];
         }
         
-        // Check if we're requesting info for a specific table
-        $specificTable = $_GET['table'] ?? '';
+        error_log("table_status called with name param: '$name', fast: " . ($fast ? 'true' : 'false') . ", using database: '$database'");
         
-        error_log("table_status called with database param: '$database', URL db: '" . ($_GET['db'] ?? 'not set') . "', URL table: '" . ($_GET['table'] ?? 'not set') . "', using actual database: '$actualDatabase', specific table: '$specificTable'");
-        
-        $dataset = $connection->bigQueryClient->dataset($actualDatabase);
+        $dataset = $connection->bigQueryClient->dataset($database);
         $tables = [];
 
-        if ($specificTable) {
+        if ($name) {
             // Get info for specific table only - return as indexed array for Adminer compatibility
             try {
-                $table = $dataset->table($specificTable);
+                $table = $dataset->table($name);
                 $tableInfo = $table->info();
                 $result = [
                     'Name' => $table->id(),
@@ -821,37 +1059,43 @@ function table_status($database = '') {
                 ];
                 // Return as indexed array with table name as key for Adminer compatibility
                 $tables[$table->id()] = $result;
-                error_log("table_status: returning specific table info as indexed array");
+                error_log("table_status: returning specific table '$name' info as indexed array");
             } catch (Exception $e) {
-                error_log("Error getting specific table '$specificTable' info: " . $e->getMessage() . ", returning empty array");
+                error_log("Error getting specific table '$name' info: " . $e->getMessage() . ", returning empty array");
                 return [];
             }
         } else {
-            // Get info for all tables in the dataset
+            // Get info for all tables in the dataset (but limit to fast fields if $fast = true)
             foreach ($dataset->tables() as $table) {
                 $tableInfo = $table->info();
                 $result = [
                     'Name' => $table->id(),
                     'Engine' => 'BigQuery', 
-                    'Rows' => $tableInfo['numRows'] ?? 0,
-                    'Data_length' => $tableInfo['numBytes'] ?? 0,
                     'Comment' => $tableInfo['description'] ?? '',
-                    'Type' => $tableInfo['type'] ?? 'TABLE',
-                    // Add additional fields that Adminer may expect
-                    'Collation' => '',
-                    'Auto_increment' => '',
-                    'Create_time' => $tableInfo['creationTime'] ?? '',
-                    'Update_time' => $tableInfo['lastModifiedTime'] ?? '',
-                    'Check_time' => '',
-                    'Data_free' => 0,
-                    'Index_length' => 0,
-                    'Max_data_length' => 0,
-                    'Avg_row_length' => $tableInfo['numRows'] > 0 ? intval(($tableInfo['numBytes'] ?? 0) / $tableInfo['numRows']) : 0,
                 ];
+                
+                // Add additional fields only if not in fast mode
+                if (!$fast) {
+                    $result += [
+                        'Rows' => $tableInfo['numRows'] ?? 0,
+                        'Data_length' => $tableInfo['numBytes'] ?? 0,
+                        'Type' => $tableInfo['type'] ?? 'TABLE',
+                        'Collation' => '',
+                        'Auto_increment' => '',
+                        'Create_time' => $tableInfo['creationTime'] ?? '',
+                        'Update_time' => $tableInfo['lastModifiedTime'] ?? '',
+                        'Check_time' => '',
+                        'Data_free' => 0,
+                        'Index_length' => 0,
+                        'Max_data_length' => 0,
+                        'Avg_row_length' => $tableInfo['numRows'] > 0 ? intval(($tableInfo['numBytes'] ?? 0) / $tableInfo['numRows']) : 0,
+                    ];
+                }
+                
                 // Use table name as key for Adminer compatibility
                 $tables[$table->id()] = $result;
             }
-            error_log("table_status: returning " . count($tables) . " tables as indexed array");
+            error_log("table_status: returning " . count($tables) . " tables as indexed array (fast: " . ($fast ? 'true' : 'false') . ")");
         }
 
         // Ensure we always return an array, never null
@@ -860,7 +1104,7 @@ function table_status($database = '') {
         return $result;
         
     } catch (Exception $e) {
-        error_log("Error getting table status for database param '$database' (actual: '$actualDatabase'): " . $e->getMessage() . ", returning empty array");
+        error_log("Error getting table status for name '$name' (database: '$database'): " . $e->getMessage() . ", returning empty array");
         return [];
     }
 }
@@ -1130,6 +1374,7 @@ if (!function_exists('convert_field')) {
     }
 }
 
+
 /** Get escaped error message (global function for Adminer) */
 if (!function_exists('error')) {
     function error() {
@@ -1138,6 +1383,32 @@ if (!function_exists('error')) {
             return h($connection->error());
         }
         return '';
+    }
+}
+
+/** Get approximate number of rows (global function for Adminer) */
+if (!function_exists('found_rows')) {
+    /**
+     * Get approximate number of rows
+     * @param array $table_status Table status information
+     * @param array $where WHERE conditions
+     * @return int|null Approximate row count or null if not available
+     */
+    function found_rows($table_status, $where) {
+        // If WHERE conditions are present, we can't provide a meaningful estimate
+        // without running a potentially expensive COUNT query
+        if (!empty($where)) {
+            return null;
+        }
+
+        // Return row count from table metadata if available
+        if (isset($table_status['Rows']) && is_numeric($table_status['Rows'])) {
+            return (int)$table_status['Rows'];
+        }
+
+        // For BigQuery, getting exact row counts can be expensive
+        // Return null to indicate count is not readily available
+        return null;
     }
 }
 
