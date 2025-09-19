@@ -67,7 +67,7 @@
     "playwright": {
       "command": "npx",
       "args": [
-        "@modelcontextprotocol/server-playwright@latest"
+        "@playwright/mcp@latest"
       ],
       "env": {},
       "disabled": false
