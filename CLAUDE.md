@@ -155,8 +155,40 @@ mcp__serena__write_memory [name]     # 新しい分析結果保存
 - `adminer_bigquery_analysis`: 詳細なプロジェクト分析結果
 - `pr_creation_workflow`: PR作成手順の記録
 - `directory_structure_update_2025-09`: ディレクトリ構造変更の完全記録
+- `playwright_mcp_testing_workflow`: Playwright MCPテスト手順とベストプラクティス
 
 このSerena MCPの活用により、大規模なコードベースでも効率的かつ精密な開発を実現します。
+
+## Playwright MCP テスト手順 (2025-09追加)
+
+### DooD環境での Playwright MCP テスト
+Claude Code環境から `adminer-bigquery-test` コンテナへの接続テスト手順
+
+#### 基本テストフロー
+```bash
+# 1. コンテナ状況確認
+docker ps | grep adminer-bigquery-test
+
+# 2. Playwright MCP テスト実行
+# - browser_navigate でアクセス
+# - browser_click で操作
+# - browser_wait_for で待機（重要）
+# - browser_snapshot で状態確認
+```
+
+#### 重要な技術ポイント
+- **DooD接続形式**: `http://[コンテナ名]` でアクセス
+- **ナビゲーション待機**: BigQuery認証処理のため3秒待機必須
+- **セレクター戦略**: 複数マッチ回避のため具体的CSS/IDセレクター使用
+- **エラーハンドリング**: 権限制限テーブルへの対応
+
+#### 検証可能な機能
+- BigQuery接続・認証プロセス
+- データセット一覧表示
+- テーブル構造表示
+- Adminer UI ナビゲーション
+
+このPlaywright MCPテストにより、実際のブラウザ操作に近い形でのE2E検証が可能です。
 
 ## 開発・テスト手順 (2025-09更新)
 

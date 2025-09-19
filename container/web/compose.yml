@@ -13,9 +13,9 @@ services:
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/google_credentials.json
       - BIGQUERY_PROJECT_ID=nyle-carmo-analysis
     networks:
-      - adminer-net
+      - adminer_net
     restart: unless-stopped
 
 networks:
-  adminer-net:
+  adminer_net:
     external: true

@@ -65,9 +65,15 @@
       "disabled": false
     },
     "playwright": {
+      "type": "stdio",
       "command": "npx",
       "args": [
-        "@playwright/mcp@latest"
+        "@tontoko/fast-playwright-mcp@latest",
+        "--headless",
+        "--no-sandbox",
+        "--isolated",
+        "--config",
+        "./playwright-mcp.config.json"
       ],
       "env": {},
       "disabled": false
