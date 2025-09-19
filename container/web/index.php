@@ -77,7 +77,10 @@ function adminer_object() {
 
     // BigQueryログインプラグインでAdminerを拡張
     $plugins = array(
-        new AdminerLoginBigQuery('nyle-carmo-analysis', '/etc/google_credentials.json'),
+        new AdminerLoginBigQuery([
+            'project_id' => 'nyle-carmo-analysis',
+            'credentials_path' => '/etc/google_credentials.json'
+        ]),
     );
 
     return new \Adminer\Plugins($plugins);
