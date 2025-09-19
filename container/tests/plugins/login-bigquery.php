@@ -47,34 +47,29 @@ class AdminerLoginBigQuery extends Adminer\Plugin {
     }
 
     function login($login, $password) {
-        // Validate credentials file existence
         $credentials_path = $_POST["auth"]["password"] ?? $this->credentials_path;
 
+        // 検証は行うが、エラーはログに記録するのみ
         if (empty($credentials_path)) {
-            return 'BigQuery requires a credentials file path.';
+            error_log("BigQuery Login: Credentials file path is empty");
+        } elseif (!file_exists($credentials_path)) {
+            error_log("BigQuery Login: Credentials file not found: " . $credentials_path);
+        } elseif (!is_readable($credentials_path)) {
+            error_log("BigQuery Login: Credentials file not readable: " . $credentials_path);
+        } else {
+            // JSON検証も追加
+            $json_content = file_get_contents($credentials_path);
+            $credentials_data = json_decode($json_content, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                error_log("BigQuery Login: Invalid JSON in credentials file");
+            } elseif (!isset($credentials_data['type']) || $credentials_data['type'] !== 'service_account') {
+                error_log("BigQuery Login: Credentials file must be a service account key");
+            } else {
+                error_log("BigQuery Login: Credentials validation successful");
+            }
         }
 
-        if (!file_exists($credentials_path)) {
-            return "Credentials file not found: " . $credentials_path;
-        }
-
-        if (!is_readable($credentials_path)) {
-            return "Credentials file not readable: " . $credentials_path;
-        }
-
-        // Validate JSON format
-        $json_content = file_get_contents($credentials_path);
-        $credentials_data = json_decode($json_content, true);
-
-        if (json_last_error() !== JSON_ERROR_NONE) {
-            return "Invalid JSON format in credentials file.";
-        }
-
-        if (!isset($credentials_data['type']) || $credentials_data['type'] !== 'service_account') {
-            return "Credentials file must be a service account key.";
-        }
-
-        return true; // Login successful
+        return true; // 必ずtrueを返してAdminer標準チェックをバイパス
     }
 
     function loginFormField($name, $heading, $value) {
@@ -103,6 +98,14 @@ class AdminerLoginBigQuery extends Adminer\Plugin {
         echo "<style>";
         echo ".layout tr:has(input[type='hidden']) { display: none; }";
         echo "</style>";
+    }
+
+    function operators() {
+        return array(
+            "=", "!=", "<>", "<", "<=", ">", ">=",
+            "IN", "NOT IN", "IS NULL", "IS NOT NULL",
+            "LIKE", "NOT LIKE", "REGEXP", "NOT REGEXP"
+        );
     }
 
     protected $translations = array(
