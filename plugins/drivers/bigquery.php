@@ -11,13 +11,6 @@ if (function_exists('Adminer\\add_driver')) {
 	add_driver("bigquery", "Google BigQuery");
 }
 
-if (!function_exists('\\Adminer\\idf_escape')) {
-	function idf_escape($idf)
-	{
-		return "`" . str_replace("`", "``", $idf) . "`";
-	}
-}
-
 if (isset($_GET["bigquery"])) {
 	define('Adminer\DRIVER', "bigquery");
 	class BigQueryConnectionPool
@@ -355,6 +348,13 @@ if (isset($_GET["bigquery"])) {
 			return null;
 		}
 	}
+
+	// Adminerコアとの互換性のためのidf_escape()関数
+	if (!function_exists('Adminer\\idf_escape')) {
+		function idf_escape($idf) {
+			return BigQueryUtils::escapeIdentifier($idf);
+		}
+	}
 	class Db
 	{
 
@@ -366,6 +366,9 @@ if (isset($_GET["bigquery"])) {
 		public $flavor = 'BigQuery';
 		public $server_info = 'Google Cloud BigQuery';
 		public $extension = 'BigQuery Driver';
+	public $error = '';
+	public $affected_rows = 0;
+	public $info = '';
 		function connect($server, $username, $password)
 		{
 			try {
@@ -718,6 +721,24 @@ if (isset($_GET["bigquery"])) {
 		{
 			return "Check server logs for detailed error information";
 		}
+
+	function multi_query($query)
+	{
+		// BigQueryは複数クエリをサポートしないため、単一クエリとして処理
+		return $this->query($query);
+	}
+
+	function store_result()
+	{
+		// BigQueryは結果セットストレージをサポートしないため、falseを返す
+		return false;
+	}
+
+	function next_result()
+	{
+		// BigQueryは複数結果セットをサポートしないため、falseを返す
+		return false;
+	}
 	}
 	class Result
 	{
@@ -889,6 +910,17 @@ if (isset($_GET["bigquery"])) {
 		{
 			return BigQueryUtils::generateFieldConversion($field);
 		}
+
+	function hasCStyleEscapes(): bool
+	{
+		return false; // BigQuery does not support C-style escapes
+	}
+
+	function warnings()
+	{
+		// BigQueryはクエリ警告をサポートしないため、空配列を返す
+		return array();
+	}
 	}
 	function support($feature)
 	{
@@ -1249,7 +1281,7 @@ if (isset($_GET["bigquery"])) {
 		global $connection;
 		try {
 			$selectClause = ($select == array("*")) ? "*" : implode(", ", array_map(function ($col) {
-				return "`" . str_replace("`", "``", $col) . "`";
+				return BigQueryUtils::escapeIdentifier($col);
 			}, $select));
 			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 			if (empty($database)) {
@@ -1266,16 +1298,16 @@ if (isset($_GET["bigquery"])) {
 			}
 			if (!empty($group)) {
 				$query .= " GROUP BY " . implode(", ", array_map(function ($col) {
-					return "`" . str_replace("`", "``", $col) . "`";
+					return BigQueryUtils::escapeIdentifier($col);
 				}, $group));
 			}
 			if (!empty($order)) {
 				$orderClause = array();
 				foreach ($order as $orderSpec) {
 					if (preg_match('/^(.+?)\s+(DESC|ASC)$/i', $orderSpec, $matches)) {
-						$orderClause[] = "`" . str_replace("`", "``", $matches[1]) . "` " . $matches[2];
+						$orderClause[] = BigQueryUtils::escapeIdentifier($matches[1]) . " " . $matches[2];
 					} else {
-						$orderClause[] = "`" . str_replace("`", "``", $orderSpec) . "`";
+						$orderClause[] = BigQueryUtils::escapeIdentifier($orderSpec);
 					}
 				}
 				$query .= " ORDER BY " . implode(", ", $orderClause);
@@ -1333,5 +1365,16 @@ if (isset($_GET["bigquery"])) {
 			}
 			return null;
 		}
+
+	}
+}
+if (!function_exists('query')) {
+	function query($query)
+	{
+		global $connection;
+		if ($connection && method_exists($connection, 'query')) {
+			return $connection->query($query);
+		}
+		return false;
 	}
 }

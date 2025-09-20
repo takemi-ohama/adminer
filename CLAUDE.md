@@ -152,15 +152,15 @@ mcp__serena__write_memory [name]     # 新しい分析結果保存
 ```
 
 ### 現在保存されているメモリー（2025-09-20更新）
-- `bigquery_project_final_phase_2025-09`: **最新** - BigQueryプロジェクト最終フェーズ記録
+- `e2e_script_integration_and_error_detection_2025-09-20`: **最新** - E2Eスクリプト統合・エラー検出システム強化
+- `bigquery_env_var_standardization_completion_2025-09`: 環境変数標準化完了記録
+- `bigquery_project_final_phase_2025-09`: BigQueryプロジェクト最終フェーズ記録
+- `i03_e2e_testing_system_establishment_2025-09-20`: E2Eテスト環境確立
 - `comprehensive_bigquery_project_analysis`: プロジェクト包括分析結果
 - `directory_structure_update_2025-09`: ディレクトリ構造変更の完全記録
-- `playwright_mcp_testing_workflow`: Playwright MCPテスト手順とベストプラクティス
+- `bigquery_env_var_authentication_fix_2025-09`: 認証エラー修正記録
 - `pr_creation_workflow`: PR作成手順の記録
 - `adminer_bigquery_analysis`: 初期詳細プロジェクト分析結果
-- `bigquery_authentication_analysis`: 認証システム分析
-- `bigquery_docker_testing_workflow`: Dockerテストワークフロー
-- `adminer_testing_comprehensive_guide`: 包括的テストガイド
 
 ### 記憶活用の重要ポイント（2025-09更新）
 1. **最新情報の優先**: `bigquery_project_final_phase_2025-09` が最新の完全記録
@@ -169,10 +169,11 @@ mcp__serena__write_memory [name]     # 新しい分析結果保存
 4. **記憶の整理**: 古くなった記憶は適宜削除（`delete_memory`）
 
 ### 最新の活用実績（2025-09-20）
+- **E2Eスクリプト統合**: 重複スクリプト統合とエラー検出システム強化
+- **Playwright設定修正**: Docker環境での安定実行基盤確立
+- **統一ログシステム**: タイムスタンプ付きログとエラーハンドリング統一
 - **環境変数標準化**: プロジェクト全体のGOOGLE_CLOUD_PROJECT統一作業
 - **包括的ドキュメント更新**: 10ファイル以上の一貫した変数名修正
-- **記憶管理**: 古い記憶の整理と最新知見の体系的記録
-- **マージ後処理**: 自動化されたクリーンアップワークフロー実行
 
 このSerena MCPの活用により、大規模なコードベースでも効率的かつ精密な開発を実現します。
 
@@ -232,10 +233,10 @@ curl -I http://localhost:8080
 
 # 5. E2Eテスト実行
 cd ../e2e
-./run-e2e-tests.sh
+./scripts/run-basic-flow-test.sh
 
 # 6. 安定性テスト（必要に応じて）
-./run-monkey-test.sh
+./scripts/run-monkey-test.sh
 ```
 
 ### テスト環境の使い分け
@@ -253,14 +254,15 @@ cd ../e2e
 ## プロジェクト記録
 
 ### Serena記憶の最終更新日時
-**2025年09月20日 02:15:00**
+**2025年09月20日 13:25:00**
 
-最新記憶: `bigquery_env_var_standardization_completion_2025-09`
-- 環境変数標準化プロジェクト完全完了（GOOGLE_CLOUD_PROJECT統一）
-- E2Eテストスクリプト修正とTypeScript警告解消
-- PR #20マージ完了とクリーンアップ自動化
-- 包括的ドキュメント整備（10ファイル以上更新）
-- Google Cloud標準準拠による本格運用レベル達成
+最新記憶: `e2e_script_integration_and_error_detection_2025-09-20`
+- E2Eテストスクリプトの大幅なリファクタリング完了
+- 重複スクリプト統合と統一実行環境の構築（PR #23）
+- Playwright設定修正とDocker環境安定化
+- 包括的エラー検出システム（Fatal error、PHP Warning等）実装
+- タイムスタンプ付きログ・エラーハンドリングの統一化
+- 240テストケース認識と6.4秒での安定実行確認
 
 主要記憶: `bigquery_env_var_authentication_fix_2025-09`
 - $_ENV → getenv() による確実な環境変数取得実現
@@ -313,13 +315,13 @@ docker compose up -d
 
 # 2. 参照系テスト実行（推奨：最初に実行）
 cd ../e2e
-./run-reference-tests.sh
+./scripts/run-reference-tests.sh
 
 # 3. 更新系テスト実行
-./run-crud-tests.sh
+./scripts/run-crud-tests.sh
 
 # 4. 全テスト実行
-./run-all-tests.sh
+./scripts/run-all-tests.sh
 ```
 
 #### コンテナ内直接実行

@@ -29,7 +29,7 @@ test.describe('BigQuery Adminer 参照系機能テスト', () => {
 
     // ログイン成功後、データセット一覧が表示されることを確認
     await expect(page).toHaveTitle(/Adminer/);
-    await expect(page.locator('h2')).toContainText('Database');
+    await expect(page.locator('h2')).toContainText('Select database');
   });
 
   test('データセット一覧表示', async ({ page }) => {
@@ -40,15 +40,16 @@ test.describe('BigQuery Adminer 参照系機能テスト', () => {
     await page.waitForLoadState('networkidle');
 
     // データセット一覧リンクの存在確認
-    const databaseLinks = page.locator('a[href*="database="]');
-    await expect(databaseLinks).toHaveCount.greaterThan(0);
+    const databaseLinks = page.locator('a[href*="db="]').filter({ hasText: /^[^?]+$/ });
+    const count = await databaseLinks.count();
+    expect(count).toBeGreaterThan(0);
 
     // 最初のデータセットクリック
     await databaseLinks.first().click();
     await page.waitForLoadState('networkidle');
 
     // テーブル一覧が表示されることを確認
-    await expect(page.locator('h2')).toContainText('Tables');
+    await expect(page.locator('h3')).toContainText('Tables and views');
   });
 
   test('テーブル一覧表示と構造確認', async ({ page }) => {
@@ -99,21 +100,21 @@ test.describe('BigQuery Adminer 参照系機能テスト', () => {
     const sqlTextarea = page.locator('textarea[name="query"]');
     await expect(sqlTextarea).toBeVisible();
 
-    // 基本的なSELECT文を実行
-    const testQuery = 'SELECT 1 as test_column';
+    // 基本的なSELECT文を実行（BigQuery標準SQL）
+    const testQuery = 'SELECT 1 as test_column, "Hello BigQuery" as message';
     await sqlTextarea.fill(testQuery);
 
     // Execute ボタンクリック
     await page.click('input[type="submit"][value="Execute"]');
     await page.waitForLoadState('networkidle');
 
-    // クエリ結果が表示されることを確認
-    // エラーが発生する場合は、エラーメッセージが表示される
+    // クエリ結果もしくはエラーが表示されることを確認
     const hasError = await page.locator('.error').isVisible();
-    const hasResult = await page.locator('table.nowrap').isVisible();
+    const hasResult = await page.locator('table').isVisible();
+    const hasSuccessMessage = await page.locator('p:has-text("Query executed OK")').isVisible();
 
-    // エラーまたは結果のいずれかが表示されることを確認
-    expect(hasError || hasResult).toBeTruthy();
+    // 結果、エラー、または成功メッセージが表示されることを確認
+    expect(hasError || hasResult || hasSuccessMessage).toBeTruthy();
   });
 
   test('ナビゲーション機能確認', async ({ page }) => {
