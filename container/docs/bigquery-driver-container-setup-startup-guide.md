@@ -116,7 +116,7 @@ ENVIRONMENT=production
 VERSION=latest
 
 # BigQuery設定
-BIGQUERY_PROJECT_ID=your-gcp-project-id
+GOOGLE_CLOUD_PROJECT=your-gcp-project-id
 BIGQUERY_LOCATION=US
 BIGQUERY_DATASET_DEFAULT=your_default_dataset
 
@@ -212,7 +212,7 @@ services:
     # 環境変数
     environment:
       # BigQuery設定
-      - BIGQUERY_PROJECT_ID=${BIGQUERY_PROJECT_ID}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
       - BIGQUERY_LOCATION=${BIGQUERY_LOCATION}
       - BIGQUERY_DATASET_DEFAULT=${BIGQUERY_DATASET_DEFAULT}
 

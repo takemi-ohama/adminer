@@ -27,8 +27,6 @@ COPY Makefile ./
 
 # Copy test-specific files to the web root
 COPY container/web/index.php ./
-# Copy test-specific plugins (overwrite existing plugins)
-COPY container/web/plugins/ ./plugins/
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
@@ -41,7 +39,6 @@ RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 RUN echo "date.timezone = UTC" >> /usr/local/etc/php/php.ini-production && \
     echo "memory_limit = 512M" >> /usr/local/etc/php/php.ini-production && \
     echo "max_execution_time = 300" >> /usr/local/etc/php/php.ini-production && \
-    echo "extension=apcu.so" >> /usr/local/etc/php/php.ini-production && \
     echo "apc.enabled=1" >> /usr/local/etc/php/php.ini-production && \
     echo "apc.shm_size=64M" >> /usr/local/etc/php/php.ini-production && \
     echo "apc.ttl=7200" >> /usr/local/etc/php/php.ini-production && \
@@ -49,8 +46,6 @@ RUN echo "date.timezone = UTC" >> /usr/local/etc/php/php.ini-production && \
     cp /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
 
 # BigQuery設定用の環境変数
-ENV GOOGLE_APPLICATION_CREDENTIALS=/etc/google_credentials.json
-ENV BIGQUERY_PROJECT_ID=nyle-carmo-analysis
 ENV HOME=/var/www
 ENV COMPOSER_HOME=/tmp/composer
 

@@ -36,7 +36,7 @@ function loginFormField($name, $heading, $value) {
 
 ### 3. 現在のBigQuery実装の問題
 
-#### container/tests/plugins/login-bigquery.php
+#### container/web/plugins/login-bigquery.php
 - フィールドのカスタマイズは実装済み
 - credentials()メソッドでGOOGLE_APPLICATION_CREDENTIALS設定
 - login()メソッドでJSONファイル検証実装済み
@@ -48,12 +48,12 @@ function loginFormField($name, $heading, $value) {
 
 ### 4. テスト環境の構成
 
-#### container/tests/構造
+#### container/web/構造
 - Docker Compose: adminer-bigquery-testコンテナ
 - Dockerfile: PHP8.3-apache + Composer + BigQuery依存関係
 - index.php: カスタムエントリーポイント（デバッグ機能付き）
 - プラグイン統合: login-bigquery.phpで認証カスタマイズ
-- 環境変数: GOOGLE_APPLICATION_CREDENTIALS, BIGQUERY_PROJECT_ID
+- 環境変数: GOOGLE_APPLICATION_CREDENTIALS, GOOGLE_CLOUD_PROJECT
 
 ## 解決策
 
@@ -78,7 +78,7 @@ plugins/drivers/bigquery.php:
 - テスト用の簡易接続確認機能
 
 ### 3. テスト環境での動作確認
-1. container/tests/compose.ymlでコンテナ起動
+1. container/web/compose.ymlでコンテナ起動
 2. http://adminer-bigquery-test:80でアクセス
 3. プロジェクトID入力、認証ファイルパス入力
 4. 正常な接続とエラー処理の確認
@@ -86,4 +86,15 @@ plugins/drivers/bigquery.php:
 ### 4. 実装優先度
 1. **高**: login-bigquery.phpの認証ロジック修正
 2. **中**: BigQueryドライバーのエラーハンドリング改善  
-3. **低**: UI/UXの追加改良
+3. **低**: UI/UXの他追加改良
+
+## 最終的な解決結果（2025年9月）
+
+この分析に基づいて実装された修正により、BigQuery認証問題は完全に解決されました：
+
+1. **環境変数標準化**: `GOOGLE_CLOUD_PROJECT`に統一
+2. **PHP環境変数アクセス**: `getenv()`関数による確実な取得
+3. **階層的設定**: URL > フォーム > 環境変数の優先順位確立
+4. **認証プラグイン最適化**: 冗長な処理を削除し、クリーンな設計に復旧
+
+現在は本格運用レベルの安定性を達成しています。

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const BIGQUERY_PROJECT_ID = process.env.BIGQUERY_PROJECT_ID || 'nyle-carmo-analysis';
+const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'nyle-carmo-analysis';
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
 
 test.describe('BigQuery Monkey Testing', () => {
@@ -20,13 +20,13 @@ test.describe('BigQuery Monkey Testing', () => {
 
     try {
       // 1. 初期ログイン
-      await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=`);
+      await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
       await page.selectOption('select[name="auth[driver]"]', 'bigquery');
-      await page.fill('input[name="auth[server]"]', BIGQUERY_PROJECT_ID);
+      await page.fill('input[name="auth[server]"]', GOOGLE_CLOUD_PROJECT);
       await page.click('input[type="submit"][value="Login"]');
 
       // ログイン成功を確認
-      await expect(page).toHaveTitle(new RegExp(`${BIGQUERY_PROJECT_ID}.*Adminer`));
+      await expect(page).toHaveTitle(new RegExp(`${GOOGLE_CLOUD_PROJECT}.*Adminer`));
 
       console.log('🎯 Starting monkey test...');
 
@@ -84,10 +84,10 @@ test.describe('BigQuery Monkey Testing', () => {
 
             case 3: // ページ内ナビゲーション
               const navigation = [
-                `/?bigquery=${BIGQUERY_PROJECT_ID}&username=`,
-                `/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db`,
-                `/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&table=member_info`,
-                `/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&select=member_info`
+                `${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`,
+                `${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db`,
+                `${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&table=member_info`,
+                `${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&select=member_info`
               ];
               const randomNav = navigation[Math.floor(Math.random() * navigation.length)];
               console.log(`  🧭 Navigating to: ${randomNav}`);
@@ -104,7 +104,7 @@ test.describe('BigQuery Monkey Testing', () => {
             console.log(`❌ Fatal Error: ${errorText}`);
 
             // エラー後にホームに戻る
-            await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=`);
+            await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
           }
 
         } catch (actionError) {
@@ -119,13 +119,13 @@ test.describe('BigQuery Monkey Testing', () => {
       // 3. 最終チェック - 基本機能が正常動作するか確認
       console.log('🔍 Final functionality check...');
 
-      await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=`);
+      await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
       await expect(page.locator('h2')).toBeVisible();
 
-      await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db`);
+      await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db`);
       await expect(page.locator('h2:has-text("prod_carmo_db")')).toBeVisible();
 
-      await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&table=member_info`);
+      await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&table=member_info`);
       await expect(page.locator('h2:has-text("member_info")')).toBeVisible();
 
       console.log('✅ Monkey test completed successfully!');
@@ -159,9 +159,9 @@ test.describe('BigQuery Monkey Testing', () => {
     });
 
     // ログイン
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
     await page.selectOption('select[name="auth[driver]"]', 'bigquery');
-    await page.fill('input[name="auth[server]"]', BIGQUERY_PROJECT_ID);
+    await page.fill('input[name="auth[server]"]', GOOGLE_CLOUD_PROJECT);
     await page.click('input[type="submit"][value="Login"]');
 
     console.log('🎯 Starting focused monkey test on data operations...');
@@ -169,10 +169,10 @@ test.describe('BigQuery Monkey Testing', () => {
     // データ関連の操作を集中的にテスト
     const testScenarios = [
       // データセット間の移動
-      { url: `/?bigquery=${BIGQUERY_PROJECT_ID}&username=`, description: 'Dataset list' },
-      { url: `/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db`, description: 'Table list' },
-      { url: `/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&table=member_info`, description: 'Table structure' },
-      { url: `/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&select=member_info`, description: 'Data selection' },
+      { url: `${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`, description: 'Dataset list' },
+      { url: `${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db`, description: 'Table list' },
+      { url: `${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&table=member_info`, description: 'Table structure' },
+      { url: `${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&select=member_info`, description: 'Data selection' },
     ];
 
     for (let iteration = 0; iteration < 5; iteration++) {

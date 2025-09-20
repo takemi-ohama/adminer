@@ -10,6 +10,13 @@ use InvalidArgumentException;
 if (function_exists('Adminer\\add_driver')) {
 	add_driver("bigquery", "Google BigQuery");
 }
+if (!function_exists('\\Adminer\\idf_escape')) {
+	function idf_escape($idf)
+	{
+		return "`" . str_replace("`", "``", $idf) . "`";
+	}
+}
+
 if (isset($_GET["bigquery"])) {
 	define('Adminer\DRIVER', "bigquery");
 	class BigQueryConnectionPool
@@ -405,7 +412,6 @@ if (isset($_GET["bigquery"])) {
 			}
 			$cachedLocation = $this->getCachedLocation($projectId);
 			if ($cachedLocation) {
-				error_log("BigQuery: Using cached location '$cachedLocation' for project '$projectId'");
 				return $cachedLocation;
 			}
 			return 'US';
@@ -882,10 +888,6 @@ if (isset($_GET["bigquery"])) {
 		{
 			return BigQueryUtils::generateFieldConversion($field);
 		}
-	}
-	function idf_escape($idf)
-	{
-		return "`" . str_replace("`", "``", $idf) . "`";
 	}
 	function support($feature)
 	{

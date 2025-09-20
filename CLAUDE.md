@@ -208,6 +208,11 @@ docker ps | grep adminer-bigquery-test
 
 ## 開発・テスト手順 (2025-09更新)
 
+### ⚠️ 重要: コード修正後のビルド要件
+**コードを修正した後は必ずwebコンテナの再ビルドが必要です**
+- Dockerコンテナ内のコードは初回ビルド時にコピーされるため、ホスト側の変更は自動反映されません
+- 対象: plugins/drivers/bigquery.php, plugins/login-bigquery.php, container/web/index.php等
+
 ### 基本開発フロー
 ```bash
 # 1. Webアプリケーション起動
@@ -217,14 +222,18 @@ docker compose up --build -d
 # 2. 開発・コード修正
 # BigQueryドライバープラグインの実装・修正
 
-# 3. 基本動作確認
+# 3. ⚠️ 必須: 修正後のリビルド
+docker compose down
+docker compose up --build -d
+
+# 4. 基本動作確認
 curl -I http://localhost:8080
 
-# 4. E2Eテスト実行
+# 5. E2Eテスト実行
 cd ../e2e
 ./run-e2e-tests.sh
 
-# 5. 安定性テスト（必要に応じて）
+# 6. 安定性テスト（必要に応じて）
 ./run-monkey-test.sh
 ```
 
@@ -245,8 +254,26 @@ cd ../e2e
 ### Serena記憶の最終更新日時
 **2025年09月19日 16:27:35**
 
-最新記憶: `bigquery_project_final_phase_2025-09`
+最新記憶: `bigquery_env_var_authentication_fix_2025-09`
+- BigQuery環境変数認証エラーの根本解決完了
+- $_ENV → getenv() による確実な環境変数取得を実現
+- 環境変数名を GOOGLE_CLOUD_PROJECT に標準化（Google Cloud ベストプラクティス準拠）
+- "Invalid credentials"エラー完全解消とログイン機能復旧
+
+過去記憶: `bigquery_project_final_phase_2025-09`
 - BigQueryドライバー完全実装完了
 - 高速化分析レポート（report04.md）作成
 - マージ後クリーンアップワークフロー確立
 - パフォーマンス改善提案（最大97%向上見込み）
+
+## 重要な技術的発見 (2025年9月20日)
+
+### PHP環境変数アクセスの注意点
+- **$_ENV配列**: PHPの`variables_order`設定に依存（デフォルト: `GPCS`）
+- **getenv()関数**: 設定に関係なく確実にシステム環境変数にアクセス可能
+- **推奨**: Dockerコンテナ環境では`getenv()`を使用すべき
+
+### Google Cloud環境変数の標準化
+- **GOOGLE_CLOUD_PROJECT**: Google Cloud公式推奨の標準環境変数
+- **自動設定**: GCP環境（Cloud Run、Compute Engine等）で自動的に設定
+- **BigQueryClient**: projectIdパラメータ省略時のフォールバック変数として使用

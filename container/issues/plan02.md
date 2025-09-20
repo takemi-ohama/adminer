@@ -136,7 +136,7 @@ services:
       - /home/hammer/google_credential.json:/etc/google_credentials.json:ro
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/google_credentials.json
-      - BIGQUERY_PROJECT_ID=nyle-carmo-analysis
+      - GOOGLE_CLOUD_PROJECT=nyle-carmo-analysis
     networks:
       - adminer-net
 ```

@@ -1,14 +1,15 @@
 import { test, expect } from '@playwright/test';
 
-const BIGQUERY_PROJECT_ID = process.env.BIGQUERY_PROJECT_ID || 'nyle-carmo-analysis';
+const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'nyle-carmo-analysis';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
 
 test.describe('BigQuery Driver Advanced Functionality', () => {
 
   test.beforeEach(async ({ page }) => {
     // 各テスト開始時にログイン
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
     await page.selectOption('select[name="auth[driver]"]', 'bigquery');
-    await page.fill('input[name="auth[server]"]', BIGQUERY_PROJECT_ID);
+    await page.fill('input[name="auth[server]"]', GOOGLE_CLOUD_PROJECT);
     await page.click('input[type="submit"][value="Login"]');
   });
 
@@ -26,7 +27,7 @@ test.describe('BigQuery Driver Advanced Functionality', () => {
 
   test('should display table information correctly', async ({ page }) => {
     // prod_carmo_dbデータセットに移動
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db`);
 
     // テーブル一覧で複数のテーブルが表示されることを確認
     const tables = page.locator('table a[href*="table="]');
@@ -44,7 +45,7 @@ test.describe('BigQuery Driver Advanced Functionality', () => {
 
   test('should handle table schema display', async ({ page }) => {
     // member_infoテーブルスキーマ表示
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&table=member_info`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&table=member_info`);
 
     // スキーマ情報テーブルが表示されることを確認
     const schemaTable = page.locator('table.nowrap');
@@ -64,11 +65,11 @@ test.describe('BigQuery Driver Advanced Functionality', () => {
 
   test('should provide navigation links', async ({ page }) => {
     // テーブル構造画面での各種リンク確認
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&table=member_info`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&table=member_info`);
 
     // パンくずナビゲーション確認
     await expect(page.locator('#breadcrumb')).toBeVisible();
-    await expect(page.locator(`#breadcrumb a:has-text("${BIGQUERY_PROJECT_ID}")`)).toBeVisible();
+    await expect(page.locator(`#breadcrumb a:has-text("${GOOGLE_CLOUD_PROJECT}")`)).toBeVisible();
     await expect(page.locator('#breadcrumb a:has-text("prod_carmo_db")')).toBeVisible();
 
     // 機能リンクの確認
@@ -79,14 +80,14 @@ test.describe('BigQuery Driver Advanced Functionality', () => {
 
   test('should handle error cases gracefully', async ({ page }) => {
     // 存在しないテーブルへのアクセステスト
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&table=nonexistent_table`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&table=nonexistent_table`);
 
     // Fatal Errorではなく、適切なエラーハンドリングが行われることを確認
     //（空のテーブルまたはエラーメッセージが表示される）
     await expect(page.locator('text=Fatal error')).toHaveCount(0);
 
     // 存在しないデータセットへのアクセステスト
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=nonexistent_dataset`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=nonexistent_dataset`);
 
     // Fatal Errorではなく、適切なエラーハンドリングが行われることを確認
     await expect(page.locator('text=Fatal error')).toHaveCount(0);
@@ -94,7 +95,7 @@ test.describe('BigQuery Driver Advanced Functionality', () => {
 
   test('should maintain session consistency', async ({ page }) => {
     // 複数ページ間でのセッション保持確認
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db`);
 
     // テーブル詳細に移動
     await page.click('a:has-text("member_info")');
@@ -113,21 +114,21 @@ test.describe('BigQuery Driver Advanced Functionality', () => {
 
   test('should display correct page elements structure', async ({ page }) => {
     // データセット一覧画面の基本構造確認
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
 
     // 基本的なAdminerページ要素の存在確認
     await expect(page.locator('#breadcrumb')).toBeVisible();
     await expect(page.locator('h2')).toBeVisible();
 
     // テーブル一覧画面の構造確認
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db`);
 
     await expect(page.locator('#breadcrumb')).toBeVisible();
     await expect(page.locator('h2:has-text("prod_carmo_db")')).toBeVisible();
     await expect(page.locator('table')).toBeVisible();
 
     // テーブル詳細画面の構造確認
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&table=member_info`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&table=member_info`);
 
     await expect(page.locator('#breadcrumb')).toBeVisible();
     await expect(page.locator('h2:has-text("member_info")')).toBeVisible();

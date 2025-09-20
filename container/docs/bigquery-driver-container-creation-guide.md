@@ -257,7 +257,7 @@ services:
 
     environment:
       # BigQuery configuration
-      - BIGQUERY_PROJECT_ID=${BIGQUERY_PROJECT_ID}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
       - BIGQUERY_LOCATION=${BIGQUERY_LOCATION:-US}
 
     # Secrets management
@@ -339,7 +339,7 @@ services:
       - "9003:9003"  # Xdebug
 
     environment:
-      - BIGQUERY_PROJECT_ID=development-project
+      - GOOGLE_CLOUD_PROJECT=development-project
       - XDEBUG_MODE=debug
 
     volumes:
@@ -366,7 +366,7 @@ networks:
 # Copy to .env and customize
 
 # BigQuery Configuration
-BIGQUERY_PROJECT_ID=your-project-id
+GOOGLE_CLOUD_PROJECT=your-project-id
 BIGQUERY_LOCATION=US
 
 # Security
@@ -711,7 +711,7 @@ spec:
         ports:
         - containerPort: 80
         env:
-        - name: BIGQUERY_PROJECT_ID
+        - name: GOOGLE_CLOUD_PROJECT
           valueFrom:
             configMapKeyRef:
               name: bigquery-config
