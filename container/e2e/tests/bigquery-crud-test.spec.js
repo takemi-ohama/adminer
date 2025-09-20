@@ -43,7 +43,7 @@ test.describe('BigQuery Adminer Plugin - 更新系テスト', () => {
     await page.waitForTimeout(5000);
   });
 
-  test.skip('1. データセット作成テスト', async ({ page }) => {
+  test('1. データセット作成テスト', async ({ page }) => {
     console.log('=== データセット作成テスト開始 ===');
     console.log(`作成予定データセット: ${TEST_DATASET}`);
 
@@ -58,7 +58,7 @@ test.describe('BigQuery Adminer Plugin - 更新系テスト', () => {
       await page.waitForTimeout(3000);
 
       // データセット名入力フィールド
-      const datasetNameInput = page.locator('input[name*="database"], input[name*="dataset"], input[type="text"]').first();
+      const datasetNameInput = page.locator('input[name="name"]').first();
       await expect(datasetNameInput).toBeVisible();
 
       // データセット名を入力
@@ -66,16 +66,36 @@ test.describe('BigQuery Adminer Plugin - 更新系テスト', () => {
 
       // 作成ボタンをクリック
       const createButton = page.locator('input[type="submit"], button').filter({
-        hasText: /Create|作成|追加/i
+        hasText: /Save|Create|作成|追加|保存/i
       });
 
       if (await createButton.count() > 0) {
         await createButton.first().click();
         await page.waitForTimeout(8000);
 
-        // データセット一覧で作成されたデータセットが表示されるか確認
-        const datasetLink = page.locator(`a[href*="${TEST_DATASET}"]`);
-        await expect(datasetLink).toBeVisible({ timeout: 10000 });
+        // データセット作成後、一覧に戻って確認
+        console.log('データセット一覧ページに戻ります');
+        await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
+        await page.waitForTimeout(3000);
+
+        // ログイン処理
+        await page.locator('input[type="submit"][value="Login"]').click();
+        await page.waitForTimeout(5000);
+
+        // データセット選択リンクを確認（データベース選択用リンク）
+        const datasetSelectLink = page.locator(`a[href*="db=${TEST_DATASET}"]`);
+
+        // 数回リトライして確認
+        for (let i = 0; i < 3; i++) {
+          const count = await datasetSelectLink.count();
+          console.log(`試行 ${i + 1}: データセットリンク数 = ${count}`);
+          if (count > 0) {
+            break;
+          }
+          await page.waitForTimeout(2000);
+        }
+
+        await expect(datasetSelectLink.first()).toBeVisible({ timeout: 15000 });
 
         console.log('✅ データセット作成成功');
       } else {
@@ -86,18 +106,25 @@ test.describe('BigQuery Adminer Plugin - 更新系テスト', () => {
     }
   });
 
-  test.skip('2. テーブル作成テスト', async ({ page }) => {
+  test('2. テーブル作成テスト', async ({ page }) => {
     console.log('=== テーブル作成テスト開始 ===');
 
-    // 作成済みのテストデータセットに移動
-    const testDatasetLink = page.locator(`a[href*="${TEST_DATASET}"]`);
+    // まず、データセット一覧ページに移動してログイン
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
+    await page.waitForTimeout(3000);
+    await page.locator('input[type="submit"][value="Login"]').click();
+    await page.waitForTimeout(5000);
 
-    if (await testDatasetLink.count() === 0) {
-      console.log('⚠️ テストデータセットが存在しません。データセット作成テストを先に実行してください。');
+    // 既存のテストデータセットを検索し、なければスキップ
+    const existingDatasetLinks = page.locator(`a[href*="db="][href*="adminer_test_dataset"]`);
+    if (await existingDatasetLinks.count() === 0) {
+      console.log('⚠️ テスト用データセットが存在しません。データセット作成テストを先に実行してください。');
       return;
     }
 
-    await testDatasetLink.click();
+    // 最初の利用可能なテストデータセットを選択
+    console.log('利用可能なテストデータセットを選択');
+    await existingDatasetLinks.first().click();
     await page.waitForTimeout(5000);
 
     // テーブル作成リンク/ボタンを探す
