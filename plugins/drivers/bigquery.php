@@ -304,8 +304,8 @@ if (isset($_GET["bigquery"])) {
 		 */
 		static function convertValueForBigQuery($value, $fieldType)
 		{
-			// NULL値の処理
-			if ($value === null || $value === '') {
+			// NULL値の処理（空文字列とは区別する）
+			if ($value === null) {
 				return 'NULL';
 			}
 
@@ -322,7 +322,12 @@ if (isset($_GET["bigquery"])) {
 			} elseif (strpos($fieldType, 'time') !== false) {
 				return "TIME('" . str_replace("'", "''", $cleanValue) . "')";
 			} elseif (strpos($fieldType, 'int') !== false || strpos($fieldType, 'float') !== false || strpos($fieldType, 'numeric') !== false || strpos($fieldType, 'decimal') !== false) {
-				return $cleanValue;
+				// 数値型の場合は検証してから返す
+				if (is_numeric($cleanValue)) {
+					return $cleanValue;
+				} else {
+					throw new InvalidArgumentException('Invalid numeric value: ' . $cleanValue);
+				}
 			} elseif (strpos($fieldType, 'bool') !== false) {
 				return (strtolower($cleanValue) === 'true' || $cleanValue === '1') ? 'TRUE' : 'FALSE';
 			} else {
@@ -2060,4 +2065,3 @@ if (!function_exists('query')) {
 		return false;
 	}
 }
-
