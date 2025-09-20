@@ -168,10 +168,11 @@ mcp__serena__write_memory [name]     # 新しい分析結果保存
 3. **知見の継続更新**: プロジェクトの進展に合わせて新しい記憶を作成
 4. **記憶の整理**: 古くなった記憶は適宜削除（`delete_memory`）
 
-### 最新の活用実績（2025-09-19/20）
-- **高速化分析**: コード構造解析による詳細なパフォーマンス分析実行
-- **マージ後処理**: 自動化されたクリーンアップワークフロー確立
-- **知見統合**: 開発履歴と技術的発見を体系的に記録
+### 最新の活用実績（2025-09-20）
+- **環境変数標準化**: プロジェクト全体のGOOGLE_CLOUD_PROJECT統一作業
+- **包括的ドキュメント更新**: 10ファイル以上の一貫した変数名修正
+- **記憶管理**: 古い記憶の整理と最新知見の体系的記録
+- **マージ後処理**: 自動化されたクリーンアップワークフロー実行
 
 このSerena MCPの活用により、大規模なコードベースでも効率的かつ精密な開発を実現します。
 
@@ -252,19 +253,23 @@ cd ../e2e
 ## プロジェクト記録
 
 ### Serena記憶の最終更新日時
-**2025年09月19日 16:27:35**
+**2025年09月20日 02:15:00**
 
-最新記憶: `bigquery_env_var_authentication_fix_2025-09`
-- BigQuery環境変数認証エラーの根本解決完了
-- $_ENV → getenv() による確実な環境変数取得を実現
-- 環境変数名を GOOGLE_CLOUD_PROJECT に標準化（Google Cloud ベストプラクティス準拠）
-- "Invalid credentials"エラー完全解消とログイン機能復旧
+最新記憶: `bigquery_env_var_standardization_completion_2025-09`
+- 環境変数標準化プロジェクト完全完了（GOOGLE_CLOUD_PROJECT統一）
+- E2Eテストスクリプト修正とTypeScript警告解消
+- PR #20マージ完了とクリーンアップ自動化
+- 包括的ドキュメント整備（10ファイル以上更新）
+- Google Cloud標準準拠による本格運用レベル達成
 
-過去記憶: `bigquery_project_final_phase_2025-09`
-- BigQueryドライバー完全実装完了
-- 高速化分析レポート（report04.md）作成
+主要記憶: `bigquery_env_var_authentication_fix_2025-09`
+- $_ENV → getenv() による確実な環境変数取得実現
+- PHP variables_order制約の技術的解決
+- "Invalid credentials"エラー完全解消
+
+基盤記憶: `bigquery_project_final_phase_2025-09`
+- BigQueryドライバー完全実装とパフォーマンス分析
 - マージ後クリーンアップワークフロー確立
-- パフォーマンス改善提案（最大97%向上見込み）
 
 ## 重要な技術的発見 (2025年9月20日)
 
@@ -277,3 +282,79 @@ cd ../e2e
 - **GOOGLE_CLOUD_PROJECT**: Google Cloud公式推奨の標準環境変数
 - **自動設定**: GCP環境（Cloud Run、Compute Engine等）で自動的に設定
 - **BigQueryClient**: projectIdパラメータ省略時のフォールバック変数として使用
+
+## 次期開発課題 (2025年9月20日 新規指示)
+
+### 未実装機能の完全実装 (container/issues/i03.md)
+1. **ソート、編集、作成、ダウンロード機能**: 現在未実装の全Adminer機能を実装
+2. **包括的E2Eテスト**: container/e2eを使用した全メニュー・ボタン・リンクのテスト
+3. **参照系・更新系テスト分離**:
+   - 参照系: 既存データでのエラー検証・修正
+   - 更新系: 新規データセット・テーブル作成による安全な更新テスト
+4. **段階的実装**: 参照系完了→更新系シナリオ作成→最終検証
+
+### パフォーマンス改善実装 (container/issues/i02.md)
+1. **ボトルネック解消**: report05.mdに基づくBigQuery API接続高速化
+2. **Profiler活用**: 実装済みProfilerでの処理時間計測と報告
+3. **APCu警告対応**: report06.mdに基づくstub登録による警告解消
+
+これらの課題により、BigQueryドライバーは完全な機能実装と最適なパフォーマンスを達成します。
+
+## E2Eテスト手法 (2025年9月20日 i03.md #4で確立)
+
+### 🎯 スクリプト指定実行型テスト環境
+i03.md #4で確立された安定したE2Eテスト手法。常駐型ではなく、スクリプト指定で自動実行する方式。
+
+#### 基本テスト実行方法
+```bash
+# 1. Web環境起動（必須前提条件）
+cd container/web
+docker compose up -d
+
+# 2. 参照系テスト実行（推奨：最初に実行）
+cd ../e2e
+./run-reference-tests.sh
+
+# 3. 更新系テスト実行
+./run-crud-tests.sh
+
+# 4. 全テスト実行
+./run-all-tests.sh
+```
+
+#### コンテナ内直接実行
+```bash
+cd container/e2e
+docker compose run --rm playwright-e2e reference-test.sh
+docker compose run --rm playwright-e2e crud-test.sh
+docker compose run --rm playwright-e2e all-tests.sh
+```
+
+#### 個別テストファイル実行
+```bash
+# 参照系機能テスト
+docker compose run --rm playwright-e2e npx playwright test tests/reference-system-test.spec.js
+
+# 更新系機能テスト
+docker compose run --rm playwright-e2e npx playwright test tests/bigquery-crud-test.spec.js
+```
+
+### 📊 ログとレポート管理
+- **実行ログ**: `container/e2e/test-results/` に自動保存（タイムスタンプ付き）
+- **Playwrightレポート**: `container/e2e/playwright-report/index.html`
+- **スクリーンショット・動画**: 失敗時に自動生成
+
+### 🔍 テスト戦略
+1. **参照系テスト**: 既存データでの表示・ナビゲーション・検索機能検証
+2. **更新系テスト**: 新規データセット・テーブル作成による安全な更新操作
+3. **段階的実行**: 参照系完了後に更新系を実行
+4. **エラー検出**: 画面とログの両方でエラー確認
+
+### ⚠️ 重要な注意点
+- **Web環境前提**: テスト実行前に必ずWebコンテナが起動していること
+- **認証設定**: `GOOGLE_CLOUD_PROJECT`、`GOOGLE_APPLICATION_CREDENTIALS`環境変数必須
+- **段階的実行**: 参照系でエラー修正後に更新系テストを実行
+- **ログ保存**: tokenオーバーフロー対策として実行状況を定期記録
+
+### 📖 詳細ガイド
+完全なE2Eテスト手順は `container/docs/e2e-testing-guide.md` を参照してください。

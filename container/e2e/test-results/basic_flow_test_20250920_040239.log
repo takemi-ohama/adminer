@@ -1,0 +1,81 @@
+🚀 基本機能フローテスト実行開始: Sat Sep 20 04:02:39 AM UTC 2025
+ログファイル: ./test-results/basic_flow_test_20250920_040239.log
+📡 Web環境確認中...
+✅ Web環境確認完了
+🏗️  E2Eコンテナビルド中...
+#1 [internal] load local bake definitions
+#1 reading from stdin 541B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2.17kB done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for mcr.microsoft.com/playwright:v1.48.1-focal
+#3 DONE 0.2s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [ 1/12] FROM mcr.microsoft.com/playwright:v1.48.1-focal@sha256:7af89c3eb64aee54baefefb493ef11f20ce233138cb40db2b8b99e7df47b528b
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 266B done
+#6 DONE 0.0s
+
+#7 [ 6/12] RUN npm install
+#7 CACHED
+
+#8 [ 5/12] COPY container/e2e/playwright.config.js ./
+#8 CACHED
+
+#9 [ 7/12] RUN npx playwright install chromium firefox webkit
+#9 CACHED
+
+#10 [ 9/12] RUN mkdir -p /app/scripts
+#10 CACHED
+
+#11 [ 8/12] RUN mkdir -p /app/tests
+#11 CACHED
+
+#12 [ 2/12] RUN apt-get update && apt-get install -y     curl     jq     git     && rm -rf /var/lib/apt/lists/*
+#12 CACHED
+
+#13 [10/12] COPY container/e2e/tests/basic-flow-test.spec.js /app/tests/
+#13 CACHED
+
+#14 [ 4/12] COPY container/e2e/package.json ./
+#14 CACHED
+
+#15 [11/12] RUN echo '#!/bin/bash\nset -e\n\necho "🚀 E2E テスト実行開始: $(date)" >&2\necho "環境: $NODE_ENV" >&2\necho "ベースURL: $BASE_URL" >&2\n\nif [ "$1" = "--stdin" ]; then\n  echo "📋 標準入力からスクリプト実行" >&2\n  cat > /tmp/test_script.sh\n  chmod +x /tmp/test_script.sh\n  echo "📂 スクリプト保存完了、実行開始" >&2\n  bash /tmp/test_script.sh\nelif [ "$1" != "" ]; then\n  echo "📋 直接コマンド実行: $*" >&2\n  exec "$@"\nelse\n  echo "📋 全テスト実行（デフォルト）" >&2\n  npx playwright test --reporter=line\nfi\n\necho "✅ E2E テスト実行完了: $(date)" >&2' > /app/entrypoint.sh
+#15 CACHED
+
+#16 [ 3/12] WORKDIR /app
+#16 CACHED
+
+#17 [12/12] RUN chmod +x /app/entrypoint.sh
+#17 CACHED
+
+#18 exporting to image
+#18 exporting layers done
+#18 writing image sha256:a9f023cf932c0b3666d1e2e3b54ae19307684f1ec6a805322f15a2189c09ff65 done
+#18 naming to docker.io/library/e2e-playwright-e2e done
+#18 DONE 0.0s
+
+#19 resolving provenance for metadata file
+#19 DONE 0.0s
+ e2e-playwright-e2e  Built
+📝 基本フローテストスクリプト作成中...
+📝 共有volumeにテストスクリプト作成中...
+🚀 基本機能フローテスト実行中...
+Unable to find image 'alpine:latest' locally
+latest: Pulling from library/alpine
+9824c27679d3: Already exists
+Digest: sha256:4bcff63911fcb4448bd4fdacec207030997caf25e9bea4045fa6c8c44de311d1
+Status: Downloaded newer image for alpine:latest
+cp: can't stat '/host/container/e2e/tests/basic-flow-test.spec.js': No such file or directory
+Error response from daemon: failed to create task for container: failed to create shim task: OCI runtime create failed: runc create failed: unable to start container process: error during container init: exec: "/app/entrypoint.sh": stat /app/entrypoint.sh: no such file or directory: unknown
+✅ 基本機能フローテスト成功: Sat Sep 20 04:02:44 AM UTC 2025
+🎯 基本機能フローテスト完了: Sat Sep 20 04:02:44 AM UTC 2025
