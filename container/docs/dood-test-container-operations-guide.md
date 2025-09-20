@@ -199,7 +199,7 @@ docker exec adminer-bigquery-test tail -f /var/log/php_errors.log
 docker exec adminer-bigquery-test env | grep -i bigquery
 
 # 環境変数の一時的な変更（再起動で元に戻る）
-docker exec adminer-bigquery-test bash -c 'export BIGQUERY_PROJECT_ID=new-project && env | grep BIGQUERY'
+docker exec adminer-bigquery-test bash -c 'export GOOGLE_CLOUD_PROJECT=new-project && env | grep GOOGLE_CLOUD'
 
 # Docker Composeでの環境変数変更
 # container/tests/compose.yml を編集後

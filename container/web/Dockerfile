@@ -46,8 +46,6 @@ RUN echo "date.timezone = UTC" >> /usr/local/etc/php/php.ini-production && \
     cp /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
 
 # BigQuery設定用の環境変数
-ENV GOOGLE_APPLICATION_CREDENTIALS=/etc/google_credentials.json
-ENV BIGQUERY_PROJECT_ID=nyle-carmo-analysis
 ENV HOME=/var/www
 ENV COMPOSER_HOME=/tmp/composer
 

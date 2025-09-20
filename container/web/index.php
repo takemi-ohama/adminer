@@ -16,7 +16,7 @@ function adminer_object()
 
 	$plugins = array(
 		new AdminerLoginBigQuery(array(
-			'project_id' => getenv('BIGQUERY_PROJECT_ID')
+			'project_id' => getenv('GOOGLE_CLOUD_PROJECT')
 		)),
 	);
 

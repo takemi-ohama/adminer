@@ -412,7 +412,6 @@ if (isset($_GET["bigquery"])) {
 			}
 			$cachedLocation = $this->getCachedLocation($projectId);
 			if ($cachedLocation) {
-				error_log("BigQuery: Using cached location '$cachedLocation' for project '$projectId'");
 				return $cachedLocation;
 			}
 			return 'US';

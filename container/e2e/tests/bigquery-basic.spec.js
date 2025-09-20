@@ -1,13 +1,13 @@
 import { test, expect } from '@playwright/test';
 
-const BIGQUERY_PROJECT_ID = process.env.BIGQUERY_PROJECT_ID || 'nyle-carmo-analysis';
+const GOOGLE_CLOUD_PROJECT = process.env.GOOGLE_CLOUD_PROJECT || 'nyle-carmo-analysis';
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
 
 test.describe('BigQuery Driver Basic Functionality', () => {
 
   test('should load login page without errors', async ({ page }) => {
     // ログインページアクセス
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
 
     // ページタイトル確認
     await expect(page).toHaveTitle(/Login.*Adminer/);
@@ -23,19 +23,19 @@ test.describe('BigQuery Driver Basic Functionality', () => {
 
   test('should successfully login with BigQuery driver', async ({ page }) => {
     // ログインページアクセス
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
 
     // BigQueryドライバー選択
     await page.selectOption('select[name="auth[driver]"]', 'bigquery');
 
     // サーバー（プロジェクトID）入力
-    await page.fill('input[name="auth[server]"]', BIGQUERY_PROJECT_ID);
+    await page.fill('input[name="auth[server]"]', GOOGLE_CLOUD_PROJECT);
 
     // ログイン実行
     await page.click('input[type="submit"][value="Login"]');
 
     // ログイン成功確認（データベース一覧画面）
-    await expect(page).toHaveTitle(new RegExp(`${BIGQUERY_PROJECT_ID}.*Adminer`));
+    await expect(page).toHaveTitle(new RegExp(`${GOOGLE_CLOUD_PROJECT}.*Adminer`));
 
     // データセット（データベース）一覧が表示されることを確認
     await expect(page.locator('h2:has-text("Databases")')).toBeVisible();
@@ -47,9 +47,9 @@ test.describe('BigQuery Driver Basic Functionality', () => {
 
   test('should display datasets and allow selection', async ({ page }) => {
     // ログイン実行
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
     await page.selectOption('select[name="auth[driver]"]', 'bigquery');
-    await page.fill('input[name="auth[server]"]', BIGQUERY_PROJECT_ID);
+    await page.fill('input[name="auth[server]"]', GOOGLE_CLOUD_PROJECT);
     await page.click('input[type="submit"][value="Login"]');
 
     // prod_carmo_db データセットが存在することを確認
@@ -66,7 +66,7 @@ test.describe('BigQuery Driver Basic Functionality', () => {
 
   test('should display tables in prod_carmo_db dataset', async ({ page }) => {
     // データセット選択まで進む
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db`);
 
     // テーブル一覧が表示されることを確認
     await expect(page.locator('table')).toBeVisible();
@@ -82,7 +82,7 @@ test.describe('BigQuery Driver Basic Functionality', () => {
 
   test('should display member_info table structure', async ({ page }) => {
     // member_infoテーブル構造画面へ
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&table=member_info`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&table=member_info`);
 
     // テーブル構造ページの表示確認
     await expect(page).toHaveTitle(/Table.*member_info/);
@@ -103,7 +103,7 @@ test.describe('BigQuery Driver Basic Functionality', () => {
 
   test('should access member_info data selection page', async ({ page }) => {
     // データ選択画面へ
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=&db=prod_carmo_db&select=member_info`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=&db=prod_carmo_db&select=member_info`);
 
     // データ選択ページの表示確認
     await expect(page).toHaveTitle(/Select.*member_info/);
@@ -120,9 +120,9 @@ test.describe('BigQuery Driver Basic Functionality', () => {
 
   test('should handle navigation between sections', async ({ page }) => {
     // ログイン
-    await page.goto(`/?bigquery=${BIGQUERY_PROJECT_ID}&username=`);
+    await page.goto(`${BASE_URL}/?bigquery=${GOOGLE_CLOUD_PROJECT}&username=`);
     await page.selectOption('select[name="auth[driver]"]', 'bigquery');
-    await page.fill('input[name="auth[server]"]', BIGQUERY_PROJECT_ID);
+    await page.fill('input[name="auth[server]"]', GOOGLE_CLOUD_PROJECT);
     await page.click('input[type="submit"][value="Login"]');
 
     // データセット → テーブル → 構造 → データ選択の流れをテスト

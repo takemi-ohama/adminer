@@ -12,7 +12,7 @@ services:
       - ./playwright-report:/app/playwright-report
     environment:
       - BASE_URL=http://adminer-bigquery-test
-      - BIGQUERY_PROJECT_ID=nyle-carmo-analysis
+      - GOOGLE_CLOUD_PROJECT=adminer-test-472623
     networks:
       - adminer_net
 

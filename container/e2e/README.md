@@ -75,7 +75,7 @@ docker compose run --rm playwright-e2e npm run test:debug
 ### 環境変数
 
 - `BASE_URL` - AdminerのベースURL (default: http://adminer-bigquery-test)
-- `BIGQUERY_PROJECT_ID` - テスト対象のBigQueryプロジェクト
+- `GOOGLE_CLOUD_PROJECT` - テスト対象のBigQueryプロジェクト
 
 ## 出力ファイル
 
