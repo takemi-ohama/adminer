@@ -208,6 +208,11 @@ docker ps | grep adminer-bigquery-test
 
 ## 開発・テスト手順 (2025-09更新)
 
+### ⚠️ 重要: コード修正後のビルド要件
+**コードを修正した後は必ずwebコンテナの再ビルドが必要です**
+- Dockerコンテナ内のコードは初回ビルド時にコピーされるため、ホスト側の変更は自動反映されません
+- 対象: plugins/drivers/bigquery.php, plugins/login-bigquery.php, container/web/index.php等
+
 ### 基本開発フロー
 ```bash
 # 1. Webアプリケーション起動
@@ -217,14 +222,18 @@ docker compose up --build -d
 # 2. 開発・コード修正
 # BigQueryドライバープラグインの実装・修正
 
-# 3. 基本動作確認
+# 3. ⚠️ 必須: 修正後のリビルド
+docker compose down
+docker compose up --build -d
+
+# 4. 基本動作確認
 curl -I http://localhost:8080
 
-# 4. E2Eテスト実行
+# 5. E2Eテスト実行
 cd ../e2e
 ./run-e2e-tests.sh
 
-# 5. 安定性テスト（必要に応じて）
+# 6. 安定性テスト（必要に応じて）
 ./run-monkey-test.sh
 ```
 
