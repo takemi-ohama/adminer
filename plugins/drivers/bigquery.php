@@ -124,7 +124,7 @@ if (isset($_GET["bigquery"])) {
 		public const DANGEROUS_SQL_PATTERNS = array(
 			'ddl_dml' => '/;\\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
 			'union_injection' => '/UNION\\s+(ALL\\s+)?SELECT/i',
-			'block_comments' => '/\\/\\*.*?\\*\\//i',
+			'block_comments' => '/\/\*[^*]*\*+(?:[^\/\*][^*]*\*+)*\//i',
 			'line_comments' => '/--[^\\r\\n]*/i',
 			'execute_commands' => '/\\b(EXEC|EXECUTE|SP_)\\b/i',
 		);
@@ -388,6 +388,18 @@ if (isset($_GET["bigquery"])) {
 			}
 			return null;
 		}
+
+	/**
+	 * Build full table name with project and dataset qualifiers
+	 * @param string $table テーブル名
+	 * @param string $database データセット名
+	 * @param string $projectId プロジェクトID
+	 * @return string 完全修飾テーブル名
+	 */
+	static function buildFullTableName($table, $database, $projectId)
+	{
+		return "`" . $projectId . "`.`" . $database . "`.`" . $table . "`";
+	}
 	}
 
 	// Adminerコアとの互換性のためのidf_escape()関数
@@ -1407,8 +1419,8 @@ if (isset($_GET["bigquery"])) {
 			$column = $matches[1];  // Keep column backticks: `id`
 			$value = $matches[2];   // The value inside backticks: 123, Test Record Name, etc.
 			
-			// Check if value is numeric (integer or float)
-			if (is_numeric($value)) {
+			// Check if value is numeric (integer or float) with stricter validation
+			if (preg_match('/^-?\d+(\.\d+)?$/', $value)) {
 				// Numeric values don't need quotes
 				return $column . ' = ' . $value;
 			} else {
@@ -1514,7 +1526,8 @@ if (isset($_GET["bigquery"])) {
 			if (empty($database)) {
 				return false;
 			}
-			$fullTableName = "`" . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . "`.`" . $database . "`.`" . $table . "`";
+			$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
+			$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
 			$query = "SELECT $selectClause FROM $fullTableName";
 			if (!empty($where)) {
 				$whereClause = array();
@@ -1641,7 +1654,8 @@ if (isset($_GET["bigquery"])) {
 			}
 
 			// INSERT文組み立て
-			$fullTableName = "`" . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . "`.`" . $database . "`.`" . $table . "`";
+			$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
+			$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
 			$fieldsStr = implode(", ", $fields);
 			$valuesStr = implode(", ", $values);
 			$insertQuery = "INSERT INTO $fullTableName ($fieldsStr) VALUES ($valuesStr)";
@@ -1735,7 +1749,8 @@ if (isset($_GET["bigquery"])) {
 			}
 
 			// UPDATE文組み立て
-			$fullTableName = "`" . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . "`.`" . $database . "`.`" . $table . "`";
+			$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
+			$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
 			$setStr = implode(", ", $setParts);
 			$updateQuery = "UPDATE $fullTableName SET $setStr $whereClause";
 
@@ -1805,11 +1820,12 @@ if (isset($_GET["bigquery"])) {
 				$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
 			} else {
 				// WHERE句がない場合は安全のため削除を制限
-				throw new InvalidArgumentException("BigQuery: DELETE without WHERE clause is not allowed");
+				throw new InvalidArgumentException("BigQuery: DELETE without WHERE clause is not allowed. Please specify WHERE conditions to avoid accidental data deletion.");
 			}
 
 			// DELETE文組み立て
-			$fullTableName = "`" . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . "`.`" . $database . "`.`" . $table . "`";
+			$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
+			$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
 			$deleteQuery = "DELETE FROM $fullTableName $whereClause";
 
 			BigQueryUtils::logQuerySafely($deleteQuery, "DELETE");
