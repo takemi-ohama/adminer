@@ -286,6 +286,40 @@ if (isset($_GET["bigquery"])) {
 			}
 			error_log("BigQuery $context: $safeQuery");
 		}
+
+		/**
+		 * BigQuery用値型変換ヘルパー関数
+		 * @param mixed $value 変換する値
+		 * @param string $fieldType フィールド型
+		 * @return string BigQuery用にフォーマットされた値
+		 */
+		static function convertValueForBigQuery($value, $fieldType)
+		{
+			// NULL値の処理
+			if ($value === null || $value === '') {
+				return 'NULL';
+			}
+
+			// 値から既存のバッククォートを除去してからエスケープ
+			$cleanValue = trim(str_replace('`', '', $value));
+			$fieldType = strtolower($fieldType);
+
+			if (strpos($fieldType, 'timestamp') !== false) {
+				return "TIMESTAMP('" . str_replace("'", "''", $cleanValue) . "')";
+			} elseif (strpos($fieldType, 'datetime') !== false) {
+				return "DATETIME('" . str_replace("'", "''", $cleanValue) . "')";
+			} elseif (strpos($fieldType, 'date') !== false) {
+				return "DATE('" . str_replace("'", "''", $cleanValue) . "')";
+			} elseif (strpos($fieldType, 'time') !== false) {
+				return "TIME('" . str_replace("'", "''", $cleanValue) . "')";
+			} elseif (strpos($fieldType, 'int') !== false || strpos($fieldType, 'float') !== false || strpos($fieldType, 'numeric') !== false || strpos($fieldType, 'decimal') !== false) {
+				return $cleanValue;
+			} elseif (strpos($fieldType, 'bool') !== false) {
+				return (strtolower($cleanValue) === 'true' || $cleanValue === '1') ? 'TRUE' : 'FALSE';
+			} else {
+				return "'" . str_replace("'", "''", $cleanValue) . "'";
+			}
+		}
 		static function convertWhereCondition($condition)
 		{
 			if (!is_string($condition) || strlen($condition) > 1000) {
@@ -617,8 +651,10 @@ if (isset($_GET["bigquery"])) {
 		function query($query)
 		{
 			try {
-				// READ-ONLYモード制限を解除してCRUD操作を有効化
-				// $this->validateReadOnlyQuery($query);
+				// READ-ONLYモード制限の設定確認
+				if (getenv('BIGQUERY_READONLY_MODE') === 'true') {
+					$this->validateReadOnlyQuery($query);
+				}
 				
 				$queryLocation = $this->determineQueryLocation();
 				$queryJob = $this->bigQueryClient->query($query)
@@ -883,21 +919,35 @@ if (isset($_GET["bigquery"])) {
 			"REGEXP",
 			"NOT REGEXP"
 		);
-	// BigQuery パーティション機能はサポートしない (BigQuery のネイティブ機能を使用)
+	/**
+	 * @var array BigQuery partitioning columns (not supported, so empty)
+	 */
 	public $partitionBy = array();
-	
-	// BigQueryは符号付き/符号なし整数の区別がないため空配列
-	public $unsigned = array();
-	
-	// BigQueryはgenerated columnsをサポートしないため空配列
-	public $generated = array();
-// BigQueryはenum型をサポートしないため空配列
-public $enumLength = array();
-// BigQueryの挿入・編集関数（空配列 - 標準入力のみ対応）
-public $insertFunctions = array();
 
-// BigQueryの編集関数（空配列 - 標準編集のみ対応）
-public $editFunctions = array();
+	/**
+	 * @var array BigQuery unsigned integer types (not applicable, so empty)
+	 */
+	public $unsigned = array();
+
+	/**
+	 * @var array BigQuery generated columns (not supported, so empty)
+	 */
+	public $generated = array();
+
+	/**
+	 * @var array BigQuery enum type lengths (not supported, so empty)
+	 */
+	public $enumLength = array();
+
+	/**
+	 * @var array BigQuery insert functions (empty - only standard input supported)
+	 */
+	public $insertFunctions = array();
+
+	/**
+	 * @var array BigQuery edit functions (empty - only standard editing supported)
+	 */
+	public $editFunctions = array();
 
 	// BigQuery用データ型定義（Adminer互換形式）
 	protected $types = array(
@@ -1336,13 +1386,13 @@ public $editFunctions = array();
 			throw new InvalidArgumentException('WHERE condition exceeds maximum length');
 		}
 		$suspiciousPatterns = array(
-			'/;\\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
-			'/UNION\\s+(ALL\\s+)?SELECT/i',
-			'/\\/\\*.*?\\*\\//i',
-			'/--[^\\r\\n]*/i',
-			'/\\bEXEC\\b/i',
-			'/\\bEXECUTE\\b/i',
-			'/\\bSP_/i'
+			'/;\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\s+/i',
+			'/UNION\s+(ALL\s+)?SELECT/i',
+			'/\/\*.*?\*\//s',
+			'/--[^\r\n]*/i',
+			'/\bEXEC\b/i',
+			'/\bEXECUTE\b/i',
+			'/\bSP_/i'
 		);
 		foreach ($suspiciousPatterns as $pattern) {
 			if (preg_match($pattern, $condition)) {
@@ -1467,14 +1517,9 @@ public $editFunctions = array();
 			$fullTableName = "`" . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . "`.`" . $database . "`.`" . $table . "`";
 			$query = "SELECT $selectClause FROM $fullTableName";
 			if (!empty($where)) {
-				// DEBUG: WHERE配列の内容をログ出力
-				error_log("BigQuery DEBUG WHERE array: " . print_r($where, true));
-
 				$whereClause = array();
 				foreach ($where as $condition) {
-					error_log("BigQuery DEBUG processing WHERE condition: " . $condition);
 					$processedCondition = convertAdminerWhereToBigQuery($condition);
-					error_log("BigQuery DEBUG processed condition: " . $processedCondition);
 					$whereClause[] = $processedCondition;
 				}
 				$query .= " WHERE " . implode(" AND ", $whereClause);
@@ -1589,45 +1634,10 @@ public $editFunctions = array();
 				$cleanField = BigQueryUtils::escapeIdentifier($cleanFieldName);
 				$fields[] = $cleanField;
 
-				// NULL値の処理
-				if ($value === null || $value === '') {
-					$values[] = 'NULL';
-				} else {
-					// 値からも既存のバッククォートを除去してからエスケープ
-					$cleanValue = trim(str_replace('`', '', $value));
-
-					// フィールド型を確認してBigQuery適切な値フォーマットを適用
-					$fieldInfo = $tableFields[$cleanFieldName] ?? null;
-					$fieldType = strtolower($fieldInfo['type'] ?? 'string');
-
-					// DEBUG: フィールド型確認
-					error_log("BigQuery INSERT DEBUG: field='$cleanFieldName', type='$fieldType', original_value='$value', clean_value='$cleanValue'");
-
-					if (strpos($fieldType, 'timestamp') !== false) {
-						// TIMESTAMP型の場合は適切なBigQueryリテラル形式を使用
-						$values[] = "TIMESTAMP('" . str_replace("'", "''", $cleanValue) . "')";
-					} elseif (strpos($fieldType, 'datetime') !== false) {
-						// DATETIME型の場合
-						$values[] = "DATETIME('" . str_replace("'", "''", $cleanValue) . "')";
-					} elseif (strpos($fieldType, 'date') !== false) {
-						// DATE型の場合
-						$values[] = "DATE('" . str_replace("'", "''", $cleanValue) . "')";
-					} elseif (strpos($fieldType, 'time') !== false) {
-						// TIME型の場合
-						$values[] = "TIME('" . str_replace("'", "''", $cleanValue) . "')";
-					} elseif (strpos($fieldType, 'int') !== false || strpos($fieldType, 'float') !== false || strpos($fieldType, 'numeric') !== false || strpos($fieldType, 'decimal') !== false) {
-						// 数値型の場合はクオート不要
-						$values[] = $cleanValue;
-					} elseif (strpos($fieldType, 'bool') !== false) {
-						// BOOLEAN型の場合
-						$boolValue = (strtolower($cleanValue) === 'true' || $cleanValue === '1') ? 'TRUE' : 'FALSE';
-						$values[] = $boolValue;
-					} else {
-						// その他（STRING等）は通常の文字列エスケープ
-						$escapedValue = str_replace("'", "''", $cleanValue);
-						$values[] = "'" . $escapedValue . "'";
-					}
-				}
+				// 共通の型変換ヘルパーを使用
+				$fieldInfo = $tableFields[$cleanFieldName] ?? null;
+				$fieldType = $fieldInfo['type'] ?? 'string';
+				$values[] = BigQueryUtils::convertValueForBigQuery($value, $fieldType);
 			}
 
 			// INSERT文組み立て
@@ -1706,38 +1716,11 @@ public $editFunctions = array();
 				$cleanFieldName = trim(str_replace('`', '', $field));
 				$cleanField = BigQueryUtils::escapeIdentifier($cleanFieldName);
 
-				// NULL値の処理
-				if ($value === null || $value === '') {
-					$setParts[] = "$cleanField = NULL";
-				} else {
-					// 値から既存のバッククォートを除去してからエスケープ
-					$cleanValue = trim(str_replace('`', '', $value));
-
-					// フィールド型を確認してBigQuery適切な値フォーマットを適用
-					$fieldInfo = $tableFields[$cleanFieldName] ?? null;
-					$fieldType = strtolower($fieldInfo['type'] ?? 'string');
-
-					if (strpos($fieldType, 'timestamp') !== false) {
-						$setParts[] = "$cleanField = TIMESTAMP('" . str_replace("'", "''", $cleanValue) . "')";
-					} elseif (strpos($fieldType, 'datetime') !== false) {
-						$setParts[] = "$cleanField = DATETIME('" . str_replace("'", "''", $cleanValue) . "')";
-					} elseif (strpos($fieldType, 'date') !== false) {
-						$setParts[] = "$cleanField = DATE('" . str_replace("'", "''", $cleanValue) . "')";
-					} elseif (strpos($fieldType, 'time') !== false) {
-						$setParts[] = "$cleanField = TIME('" . str_replace("'", "''", $cleanValue) . "')";
-					} elseif (strpos($fieldType, 'int') !== false || strpos($fieldType, 'float') !== false || strpos($fieldType, 'numeric') !== false || strpos($fieldType, 'decimal') !== false) {
-						// 数値型の場合はクオート不要
-						$setParts[] = "$cleanField = $cleanValue";
-					} elseif (strpos($fieldType, 'bool') !== false) {
-						// BOOLEAN型の場合
-						$boolValue = (strtolower($cleanValue) === 'true' || $cleanValue === '1') ? 'TRUE' : 'FALSE';
-						$setParts[] = "$cleanField = $boolValue";
-					} else {
-						// その他（STRING等）は通常の文字列エスケープ
-						$escapedValue = str_replace("'", "''", $cleanValue);
-						$setParts[] = "$cleanField = '" . $escapedValue . "'";
-					}
-				}
+				// 共通の型変換ヘルパーを使用
+				$fieldInfo = $tableFields[$cleanFieldName] ?? null;
+				$fieldType = $fieldInfo['type'] ?? 'string';
+				$convertedValue = BigQueryUtils::convertValueForBigQuery($value, $fieldType);
+				$setParts[] = "$cleanField = $convertedValue";
 			}
 
 			if (empty($setParts)) {
@@ -1818,12 +1801,11 @@ public $editFunctions = array();
 
 			// WHERE句の処理（AdminerのqueryWhereをBigQueryに変換）
 			$whereClause = '';
-			if (!empty($queryWhere)) {
+			if (!empty($queryWhere) && trim($queryWhere) !== '') {
 				$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
 			} else {
 				// WHERE句がない場合は安全のため削除を制限
-				error_log("BigQuery: DELETE without WHERE clause is not allowed");
-				return false;
+				throw new InvalidArgumentException("BigQuery: DELETE without WHERE clause is not allowed");
 			}
 
 			// DELETE文組み立て
