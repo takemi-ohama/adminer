@@ -122,11 +122,11 @@ if (isset($_GET["bigquery"])) {
 			'RECORD' => array('type' => 'text', 'length' => null),
 		);
 		public const DANGEROUS_SQL_PATTERNS = array(
-			'ddl_dml' => '/;\\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
-			'union_injection' => '/UNION\\s+(ALL\\s+)?SELECT/i',
-			'block_comments' => '/\/\*[^*]*\*+(?:[^\/\*][^*]*\*+)*\//i',
+			'ddl_dml' => '/;\\s*(?:DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
+			'union_injection' => '/UNION\\s+(?:ALL\\s+)?SELECT/i',
+			'block_comments' => '/\/\*.*?\*\//s',
 			'line_comments' => '/--[^\\r\\n]*/i',
-			'execute_commands' => '/\\b(EXEC|EXECUTE|SP_)\\b/i',
+			'execute_commands' => '/\\b(?:EXEC|EXECUTE|SP_)\\b/i',
 		);
 		public const SUPPORTED_FEATURES = array(
 			'database' => true,
@@ -408,20 +408,43 @@ if (isset($_GET["bigquery"])) {
 			return BigQueryUtils::escapeIdentifier($idf);
 		}
 	}
+	/**
+	 * BigQuery Database Connection Class
+	 */
 	class Db
 	{
-
+		/** @var Db|null Singleton instance */
 		static $instance;
+
+		/** @var BigQueryClient BigQuery client instance */
 		public $bigQueryClient;
+
+		/** @var string GCP Project ID */
 		public $projectId;
+
+		/** @var string Current dataset ID */
 		public $datasetId = '';
+
+		/** @var array Connection configuration */
 		public $config = array();
+
+		/** @var string Database flavor identifier */
 		public $flavor = 'BigQuery';
+
+		/** @var string Server information string */
 		public $server_info = 'Google Cloud BigQuery';
+
+		/** @var string Extension name */
 		public $extension = 'BigQuery Driver';
-	public $error = '';
-	public $affected_rows = 0;
-	public $info = '';
+
+		/** @var string Last error message */
+		public $error = '';
+
+		/** @var int Number of affected rows from last DML operation */
+		public $affected_rows = 0;
+
+		/** @var string Additional info from last operation */
+		public $info = '';
 		function connect($server, $username, $password)
 		{
 			try {
@@ -436,7 +459,7 @@ if (isset($_GET["bigquery"])) {
 				if (!$this->isLocationExplicitlySet($server)) {
 					$this->scheduleLocationDetection($this->projectId, $location);
 				}
-				error_log("BigQuery: Connected to project '{$this->projectId}' with location '{$this->config['location']}'");
+				// Connection successful - BigQuery client initialized
 				return true;
 			} catch (ServiceException $e) {
 				$this->logConnectionError($e, 'ServiceException');
@@ -492,7 +515,7 @@ if (isset($_GET["bigquery"])) {
 				'location' => $location,
 				'credentialsPath' => $credentialsPath
 			));
-			error_log("BigQuery: Using connection pool for project '{$this->projectId}' (key: " . substr($clientKey, 0, 8) . "...)");
+			// Connection pool initialized successfully
 		}
 		private function logConnectionError($e, $type)
 		{
@@ -677,7 +700,7 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 				$this->checkJobStatus($job);
-				error_log("BigQuery: Query executed successfully in location '$queryLocation'");
+				// Query executed successfully
 				return new Result($job);
 			} catch (ServiceException $e) {
 				BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
@@ -745,11 +768,11 @@ if (isset($_GET["bigquery"])) {
 				$datasetLocation = $datasetInfo['location'] ?? 'US';
 				$previousLocation = $this->config['location'] ?? 'US';
 				if ($datasetLocation !== $previousLocation) {
-					error_log("BigQuery: Dataset '$database' is in location '$datasetLocation', updating connection from '$previousLocation'");
+					// Dataset location updated
 					$this->config['location'] = $datasetLocation;
 				}
 				$this->datasetId = $database;
-				error_log("BigQuery: Successfully selected dataset '$database' in location '$datasetLocation'");
+				// Dataset selected successfully
 				return true;
 			} catch (ServiceException $e) {
 				$this->logDatasetError($e, $database);
@@ -1150,7 +1173,7 @@ if (isset($_GET["bigquery"])) {
 			'create_db',      // データセット作成
 			'create_table',   // テーブル作成
 			'insert',         // データ挿入
-			'update',         // データ更新 
+			'update',         // データ更新
 			'delete',         // データ削除
 			'drop_table',     // テーブル削除
 			'select',         // データ選択
@@ -1419,8 +1442,8 @@ if (isset($_GET["bigquery"])) {
 			$column = $matches[1];  // Keep column backticks: `id`
 			$value = $matches[2];   // The value inside backticks: 123, Test Record Name, etc.
 			
-			// Check if value is numeric (integer or float) with stricter validation
-			if (preg_match('/^-?\d+(\.\d+)?$/', $value)) {
+			// Check if value is numeric with enhanced validation
+			if (preg_match('/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/', $value)) {
 				// Numeric values don't need quotes
 				return $column . ' = ' . $value;
 			} else {
@@ -1684,7 +1707,7 @@ if (isset($_GET["bigquery"])) {
 
 				// 影響行数を記録
 				$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 1;
-				error_log("BigQuery: INSERT successful, affected rows: " . $connection->affected_rows);
+				// INSERT operation completed successfully
 				return true;
 			}
 
@@ -1778,7 +1801,7 @@ if (isset($_GET["bigquery"])) {
 
 				// 影響行数を記録
 				$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
-				error_log("BigQuery: UPDATE successful, affected rows: " . $connection->affected_rows);
+				// UPDATE operation completed successfully
 				return true;
 			}
 
@@ -1852,7 +1875,7 @@ if (isset($_GET["bigquery"])) {
 
 				// 影響行数を記録
 				$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
-				error_log("BigQuery: DELETE successful, affected rows: " . $connection->affected_rows);
+				// DELETE operation completed successfully
 				return true;
 			}
 
@@ -1877,6 +1900,12 @@ if (isset($_GET["bigquery"])) {
 		return null;
 	}
 
+	/**
+	 * BigQuery データセット作成
+	 * @param string $database データセット名
+	 * @param string $collation 照合順序（BigQueryでは未使用）
+	 * @return bool 作成成功時true
+	 */
 	function create_database($database, $collation)
 	{
 		global $connection;
@@ -1887,14 +1916,14 @@ if (isset($_GET["bigquery"])) {
 			}
 
 			// BigQueryのデータセット作成
-			error_log("BigQuery: Creating dataset '$database' in project '{$connection->projectId}'");
+			// Creating BigQuery dataset
 			
 			// 正しいBigQuery PHP SDKのAPIを使用
 			$dataset = $connection->bigQueryClient->createDataset($database, [
 				'location' => $connection->config['location'] ?? 'US'
 			]);
 			
-			error_log("BigQuery: Dataset '$database' created successfully");
+			// Dataset created successfully
 			return true;
 			
 		} catch (ServiceException $e) {
@@ -1924,7 +1953,7 @@ if (isset($_GET["bigquery"])) {
 	 * @param string $partitioning パーティショニング（BigQueryでは未サポート）
 	 * @return bool 作成成功時true
 	 */
-	function alter_table($table, $name, $fields, $foreign, $comment, $engine, $collation, $auto_increment, $partitioning) 
+	function alter_table($table, $name, $fields, $foreign, $comment, $engine, $collation, $auto_increment, $partitioning)
 	{
 		global $connection;
 		
@@ -1936,7 +1965,7 @@ if (isset($_GET["bigquery"])) {
 			
 			// 新規テーブル作成の場合（$table が空）
 			if ($table == "") {
-				error_log("BigQuery: Creating new table '$name' in dataset '{$connection->datasetId}'");
+				// Creating new BigQuery table
 				
 				// 現在のデータセットを取得
 				$database = $_GET['db'] ?? $connection->datasetId ?? '';
@@ -1987,7 +2016,7 @@ if (isset($_GET["bigquery"])) {
 				// BigQueryテーブル作成実行
 				$table = $dataset->createTable($cleanTableName, $tableOptions);
 				
-				error_log("BigQuery: Table '$name' created successfully in dataset '$database'");
+				// Table created successfully
 				return true;
 				
 			} else {
