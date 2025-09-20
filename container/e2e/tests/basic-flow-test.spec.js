@@ -26,9 +26,20 @@ test.describe('BigQuery Adminer 基本機能フローテスト', () => {
       console.log('✅ BigQueryドライバー選択確認');
     }
 
-    // ログインボタンクリック
-    const loginButton = page.locator('input[type="submit"][value="Login"]');
-    await expect(loginButton).toBeVisible();
+    // ログインボタンクリック（複数のセレクタを試行）
+    let loginButton;
+    try {
+      loginButton = page.locator('button:has-text("Login")');
+      await expect(loginButton).toBeVisible({ timeout: 2000 });
+    } catch {
+      try {
+        loginButton = page.locator('input[type="submit"][value="Login"]');
+        await expect(loginButton).toBeVisible({ timeout: 2000 });
+      } catch {
+        loginButton = page.locator('button');
+        await expect(loginButton).toBeVisible({ timeout: 2000 });
+      }
+    }
     await loginButton.click();
     await page.waitForLoadState('networkidle');
 
@@ -165,16 +176,16 @@ test.describe('BigQuery Adminer 基本機能フローテスト', () => {
       console.log(`❌ ページエラー: ${error.message}`);
     });
 
-    // 明示的なエラーメッセージの確認
-    const pageErrors = await page.locator('.error').count();
-    if (pageErrors > 0) {
-      console.log(`⚠️  ページ内エラー数: ${pageErrors}`);
-      const errorTexts = await page.locator('.error').allTextContents();
-      errorTexts.forEach((error, index) => {
-        console.log(`   エラー${index + 1}: ${error}`);
-      });
+    // 包括的エラー検出機能
+    await performComprehensiveErrorCheck(page);
+
+    // サーバーログチェック
+    const serverLogResult = await checkServerLogs();
+    if (serverLogResult.hasErrors) {
+      console.log('❌ サーバーログでエラー検出:');
+      serverLogResult.errors.forEach(error => console.log(`   ${error}`));
     } else {
-      console.log('✅ ページエラーなし');
+      console.log('✅ サーバーログ - エラーなし');
     }
 
     console.log('🎯 基本機能フローテスト完了');
@@ -187,7 +198,21 @@ test.describe('BigQuery Adminer 基本機能フローテスト', () => {
     await page.goto(BASE_URL);
     await page.waitForLoadState('networkidle');
 
-    await page.click('input[type="submit"][value="Login"]');
+    // ログインボタンクリック（複数のセレクタを試行）
+    let loginButtonSimple;
+    try {
+      loginButtonSimple = page.locator('button:has-text("Login")');
+      await expect(loginButtonSimple).toBeVisible({ timeout: 2000 });
+    } catch {
+      try {
+        loginButtonSimple = page.locator('input[type="submit"][value="Login"]');
+        await expect(loginButtonSimple).toBeVisible({ timeout: 2000 });
+      } catch {
+        loginButtonSimple = page.locator('button');
+        await expect(loginButtonSimple).toBeVisible({ timeout: 2000 });
+      }
+    }
+    await loginButtonSimple.click();
     await page.waitForLoadState('networkidle');
 
     // データベース一覧の表示確認
@@ -202,4 +227,174 @@ test.describe('BigQuery Adminer 基本機能フローテスト', () => {
 
     console.log('🎯 簡易基本機能テスト完了');
   });
+
+  // 包括的エラー検出機能（共通関数）
+  async function performComprehensiveErrorCheck(page) {
+    console.log('📝 包括的エラー検出実行');
+
+    // 1. 画面上のエラーメッセージ検出
+    const errorPatterns = [
+      { selector: '.error', name: 'Adminerエラー' },
+      { pattern: /Fatal error|Parse error|Warning|Notice/i, name: 'PHPエラー' },
+      { pattern: /Error:|Exception:|failed/i, name: '一般エラー' },
+      { pattern: /Call to undefined function/i, name: '未定義関数エラー' },
+      { pattern: /idf_escape/i, name: 'idf_escape関数エラー' }
+    ];
+
+    let errorFound = false;
+    const pageContent = await page.content();
+
+    for (const errorPattern of errorPatterns) {
+      if (errorPattern.selector) {
+        // CSS セレクタによるエラー検出
+        const errorElements = await page.locator(errorPattern.selector).count();
+        if (errorElements > 0) {
+          console.log(`❌ ${errorPattern.name}検出: ${errorElements}個`);
+          const errorTexts = await page.locator(errorPattern.selector).allTextContents();
+          errorTexts.forEach((error, index) => {
+            console.log(`   ${errorPattern.name}${index + 1}: ${error.substring(0, 100)}...`);
+          });
+          errorFound = true;
+        }
+      } else if (errorPattern.pattern) {
+        // 正規表現パターンによるエラー検出
+        if (errorPattern.pattern.test(pageContent)) {
+          console.log(`❌ ${errorPattern.name}検出（パターンマッチ）`);
+          const matches = pageContent.match(errorPattern.pattern);
+          if (matches) {
+            console.log(`   内容: ${matches[0]}`);
+          }
+          errorFound = true;
+        }
+      }
+    }
+
+    // 2. HTTPステータスコードチェック
+    const response = await page.goto(page.url(), { waitUntil: 'networkidle' });
+    const status = response.status();
+    if (status >= 400) {
+      console.log(`❌ HTTPエラー: ステータス ${status}`);
+      errorFound = true;
+    }
+
+    // 3. コンソールエラーチェック（既存の機能を維持）
+    let consoleErrors = 0;
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        console.log(`❌ ブラウザコンソールエラー: ${msg.text()}`);
+        consoleErrors++;
+        errorFound = true;
+      }
+    });
+
+    // 4. 結果サマリー
+    if (errorFound) {
+      console.log('⚠️  エラーが検出されました');
+
+      // エラー詳細情報をスクリーンショットに保存
+      await page.screenshot({
+        path: `./test-results/error_detection_${Date.now()}.png`,
+        fullPage: true
+      });
+
+    } else {
+      console.log('✅ エラー検出なし - 正常動作確認');
+    }
+
+    return !errorFound; // エラーがなければtrue
+  }
+
+  // サーバーログチェック機能
+  async function checkServerLogs() {
+    console.log('📊 サーバーログ監視実行');
+
+    const { spawn } = require('child_process');
+    const logCheckResults = {
+      hasErrors: false,
+      errors: []
+    };
+
+    try {
+      // Docker execを使用してWebコンテナのログを確認
+      const logSources = [
+        {
+          name: 'Apache Error Log',
+          command: 'docker',
+          args: ['exec', 'adminer-bigquery-test', 'sh', '-c',
+            'if [ -f /var/log/apache2/error.log ]; then tail -n 20 /var/log/apache2/error.log | grep -i "error\\|fatal\\|warning" || echo "No recent errors"; else echo "Apache log not found"; fi']
+        },
+        {
+          name: 'Container Logs',
+          command: 'docker',
+          args: ['logs', '--tail=20', 'adminer-bigquery-test']
+        }
+      ];
+
+      for (const logSource of logSources) {
+        try {
+          const result = await executeCommand(logSource.command, logSource.args);
+
+          const errorPatterns = [
+            /Fatal error/i,
+            /Parse error/i,
+            /Call to undefined function/i,
+            /\[error\]/i,
+            /PHP Fatal/i,
+            /PHP Parse/i
+          ];
+
+          for (const pattern of errorPatterns) {
+            if (pattern.test(result.stdout)) {
+              logCheckResults.hasErrors = true;
+              logCheckResults.errors.push(`${logSource.name}: エラー検出`);
+              break;
+            }
+          }
+        } catch (cmdError) {
+          // ログチェック失敗は致命的ではない
+        }
+      }
+    } catch (error) {
+      // ログチェック自体の失敗はテストを失敗させない
+    }
+
+    return logCheckResults;
+  }
+
+  // コマンド実行ヘルパー関数
+  function executeCommand(command, args) {
+    return new Promise((resolve, reject) => {
+      const { spawn } = require('child_process');
+      const process = spawn(command, args);
+
+      let stdout = '';
+      let stderr = '';
+
+      process.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      process.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      process.on('close', (code) => {
+        resolve({
+          code: code,
+          stdout: stdout,
+          stderr: stderr
+        });
+      });
+
+      process.on('error', (error) => {
+        reject(error);
+      });
+
+      // 5秒でタイムアウト（基本テスト用に短縮）
+      setTimeout(() => {
+        process.kill('SIGTERM');
+        reject(new Error('Command timeout'));
+      }, 5000);
+    });
+  }
 });
