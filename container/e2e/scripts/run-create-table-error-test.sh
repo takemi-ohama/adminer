@@ -19,7 +19,7 @@ echo "🚀 「テーブルを作成」エラー検出テスト実行中..."
 cd "$(dirname "$0")/.."
 
 # create-table-error-test.jsを実行
-docker compose run --rm playwright-e2e node /app/container/e2e/scripts/create-table-error-test.js
+docker compose run --rm playwright-e2e node /app/container/e2e/tests/create-table-error-test.js
 
 echo "✅ 「テーブルを作成」エラー検出テスト完了: $(date)"
 echo "🎯 「テーブルを作成」エラー検出テスト完了: $(date)"
