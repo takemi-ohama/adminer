@@ -18,10 +18,11 @@ RUN npx playwright install chromium firefox webkit
 ENV NODE_ENV=test
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# E2E設定ファイルとテストファイルをコピー
+# E2E設定ファイル、テストファイル、スクリプトファイルをコピー
 COPY container/e2e/package.json /usr/local/src/container/e2e/package.json
 COPY container/e2e/playwright.config.js /usr/local/src/container/e2e/playwright.config.js
 COPY container/e2e/tests/ /usr/local/src/container/e2e/tests/
+COPY container/e2e/scripts/ /usr/local/src/container/e2e/scripts/
 
 # エントリーポイントスクリプトをコピー
 COPY container/e2e/entrypoint.sh /usr/local/bin/entrypoint.sh

@@ -1,12 +1,12 @@
-import { defineConfig, devices } from '@playwright/test';
+const { defineConfig, devices } = require('@playwright/test');
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
 
 /**
  * @see https://playwright.dev/docs/test-configuration
  */
-export default defineConfig({
-  testDir: './tests',
+module.exports = defineConfig({
+  testDir: '/app/container/e2e/tests',
   /* Run tests in files in parallel */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */

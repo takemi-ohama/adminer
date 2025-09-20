@@ -14,6 +14,9 @@ mkdir -p "$LOG_DIR"
 echo "🚀 基本機能フローテスト実行開始: $(date)" | tee "$LOG_FILE"
 echo "ログファイル: $LOG_FILE" | tee -a "$LOG_FILE"
 
+# scriptsディレクトリから実行するためにe2eディレクトリに移動
+cd "$(dirname "$0")/.."
+
 # Webコンテナが起動していることを確認
 echo "📡 Web環境確認中..." | tee -a "$LOG_FILE"
 docker compose -f ../web/compose.yml ps adminer-bigquery-test | grep "Up" > /dev/null || {
@@ -30,8 +33,13 @@ docker compose build playwright-e2e 2>&1 | tee -a "$LOG_FILE"
 # 基本機能フローテスト実行
 echo "🚀 基本機能フローテスト実行中..." | tee -a "$LOG_FILE"
 
-# テストファイル指定でentrypoint.sh経由で実行
-docker compose run --rm playwright-e2e /app/container/e2e/tests/basic-flow-test.spec.js 2>&1 | tee -a "$LOG_FILE"
+# 基本フローテスト実行（Playwrightテスト）
+docker compose run --rm playwright-e2e npx playwright test \
+    --config=/app/container/e2e/playwright.config.js \
+    tests/basic-flow-test.spec.js \
+    --reporter=line \
+    --output=test-results/basic-flow \
+    --project=chromium 2>&1 | tee -a "$LOG_FILE"
 
 EXIT_CODE=${PIPESTATUS[1]}
 

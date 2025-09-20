@@ -10,6 +10,8 @@ mkdir -p /app/container/e2e
 cp /usr/local/src/container/e2e/playwright.config.js /app/container/e2e/ 2>/dev/null || true
 mkdir -p /app/container/e2e/tests
 cp -r /usr/local/src/container/e2e/tests/* /app/container/e2e/tests/ 2>/dev/null || true
+mkdir -p /app/container/e2e/scripts
+cp -r /usr/local/src/container/e2e/scripts/* /app/container/e2e/scripts/ 2>/dev/null || true
 
 echo "📦 依存関係をインストール中..." >&2
 npm install
