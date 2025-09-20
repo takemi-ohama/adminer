@@ -11,6 +11,13 @@ if (function_exists('Adminer\\add_driver')) {
 	add_driver("bigquery", "Google BigQuery");
 }
 
+if (!function_exists('\\Adminer\\idf_escape')) {
+	function idf_escape($idf)
+	{
+		return "`" . str_replace("`", "``", $idf) . "`";
+	}
+}
+
 if (isset($_GET["bigquery"])) {
 	define('Adminer\DRIVER', "bigquery");
 	class BigQueryConnectionPool
