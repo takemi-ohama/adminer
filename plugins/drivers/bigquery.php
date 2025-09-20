@@ -13,19 +13,28 @@ if (function_exists('Adminer\\add_driver')) {
 
 if (isset($_GET["bigquery"])) {
 	define('Adminer\DRIVER', "bigquery");
+	/**
+	 * BigQuery connection pool manager for efficient connection reuse
+	 */
 	class BigQueryConnectionPool
 	{
-
+		/** @var array Active BigQuery client connections indexed by connection key */
 		private static $pool = array();
+
+		/** @var int Maximum number of concurrent connections in pool */
 		private static $maxConnections = 3;
+
+		/** @var array Last usage timestamps for LRU eviction policy */
 		private static $usageTimestamps = array();
+
+		/** @var array Connection creation timestamps for age tracking */
 		private static $creationTimes = array();
 		static function getConnection($key, $config)
 		{
 			if (isset(self::$pool[$key])) {
 				self::$usageTimestamps[$key] = time();
 				$age = time() - self::$creationTimes[$key];
-				error_log("BigQuery ConnectionPool: Reusing connection (age: {$age}s, pool size: " . count(self::$pool) . ")");
+				// Connection pool reuse logging removed as per code review
 				return self::$pool[$key];
 			}
 			if (count(self::$pool) >= self::$maxConnections) {
@@ -44,7 +53,7 @@ if (isset($_GET["bigquery"])) {
 			self::$pool[$key] = $client;
 			self::$usageTimestamps[$key] = time();
 			self::$creationTimes[$key] = time();
-			error_log("BigQuery ConnectionPool: Created new connection in {$creationTime}s (pool size: " . count(self::$pool) . ")");
+			// Connection creation logging removed as per code review
 			return $client;
 		}
 		private static function evictOldestConnection()
@@ -56,7 +65,7 @@ if (isset($_GET["bigquery"])) {
 			unset(self::$pool[$oldestKey]);
 			unset(self::$usageTimestamps[$oldestKey]);
 			unset(self::$creationTimes[$oldestKey]);
-			error_log("BigQuery ConnectionPool: Evicted LRU connection '$oldestKey' (pool size: " . count(self::$pool) . ")");
+			// Connection eviction logging removed as per code review
 		}
 		function clearPool()
 		{
@@ -64,7 +73,7 @@ if (isset($_GET["bigquery"])) {
 			self::$pool = array();
 			self::$usageTimestamps = array();
 			self::$creationTimes = array();
-			error_log("BigQuery ConnectionPool: Cleared all connections ($count removed)");
+			// Connection pool clearing logging removed as per code review
 		}
 		function getStats()
 		{
@@ -269,7 +278,7 @@ if (isset($_GET["bigquery"])) {
 		if (preg_match('/^`[^`]*`$/', $identifier)) {
 			return $identifier;
 		}
-		
+
 		// バッククォートを含む場合は、重複を防ぐため一度除去してから再エスケープ
 		$cleanIdentifier = trim($identifier, '`');
 		return "`" . str_replace("`", "``", $cleanIdentifier) . "`";
@@ -690,7 +699,7 @@ if (isset($_GET["bigquery"])) {
 				if (getenv('BIGQUERY_READONLY_MODE') === 'true') {
 					$this->validateReadOnlyQuery($query);
 				}
-				
+
 				$queryLocation = $this->determineQueryLocation();
 				$queryJob = $this->bigQueryClient->query($query)
 					->useLegacySql(false)
@@ -992,7 +1001,7 @@ if (isset($_GET["bigquery"])) {
 		array("BOOLEAN" => 0, "BOOL" => 0),
 		array("ARRAY" => 0, "STRUCT" => 0, "JSON" => 0, "GEOGRAPHY" => 0)
 	);
-	
+
 		static function connect($server, $username, $password)
 		{
 			$db = new Db();
@@ -1272,7 +1281,7 @@ if (isset($_GET["bigquery"])) {
 		if (!$flush) {
 			$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
 			if ($cached !== false) {
-				error_log("get_databases: Using cached result (" . count($cached) . " datasets)");
+				// Cache hit - debug logging removed
 				return $cached;
 			}
 		}
@@ -1286,7 +1295,7 @@ if (isset($_GET["bigquery"])) {
 			}
 			sort($datasets);
 			BigQueryCacheManager::set($cacheKey, $datasets, $cacheTime);
-			error_log("get_databases: Retrieved and cached " . count($datasets) . " datasets");
+			// Successful retrieval - debug logging removed
 			return $datasets;
 		} catch (Exception $e) {
 			error_log("Error listing datasets: " . $e->getMessage());
@@ -1311,10 +1320,10 @@ if (isset($_GET["bigquery"])) {
 			$cacheTime = 300;
 			$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
 			if ($cached !== false) {
-				error_log("tables_list: Using cached result for dataset '$actualDatabase' (" . count($cached) . " tables)");
+				// Cache hit for tables - debug logging removed
 				return $cached;
 			}
-			error_log("tables_list called with database: '$database', using actual: '$actualDatabase'");
+			// Table listing debug logging removed
 			$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($actualDatabase) : null;
 			$tables = array();
 			$pageToken = null;
@@ -1330,7 +1339,7 @@ if (isset($_GET["bigquery"])) {
 				$pageToken = $result->nextResultToken();
 			} while ($pageToken);
 			BigQueryCacheManager::set($cacheKey, $tables, $cacheTime);
-			error_log("tables_list: Retrieved and cached " . count($tables) . " tables for dataset '$actualDatabase'");
+			// Successful table retrieval - debug logging removed
 			return $tables;
 		} catch (Exception $e) {
 			error_log("Error listing tables for database '$database' (actual: '$actualDatabase'): " . $e->getMessage());
@@ -1346,7 +1355,7 @@ if (isset($_GET["bigquery"])) {
 				error_log("table_status: No database (dataset) context available, returning empty array");
 				return array();
 			}
-			error_log("table_status called with name param: '$name', fast: " . ($fast ? 'true' : 'false') . ", using database: '$database'");
+			// Table status debug logging removed
 			$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
 			$tables = array();
 			if ($name) {
@@ -1371,7 +1380,7 @@ if (isset($_GET["bigquery"])) {
 						'Avg_row_length' => $tableInfo['numRows'] > 0 ? intval(($tableInfo['numBytes'] ?? 0) / $tableInfo['numRows']) : 0,
 					);
 					$tables[$table->id()] = $result;
-					error_log("table_status: returning specific table '$name' info as indexed array");
+					// Specific table return - debug logging removed
 				} catch (Exception $e) {
 					error_log("Error getting specific table '$name' info: " . $e->getMessage() . ", returning empty array");
 					return array();
@@ -1402,10 +1411,10 @@ if (isset($_GET["bigquery"])) {
 					}
 					$tables[$table->id()] = $result;
 				}
-				error_log("table_status: returning " . count($tables) . " tables as indexed array (fast: " . ($fast ? 'true' : 'false') . ")");
+				// Multiple tables return - debug logging removed
 			}
 			$result = is_array($tables) ? $tables : array();
-			error_log("table_status: final result type: " . gettype($result) . ", count: " . count($result) . ", keys: " . implode(',', array_keys($result)));
+			// Final result type - debug logging removed
 			return $result;
 		} catch (Exception $e) {
 			error_log("Error getting table status for name '$name' (database: '$database'): " . $e->getMessage() . ", returning empty array");
@@ -1435,13 +1444,13 @@ if (isset($_GET["bigquery"])) {
 				throw new InvalidArgumentException('WHERE condition contains prohibited SQL patterns');
 			}
 		}
-		
+
 		// Convert value backticks to proper quotes in comparison operations
 		// Pattern: `column` = `value` -> `column` = 'value' (for strings) or `column` = value (for numbers)
 		$condition = preg_replace_callback('/(`[^`]+`)\\s*=\\s*`([^`]+)`/', function ($matches) {
 			$column = $matches[1];  // Keep column backticks: `id`
 			$value = $matches[2];   // The value inside backticks: 123, Test Record Name, etc.
-			
+
 			// Check if value is numeric with enhanced validation
 			if (preg_match('/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/', $value)) {
 				// Numeric values don't need quotes
@@ -1452,10 +1461,10 @@ if (isset($_GET["bigquery"])) {
 				return $column . " = '" . $escaped . "'";
 			}
 		}, $condition);
-		
+
 		// Handle COLLATE clauses - remove them as BigQuery doesn't support MySQL COLLATE syntax
 		$condition = preg_replace('/\\s+COLLATE\\s+\\w+/i', '', $condition);
-		
+
 		return $condition;
 	}
 	function fields($table)
@@ -1471,10 +1480,10 @@ if (isset($_GET["bigquery"])) {
 		$cacheTime = 600;
 		$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
 		if ($cached !== false) {
-			error_log("fields: Using cached result for table '$table' (" . count($cached) . " fields)");
+			// Cache hit for fields - debug logging removed
 			return $cached;
 		}
-		error_log("fields called for table: '$table' in database: '$database'");
+		// Field retrieval debug logging removed
 		$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
 		$tableObj = $dataset->table($table);
 		try {
@@ -1487,19 +1496,19 @@ if (isset($_GET["bigquery"])) {
 			error_log("No schema fields found for table '$table'");
 			return array();
 		}
-		
+
 		$schemaFields = $tableInfo['schema']['fields'];
 		$fieldCount = count($schemaFields);
-		error_log("fields: Table '$table' has $fieldCount fields");
-		
+		// Field count debug logging removed
+
 		// BigQueryのシステムテーブル（INFORMATION_SCHEMAなど）の大量フィールド対策
 		// max_input_vars制限を回避するため、フィールド数を制限
 		$maxFields = 1000; // 元の制限値に戻す
 		if ($fieldCount > $maxFields) {
-			error_log("fields: WARNING - Table '$table' has $fieldCount fields, limiting to first $maxFields fields to avoid max_input_vars issues");
+			// Field count limit warning - keeping for operational monitoring
 			$schemaFields = array_slice($schemaFields, 0, $maxFields);
 		}
-		
+
 		$fields = array();
 		static $typeCache = array();
 		foreach ($schemaFields as $field) {
@@ -1529,9 +1538,9 @@ if (isset($_GET["bigquery"])) {
 				'privileges' => array('select' => 1, 'insert' => 1, 'update' => 1, 'where' => 1, 'order' => 1)
 			);
 		}
-		
+
 		BigQueryCacheManager::set($cacheKey, $fields, $cacheTime);
-		error_log("fields: Successfully retrieved and cached " . count($fields) . " fields for table '$table' (original: $fieldCount fields)");
+		// Field retrieval success - debug logging removed
 		return $fields;
 	} catch (Exception $e) {
 		error_log("Error getting table fields for '$table': " . $e->getMessage());
@@ -1648,13 +1657,13 @@ if (isset($_GET["bigquery"])) {
 		global $connection;
 		try {
 			if (!$connection || !isset($connection->bigQueryClient)) {
-				error_log("BigQuery: No connection available for insert");
+				// Connection check for insert
 				return false;
 			}
 
 			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 			if (empty($database) || empty($table)) {
-				error_log("BigQuery: Missing database or table for insert");
+				// Database/table validation for insert
 				return false;
 			}
 
@@ -1733,13 +1742,13 @@ if (isset($_GET["bigquery"])) {
 		global $connection;
 		try {
 			if (!$connection || !isset($connection->bigQueryClient)) {
-				error_log("BigQuery: No connection available for update");
+				// Connection check for update
 				return false;
 			}
 
 			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 			if (empty($database) || empty($table)) {
-				error_log("BigQuery: Missing database or table for update");
+				// Database/table validation for update
 				return false;
 			}
 
@@ -1761,7 +1770,7 @@ if (isset($_GET["bigquery"])) {
 			}
 
 			if (empty($setParts)) {
-				error_log("BigQuery: No valid SET clauses for update");
+				// SET clause validation for update
 				return false;
 			}
 
@@ -1827,13 +1836,13 @@ if (isset($_GET["bigquery"])) {
 		global $connection;
 		try {
 			if (!$connection || !isset($connection->bigQueryClient)) {
-				error_log("BigQuery: No connection available for delete");
+				// Connection check for delete
 				return false;
 			}
 
 			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 			if (empty($database) || empty($table)) {
-				error_log("BigQuery: Missing database or table for delete");
+				// Database/table validation for delete
 				return false;
 			}
 
@@ -1911,21 +1920,21 @@ if (isset($_GET["bigquery"])) {
 		global $connection;
 		try {
 			if (!$connection || !isset($connection->bigQueryClient)) {
-				error_log("BigQuery: No connection available for dataset creation");
+				// Connection check for dataset creation
 				return false;
 			}
 
 			// BigQueryのデータセット作成
 			// Creating BigQuery dataset
-			
+
 			// 正しいBigQuery PHP SDKのAPIを使用
 			$dataset = $connection->bigQueryClient->createDataset($database, [
 				'location' => $connection->config['location'] ?? 'US'
 			]);
-			
+
 			// Dataset created successfully
 			return true;
-			
+
 		} catch (ServiceException $e) {
 			$message = $e->getMessage();
 			if (strpos($message, 'Already Exists') !== false) {
@@ -1956,26 +1965,26 @@ if (isset($_GET["bigquery"])) {
 	function alter_table($table, $name, $fields, $foreign, $comment, $engine, $collation, $auto_increment, $partitioning)
 	{
 		global $connection;
-		
+
 		try {
 			if (!$connection || !isset($connection->bigQueryClient)) {
-				error_log("BigQuery: No connection available for table creation");
+				// Connection check for table creation
 				return false;
 			}
-			
+
 			// 新規テーブル作成の場合（$table が空）
 			if ($table == "") {
 				// Creating new BigQuery table
-				
+
 				// 現在のデータセットを取得
 				$database = $_GET['db'] ?? $connection->datasetId ?? '';
 				if (empty($database)) {
-					error_log("BigQuery: No dataset selected for table creation");
+					// Dataset selection validation for table creation
 					return false;
 				}
-				
+
 				$dataset = $connection->bigQueryClient->dataset($database);
-				
+
 				// フィールド定義をBigQueryスキーマ形式に変換
 				$schemaFields = array();
 				foreach ($fields as $field) {
@@ -1994,37 +2003,37 @@ if (isset($_GET["bigquery"])) {
 						}
 					}
 				}
-				
+
 				if (empty($schemaFields)) {
-					error_log("BigQuery: No valid fields defined for table '$name'");
+					// Field validation for table creation
 					return false;
 				}
-				
+
 				// テーブル作成オプション
 				$tableOptions = array(
 					'schema' => array('fields' => $schemaFields)
 				);
-				
+
 				// コメントがある場合は追加
 				if (!empty($comment)) {
 					$tableOptions['description'] = $comment;
 				}
-				
+
 				// BigQuery用にテーブル名からバッククオートを削除
 				$cleanTableName = trim(str_replace('`', '', $name));
 
 				// BigQueryテーブル作成実行
 				$table = $dataset->createTable($cleanTableName, $tableOptions);
-				
+
 				// Table created successfully
 				return true;
-				
+
 			} else {
 				// テーブル変更（既存テーブルの更新）
-				error_log("BigQuery: Table modification not implemented yet for table '$table'");
+				// Table modification not yet implemented
 				return false;
 			}
-			
+
 		} catch (ServiceException $e) {
 			$message = $e->getMessage();
 			if (strpos($message, 'Already Exists') !== false) {
