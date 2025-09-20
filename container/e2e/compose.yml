@@ -5,24 +5,17 @@ services:
       dockerfile: container/e2e/Dockerfile
     container_name: playwright-e2e
     volumes:
-      # 共有ワークスペースvolume（devコンテナと共有）
       - workspace:/app
-      # テストファイルのみマウント（結果は標準出力経由）
-      - ./tests:/app/tests
     environment:
       - BASE_URL=http://adminer-bigquery-test
       - GOOGLE_CLOUD_PROJECT=adminer-test-472623
     networks:
       - adminer_net
-    # 常駐させず、スクリプト指定で起動する形式
-    # 使用例: docker compose run --rm playwright-e2e reference-test.sh
-
-  # Adminer service reference - external container managed by web directory
 
 volumes:
   workspace:
     external: true
-    name: dev_workspace
+    name: adminer_workspace
 
 networks:
   adminer_net:

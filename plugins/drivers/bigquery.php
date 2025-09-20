@@ -1158,71 +1158,85 @@ if (isset($_GET["bigquery"])) {
 		return $condition;
 	}
 	function fields($table)
-	{
-		global $connection;
-		try {
-			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
-			if (empty($database)) {
-				error_log("fields: No database (dataset) context available for table '$table'");
-				return array();
-			}
-			$cacheKey = 'bq_fields_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . '_' . $database . '_' . $table;
-			$cacheTime = 600;
-			$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
-			if ($cached !== false) {
-				error_log("fields: Using cached result for table '$table' (" . count($cached) . " fields)");
-				return $cached;
-			}
-			error_log("fields called for table: '$table' in database: '$database'");
-			$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
-			$tableObj = $dataset->table($table);
-			try {
-				$tableInfo = $tableObj->info();
-			} catch (Exception $e) {
-				error_log("Table '$table' does not exist in dataset '$database' or access error: " . $e->getMessage());
-				return array();
-			}
-			if (!isset($tableInfo['schema']['fields'])) {
-				error_log("No schema fields found for table '$table'");
-				return array();
-			}
-			$fields = array();
-			static $typeCache = array();
-			foreach ($tableInfo['schema']['fields'] as $field) {
-				$bigQueryType = $field['type'] ?? 'STRING';
-				if (!isset($typeCache[$bigQueryType])) {
-					$typeCache[$bigQueryType] = BigQueryConfig::mapType($bigQueryType);
-				}
-				$adminerTypeInfo = $typeCache[$bigQueryType];
-				$length = null;
-				if (preg_match('/\((\d+(?:,\d+)?)\)/', $bigQueryType, $matches)) {
-					$length = $matches[1];
-				}
-				$typeStr = $adminerTypeInfo['type'];
-				if ($length !== null) {
-					$typeStr .= "($length)";
-				} elseif (isset($adminerTypeInfo['length']) && $adminerTypeInfo['length'] !== null) {
-					$typeStr .= "(" . $adminerTypeInfo['length'] . ")";
-				}
-				$fields[$field['name']] = array(
-					'field' => $field['name'],
-					'type' => $typeStr,
-					'full_type' => $typeStr,
-					'null' => ($field['mode'] ?? 'NULLABLE') !== 'REQUIRED',
-					'default' => null,
-					'auto_increment' => false,
-					'comment' => $field['description'] ?? '',
-					'privileges' => array('select' => 1, 'insert' => 1, 'update' => 1, 'where' => 1, 'order' => 1)
-				);
-			}
-			BigQueryCacheManager::set($cacheKey, $fields, $cacheTime);
-			error_log("fields: Successfully retrieved and cached " . count($fields) . " fields for table '$table'");
-			return $fields;
-		} catch (Exception $e) {
-			error_log("Error getting table fields for '$table': " . $e->getMessage());
+{
+	global $connection;
+	try {
+		$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+		if (empty($database)) {
+			error_log("fields: No database (dataset) context available for table '$table'");
 			return array();
 		}
+		$cacheKey = 'bq_fields_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . '_' . $database . '_' . $table;
+		$cacheTime = 600;
+		$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
+		if ($cached !== false) {
+			error_log("fields: Using cached result for table '$table' (" . count($cached) . " fields)");
+			return $cached;
+		}
+		error_log("fields called for table: '$table' in database: '$database'");
+		$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
+		$tableObj = $dataset->table($table);
+		try {
+			$tableInfo = $tableObj->info();
+		} catch (Exception $e) {
+			error_log("Table '$table' does not exist in dataset '$database' or access error: " . $e->getMessage());
+			return array();
+		}
+		if (!isset($tableInfo['schema']['fields'])) {
+			error_log("No schema fields found for table '$table'");
+			return array();
+		}
+		
+		$schemaFields = $tableInfo['schema']['fields'];
+		$fieldCount = count($schemaFields);
+		error_log("fields: Table '$table' has $fieldCount fields");
+		
+		// BigQueryのシステムテーブル（INFORMATION_SCHEMAなど）の大量フィールド対策
+		// max_input_vars制限を回避するため、フィールド数を制限
+		$maxFields = 1000; // 元の制限値に戻す
+		if ($fieldCount > $maxFields) {
+			error_log("fields: WARNING - Table '$table' has $fieldCount fields, limiting to first $maxFields fields to avoid max_input_vars issues");
+			$schemaFields = array_slice($schemaFields, 0, $maxFields);
+		}
+		
+		$fields = array();
+		static $typeCache = array();
+		foreach ($schemaFields as $field) {
+			$bigQueryType = $field['type'] ?? 'STRING';
+			if (!isset($typeCache[$bigQueryType])) {
+				$typeCache[$bigQueryType] = BigQueryConfig::mapType($bigQueryType);
+			}
+			$adminerTypeInfo = $typeCache[$bigQueryType];
+			$length = null;
+			if (preg_match('/\((\d+(?:,\d+)?)\)/', $bigQueryType, $matches)) {
+				$length = $matches[1];
+			}
+			$typeStr = $adminerTypeInfo['type'];
+			if ($length !== null) {
+				$typeStr .= "($length)";
+			} elseif (isset($adminerTypeInfo['length']) && $adminerTypeInfo['length'] !== null) {
+				$typeStr .= "(" . $adminerTypeInfo['length'] . ")";
+			}
+			$fields[$field['name']] = array(
+				'field' => $field['name'],
+				'type' => $typeStr,
+				'full_type' => $typeStr,
+				'null' => ($field['mode'] ?? 'NULLABLE') !== 'REQUIRED',
+				'default' => null,
+				'auto_increment' => false,
+				'comment' => $field['description'] ?? '',
+				'privileges' => array('select' => 1, 'insert' => 1, 'update' => 1, 'where' => 1, 'order' => 1)
+			);
+		}
+		
+		BigQueryCacheManager::set($cacheKey, $fields, $cacheTime);
+		error_log("fields: Successfully retrieved and cached " . count($fields) . " fields for table '$table' (original: $fieldCount fields)");
+		return $fields;
+	} catch (Exception $e) {
+		error_log("Error getting table fields for '$table': " . $e->getMessage());
+		return array();
 	}
+}
 	function select($table, array $select, array $where, array $group, array $order = array(), $limit = 1, $page = 0, $print = false)
 	{
 		global $connection;

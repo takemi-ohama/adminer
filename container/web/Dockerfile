@@ -27,6 +27,7 @@ COPY Makefile ./
 
 # Copy test-specific files to the web root
 COPY container/web/index.php ./
+COPY container/web/.htaccess ./
 
 # Install PHP dependencies
 RUN composer install --no-dev --optimize-autoloader
@@ -39,7 +40,7 @@ RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
 RUN echo "date.timezone = UTC" >> /usr/local/etc/php/php.ini-production && \
     echo "memory_limit = 512M" >> /usr/local/etc/php/php.ini-production && \
     echo "max_execution_time = 300" >> /usr/local/etc/php/php.ini-production && \
-    echo "max_input_vars = 5000" >> /usr/local/etc/php/php.ini-production && \
+    echo "max_input_vars = 50000" >> /usr/local/etc/php/php.ini-production && \
     echo "max_input_nesting_level = 128" >> /usr/local/etc/php/php.ini-production && \
     echo "apc.enabled=1" >> /usr/local/etc/php/php.ini-production && \
     echo "apc.shm_size=64M" >> /usr/local/etc/php/php.ini-production && \

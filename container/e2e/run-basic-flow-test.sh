@@ -27,52 +27,11 @@ echo "✅ Web環境確認完了" | tee -a "$LOG_FILE"
 echo "🏗️  E2Eコンテナビルド中..." | tee -a "$LOG_FILE"
 docker compose build playwright-e2e 2>&1 | tee -a "$LOG_FILE"
 
-# 基本フローテストスクリプトを作成
-echo "📝 基本フローテストスクリプト作成中..." | tee -a "$LOG_FILE"
-
-# 共有volumeにテストスクリプトを作成
-echo "📝 共有volumeにテストスクリプト作成中..." | tee -a "$LOG_FILE"
-
-# 共有volume経由でスクリプトを作成
-cat > /tmp/basic_flow_test_script.sh << 'EOF'
-#!/bin/bash
-set -e
-
-echo "📡 接続確認中..."
-curl -s --fail "$BASE_URL" > /dev/null || {
-    echo "❌ Adminer Web環境に接続できません: $BASE_URL"
-    exit 1
-}
-echo "✅ 接続確認完了"
-
-echo "📋 基本機能フローテスト実行..."
-npx playwright test tests/basic-flow-test.spec.js \
-    --reporter=line \
-    --project=chromium
-
-echo "✅ 基本機能フローテスト完了"
-EOF
-
-# 共有volume経由でスクリプトを実行
+# 基本機能フローテスト実行
 echo "🚀 基本機能フローテスト実行中..." | tee -a "$LOG_FILE"
 
-# 共有volumeにtestsディレクトリを作成してテストファイルをコピー
-docker run --rm -v dev_workspace:/workspace -v $(pwd):/e2e alpine:latest \
-  sh -c 'mkdir -p /workspace/tests && cp /e2e/tests/basic-flow-test.spec.js /workspace/tests/' 2>&1 | tee -a "$LOG_FILE"
-
-# 共有volume経由でスクリプトを実行
-docker compose run --rm playwright-e2e bash -c "
-set -e
-echo '📡 接続確認中...'
-curl -s --fail \$BASE_URL > /dev/null || {
-    echo '❌ Adminer Web環境に接続できません: \$BASE_URL'
-    exit 1
-}
-echo '✅ 接続確認完了'
-echo '📋 基本機能フローテスト実行...'
-npx playwright test tests/basic-flow-test.spec.js --reporter=line --project=chromium
-echo '✅ 基本機能フローテスト完了'
-" 2>&1 | tee -a "$LOG_FILE"
+# テストファイル指定でentrypoint.sh経由で実行
+docker compose run --rm playwright-e2e /app/container/e2e/tests/basic-flow-test.spec.js 2>&1 | tee -a "$LOG_FILE"
 
 EXIT_CODE=${PIPESTATUS[1]}
 
