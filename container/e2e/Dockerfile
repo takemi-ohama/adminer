@@ -1,4 +1,4 @@
-# E2Eテスト実行用Dockerfile
+# E2Eテスト実行用Dockerfile - スクリプト指定実行型
 FROM mcr.microsoft.com/playwright:v1.48.1-focal
 
 # 必要なパッケージをインストール
@@ -11,16 +11,21 @@ RUN apt-get update && apt-get install -y \
 # Node.js環境のセットアップ
 WORKDIR /app
 
-# Playwright設定
-RUN npm install -g @playwright/test
+# Playwrightブラウザをインストール
 RUN npx playwright install chromium firefox webkit
-
-# テストファイル用ディレクトリ作成
-RUN mkdir -p /app/tests
 
 # 環境変数設定
 ENV NODE_ENV=test
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# デフォルトコマンド
-CMD ["npx", "playwright", "test"]
+# E2E設定ファイルとテストファイルをコピー
+COPY container/e2e/package.json /usr/local/src/container/e2e/package.json
+COPY container/e2e/playwright.config.js /usr/local/src/container/e2e/playwright.config.js
+COPY container/e2e/tests/ /usr/local/src/container/e2e/tests/
+
+# エントリーポイントスクリプトをコピー
+COPY container/e2e/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# エントリーポイント設定
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

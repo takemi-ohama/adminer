@@ -14,11 +14,17 @@ services:
       - ~/.git-credentials:/home/ubuntu/.git-credentials
       - /home/hammer/adminer-test-owner.json:/etc/google_credentials.json:ro
       - ~/.clasprc.json:/home/ubuntu/.clasprc.json
+      # 共有ワークスペースvolume
+      - workspace:/home/ubuntu/work
     env_file: ../.env
     user: "${U_ID}:${G_ID}"
     group_add: ["${DOCKER_GID}"]
     command: ["${GIT_USER}", "${GIT_REPO}", "tail", "-f", "/dev/null"]
     networks:
       - net
+volumes:
+  workspace:
+    driver: local
+
 networks:
   net:

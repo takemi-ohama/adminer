@@ -5,18 +5,17 @@ services:
       dockerfile: container/e2e/Dockerfile
     container_name: playwright-e2e
     volumes:
-      # テストファイルをマウント
-      - ./tests:/app/tests
-      # 結果出力用
-      - ./test-results:/app/test-results
-      - ./playwright-report:/app/playwright-report
+      - workspace:/app
     environment:
       - BASE_URL=http://adminer-bigquery-test
       - GOOGLE_CLOUD_PROJECT=adminer-test-472623
     networks:
       - adminer_net
 
-  # Adminer service reference - external container managed by web directory
+volumes:
+  workspace:
+    external: true
+    name: adminer_workspace
 
 networks:
   adminer_net:

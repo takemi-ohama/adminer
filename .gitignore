@@ -19,13 +19,12 @@ adminer-plugins.php
 **/*_credentials.json
 
 # E2E Test outputs
-container/tests/test-results/
-container/tests/playwright-report/
-container/tests/e2e/test-results/
-container/tests/e2e/playwright-report/
+container/e2e/playwright-report/
+container/e2e/test-results/
+container/e2e/playwright-report/
 **/node_modules/
 
-container/*/google_credentials.json
+google_credentials.json
 
 # Playwright MCP outputs
 .playwright-mcp/
