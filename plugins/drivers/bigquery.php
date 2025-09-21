@@ -30,51 +30,47 @@ if (isset($_GET["bigquery"])) {
 		/** @var array Connection creation timestamps for age tracking */
 		private static $creationTimes = array();
 		static function getConnection($key, $config)
-		{
-			if (isset(self::$pool[$key])) {
-				self::$usageTimestamps[$key] = time();
-				$age = time() - self::$creationTimes[$key];
-				// Connection pool reuse logging removed as per code review
-				return self::$pool[$key];
-			}
-			if (count(self::$pool) >= self::$maxConnections) {
-				self::evictOldestConnection();
-			}
-			$startTime = microtime(true);
-			$clientConfig = array(
-				'projectId' => $config['projectId'],
-				'location' => $config['location']
-			);
-			if (isset($config['credentialsPath'])) {
-				$clientConfig['keyFilePath'] = $config['credentialsPath'];
-			}
-			$client = new BigQueryClient($clientConfig);
-			$creationTime = microtime(true) - $startTime;
-			self::$pool[$key] = $client;
+	{
+		if (isset(self::$pool[$key])) {
 			self::$usageTimestamps[$key] = time();
-			self::$creationTimes[$key] = time();
-			// Connection creation logging removed as per code review
-			return $client;
+			$age = time() - self::$creationTimes[$key];
+			return self::$pool[$key];
 		}
+		if (count(self::$pool) >= self::$maxConnections) {
+			self::evictOldestConnection();
+		}
+		$startTime = microtime(true);
+		$clientConfig = array(
+			'projectId' => $config['projectId'],
+			'location' => $config['location']
+		);
+		if (isset($config['credentialsPath'])) {
+			$clientConfig['keyFilePath'] = $config['credentialsPath'];
+		}
+		$client = new BigQueryClient($clientConfig);
+		$creationTime = microtime(true) - $startTime;
+		self::$pool[$key] = $client;
+		self::$usageTimestamps[$key] = time();
+		self::$creationTimes[$key] = time();
+		return $client;
+	}
 		private static function evictOldestConnection()
-		{
-			if (empty(self::$usageTimestamps)) {
-				return;
-			}
-			$oldestKey = array_keys(self::$usageTimestamps, min(self::$usageTimestamps))[0];
-			unset(self::$pool[$oldestKey]);
-			unset(self::$usageTimestamps[$oldestKey]);
-			unset(self::$creationTimes[$oldestKey]);
-			// Connection eviction logging removed as per code review
+	{
+		if (empty(self::$usageTimestamps)) {
+			return;
 		}
+		$oldestKey = array_keys(self::$usageTimestamps, min(self::$usageTimestamps))[0];
+		unset(self::$pool[$oldestKey]);
+		unset(self::$usageTimestamps[$oldestKey]);
+		unset(self::$creationTimes[$oldestKey]);
+	}
 		function clearPool()
-		{
-			$count = count(self::$pool);
-			self::$pool = array();
-			self::$usageTimestamps = array();
-			self::$creationTimes = array();
-			// Connection pool clearing logging removed as per code review
-		}
+	{
+		$count = count(self::$pool);
+		self::$pool = array();
+		self::$usageTimestamps = array();
+		self::$creationTimes = array();
+	}
 		function getStats()
 		{
 			$stats = array(
@@ -284,17 +280,17 @@ if (isset($_GET["bigquery"])) {
 		return "`" . str_replace("`", "``", $cleanIdentifier) . "`";
 	}
 		static function logQuerySafely($query, $context = "QUERY")
-		{
-			$sanitizers = array(
-				'/([\'"])[^\'\"]*\\1/' => '$1***REDACTED***$1',
-				'/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/' => '***EMAIL_REDACTED***'
-			);
-			$safeQuery = preg_replace(array_keys($sanitizers), array_values($sanitizers), $query);
-			if (strlen($safeQuery) > 200) {
-				$safeQuery = substr($safeQuery, 0, 200) . '... [TRUNCATED]';
-			}
-			error_log("BigQuery $context: $safeQuery");
+	{
+		$sanitizers = array(
+			'/([\'"])[^\'\"]*\\1/' => '$1***REDACTED***$1',
+			'/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/' => '***EMAIL_REDACTED***'
+		);
+		$safeQuery = preg_replace(array_keys($sanitizers), array_values($sanitizers), $query);
+		if (strlen($safeQuery) > 200) {
+			$safeQuery = substr($safeQuery, 0, 200) . '... [TRUNCATED]';
 		}
+		error_log("BigQuery $context: $safeQuery");
+	}
 
 		/**
 		 * BigQuery用値型変換ヘルパー関数
@@ -460,29 +456,28 @@ if (isset($_GET["bigquery"])) {
 		/** @var string Additional info from last operation */
 		public $info = '';
 		function connect($server, $username, $password)
-		{
-			try {
-				$this->projectId = $this->validateAndParseProjectId($server);
-				$location = $this->determineLocation($server, $this->projectId);
-				$credentialsPath = $this->getCredentialsPath();
-				if (!$credentialsPath) {
-					throw new Exception('BigQuery authentication not configured. Set GOOGLE_APPLICATION_CREDENTIALS environment variable or provide credentials file path.');
-				}
-				$this->initializeConfiguration($location);
-				$this->createBigQueryClient($credentialsPath, $location);
-				if (!$this->isLocationExplicitlySet($server)) {
-					$this->scheduleLocationDetection($this->projectId, $location);
-				}
-				// Connection successful - BigQuery client initialized
-				return true;
-			} catch (ServiceException $e) {
-				$this->logConnectionError($e, 'ServiceException');
-				return false;
-			} catch (Exception $e) {
-				$this->logConnectionError($e, 'Exception');
-				return false;
+	{
+		try {
+			$this->projectId = $this->validateAndParseProjectId($server);
+			$location = $this->determineLocation($server, $this->projectId);
+			$credentialsPath = $this->getCredentialsPath();
+			if (!$credentialsPath) {
+				throw new Exception('BigQuery authentication not configured. Set GOOGLE_APPLICATION_CREDENTIALS environment variable or provide credentials file path.');
 			}
+			$this->initializeConfiguration($location);
+			$this->createBigQueryClient($credentialsPath, $location);
+			if (!$this->isLocationExplicitlySet($server)) {
+				$this->scheduleLocationDetection($this->projectId, $location);
+			}
+			return true;
+		} catch (ServiceException $e) {
+			$this->logConnectionError($e, 'ServiceException');
+			return false;
+		} catch (Exception $e) {
+			$this->logConnectionError($e, 'Exception');
+			return false;
 		}
+	}
 		private function validateAndParseProjectId($server)
 		{
 			if (empty($server)) {
@@ -522,15 +517,14 @@ if (isset($_GET["bigquery"])) {
 			);
 		}
 		private function createBigQueryClient($credentialsPath, $location)
-		{
-			$clientKey = md5($this->projectId . $credentialsPath . $location);
-			$this->bigQueryClient = BigQueryConnectionPool::getConnection($clientKey, array(
-				'projectId' => $this->projectId,
-				'location' => $location,
-				'credentialsPath' => $credentialsPath
-			));
-			// Connection pool initialized successfully
-		}
+	{
+		$clientKey = md5($this->projectId . $credentialsPath . $location);
+		$this->bigQueryClient = BigQueryConnectionPool::getConnection($clientKey, array(
+			'projectId' => $this->projectId,
+			'location' => $location,
+			'credentialsPath' => $credentialsPath
+		));
+	}
 		private function logConnectionError($e, $type)
 		{
 			$errorMessage = $e->getMessage();
@@ -625,63 +619,60 @@ if (isset($_GET["bigquery"])) {
 			}
 		}
 		private function performLightweightLocationDetection($projectId, $defaultLocation)
-		{
-			try {
-				$datasets = $this->bigQueryClient->datasets(['maxResults' => 1]);
-				foreach ($datasets as $dataset) {
-					try {
-						$datasetInfo = $dataset->info();
-						$detectedLocation = $datasetInfo['location'] ?? $defaultLocation;
-						if ($detectedLocation !== $defaultLocation) {
-							$this->config['location'] = $detectedLocation;
-							$this->setCachedLocation($projectId, $detectedLocation);
-							error_log("BigQuery: Ultra-fast location detection: '$detectedLocation' for project '$projectId'");
-						}
-						break;
-					} catch (Exception $e) {
-						error_log("BigQuery: Lightweight location detection failed: " . $e->getMessage());
-						break;
+	{
+		try {
+			$datasets = $this->bigQueryClient->datasets(['maxResults' => 1]);
+			foreach ($datasets as $dataset) {
+				try {
+					$datasetInfo = $dataset->info();
+					$detectedLocation = $datasetInfo['location'] ?? $defaultLocation;
+					if ($detectedLocation !== $defaultLocation) {
+						$this->config['location'] = $detectedLocation;
+						$this->setCachedLocation($projectId, $detectedLocation);
 					}
+					break;
+				} catch (Exception $e) {
+					// Location detection failed - continue silently
+					break;
 				}
-			} catch (Exception $e) {
-				error_log("BigQuery: Background location detection failed: " . $e->getMessage());
 			}
+		} catch (Exception $e) {
+			// Location detection failed - continue with default location
 		}
+	}
 
 		/**
-		 * 背景位置検出の静的実行（shutdown時の安全な実行）
-		 * @param string $projectId
-		 * @param string $defaultLocation
-		 * @param string $clientKey
-		 */
-		private static function performBackgroundLocationDetection($projectId, $defaultLocation, $clientKey)
-		{
-			try {
-				// 接続プールから既存のクライアントを取得
-				$client = BigQueryConnectionPool::getConnectionFromPool($clientKey);
-				if (!$client) {
-					return; // クライアントが利用できない場合は静かに終了
-				}
-
-				$datasets = $client->datasets(['maxResults' => 1]);
-				foreach ($datasets as $dataset) {
-					try {
-						$datasetInfo = $dataset->info();
-						$detectedLocation = $datasetInfo['location'] ?? $defaultLocation;
-						if ($detectedLocation !== $defaultLocation) {
-							self::setCachedLocationStatic($projectId, $detectedLocation);
-							error_log("BigQuery: Background location detection: '$detectedLocation' for project '$projectId'");
-						}
-						break;
-					} catch (Exception $e) {
-						error_log("BigQuery: Background location detection failed: " . $e->getMessage());
-						break;
-					}
-				}
-			} catch (Exception $e) {
-				error_log("BigQuery: Background location detection error: " . $e->getMessage());
+	 * 背景位置検出の静的実行（shutdown時の安全な実行）
+	 * @param string $projectId
+	 * @param string $defaultLocation
+	 * @param string $clientKey
+	 */
+	private static function performBackgroundLocationDetection($projectId, $defaultLocation, $clientKey)
+	{
+		try {
+			// 接続プールから既存のクライアントを取得
+			$client = BigQueryConnectionPool::getConnectionFromPool($clientKey);
+			if (!$client) {
+				return; // クライアントが利用できない場合は静かに終了
 			}
+
+			$datasets = $client->datasets(['maxResults' => 1]);
+			foreach ($datasets as $dataset) {
+				try {
+					$datasetInfo = $dataset->info();
+					$detectedLocation = $datasetInfo['location'] ?? $defaultLocation;
+					if ($detectedLocation !== $defaultLocation) {
+						self::setCachedLocationStatic($projectId, $detectedLocation);
+					}
+					break;
+				} catch (Exception $e) {
+					break;
+				}
+			}
+		} catch (Exception $e) {
+			// Background location detection failed - continue silently
 		}
+	}
 
 		/**
 		 * 静的キャッシュ保存（shutdown時用）
@@ -698,72 +689,47 @@ if (isset($_GET["bigquery"])) {
 			@file_put_contents($cacheFile, json_encode($cacheData), LOCK_EX);
 		}
 		function query($query)
-		{
-			try {
-				// データセットが設定されていない場合、URLパラメーターから取得
-				if (empty($this->datasetId) && isset($_GET['db']) && !empty($_GET['db'])) {
-					$this->datasetId = $_GET['db'];
-					error_log("BigQuery Query Debug - Dataset set from URL: " . $this->datasetId);
-				}
-				
-				// READ-ONLYモード制限の設定確認
-				if (getenv('BIGQUERY_READONLY_MODE') === 'true') {
-					$this->validateReadOnlyQuery($query);
-				}
-
-				// クエリ詳細デバッグログ追加
-				error_log("BigQuery Query Debug - Raw Query: " . $query);
-				error_log("BigQuery Query Debug - Dataset: " . $this->datasetId);
-				error_log("BigQuery Query Debug - Project: " . $this->projectId);
-
-				$queryLocation = $this->determineQueryLocation();
-				error_log("BigQuery Query Debug - Location: " . $queryLocation);
-				
-				$queryJob = $this->bigQueryClient->query($query)
-					->useLegacySql(false)
-					->location($queryLocation);
-				$job = $this->bigQueryClient->runQuery($queryJob);
-				if (!$job->isComplete()) {
-					$job->waitUntilComplete();
-				}
-				$this->checkJobStatus($job);
-				
-				// 成功時の詳細情報をログ出力
-				$jobInfo = $job->info();
-				error_log("BigQuery Query Debug - Job completed successfully");
-				error_log("BigQuery Query Debug - Job ID: " . ($jobInfo['id'] ?? 'Unknown'));
-				
-				// Query executed successfully
-				return new Result($job);
-			} catch (ServiceException $e) {
-				// BigQueryサービスエラーの詳細ログ
-				$errorMessage = $e->getMessage();
-				$errorCode = $e->getCode();
-				error_log("BigQuery SERVICE_ERROR Details:");
-				error_log("  - Code: " . $errorCode);
-				error_log("  - Message: " . $errorMessage);
-				error_log("  - Query: " . substr($query, 0, 200));
-				
-				// 400エラーの場合は具体的な原因を調査
-				if ($errorCode == 400) {
-					error_log("BigQuery 400 Error Analysis:");
-					error_log("  - Current Dataset: " . $this->datasetId);
-					error_log("  - Current Project: " . $this->projectId);
-					
-					// クエリ内容に基づいた詳細分析
-					if (preg_match('/SELECT.*FROM\s+([^\s]+)/i', $query, $matches)) {
-						error_log("  - Referenced Table: " . $matches[1]);
-					}
-				}
-				
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
-				return false;
-			} catch (Exception $e) {
-				error_log("BigQuery General Error: " . $e->getMessage());
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'ERROR');
-				return false;
+	{
+		try {
+			// データセットが設定されていない場合、URLパラメーターから取得
+			if (empty($this->datasetId) && isset($_GET['db']) && !empty($_GET['db'])) {
+				$this->datasetId = $_GET['db'];
 			}
+			
+			// READ-ONLYモード制限の設定確認
+			if (getenv('BIGQUERY_READONLY_MODE') === 'true') {
+				$this->validateReadOnlyQuery($query);
+			}
+
+			$queryLocation = $this->determineQueryLocation();
+			
+			$queryJob = $this->bigQueryClient->query($query)
+				->useLegacySql(false)
+				->location($queryLocation);
+			$job = $this->bigQueryClient->runQuery($queryJob);
+			if (!$job->isComplete()) {
+				$job->waitUntilComplete();
+			}
+			$this->checkJobStatus($job);
+			
+			return new Result($job);
+		} catch (ServiceException $e) {
+			$errorMessage = $e->getMessage();
+			$errorCode = $e->getCode();
+			
+			// 400エラーの場合は具体的な原因を調査
+			if ($errorCode == 400) {
+			// 400 error - query validation failed
+			}
+			
+			BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
+			return false;
+		} catch (Exception $e) {
+			error_log("BigQuery General Error: " . $e->getMessage());
+			BigQueryUtils::logQuerySafely($e->getMessage(), 'ERROR');
+			return false;
 		}
+	}
 		private function checkJobStatus($job)
 		{
 			$jobInfo = $job->info();
@@ -803,39 +769,36 @@ if (isset($_GET["bigquery"])) {
 					$datasetInfo = $dataset->info();
 					$datasetLocation = $datasetInfo['location'] ?? null;
 					if ($datasetLocation && $datasetLocation !== ($this->config['location'] ?? '')) {
-						error_log("BigQuery: Using dataset location '$datasetLocation' for query execution");
 						$this->config['location'] = $datasetLocation;
 						return $datasetLocation;
 					}
 				} catch (Exception) {
-					error_log("BigQuery: Failed to get dataset location, falling back to config location");
+					// Failed to get dataset location
 				}
 			}
 			return $this->config['location'] ?? 'US';
 		}
 		function select_db($database)
-		{
-			try {
-				$dataset = $this->bigQueryClient->dataset($database);
-				$dataset->reload();
-				$datasetInfo = $dataset->info();
-				$datasetLocation = $datasetInfo['location'] ?? 'US';
-				$previousLocation = $this->config['location'] ?? 'US';
-				if ($datasetLocation !== $previousLocation) {
-					// Dataset location updated
-					$this->config['location'] = $datasetLocation;
-				}
-				$this->datasetId = $database;
-				// Dataset selected successfully
-				return true;
-			} catch (ServiceException $e) {
-				$this->logDatasetError($e, $database);
-				return false;
-			} catch (Exception $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'DATASET_ERROR');
-				return false;
+	{
+		try {
+			$dataset = $this->bigQueryClient->dataset($database);
+			$dataset->reload();
+			$datasetInfo = $dataset->info();
+			$datasetLocation = $datasetInfo['location'] ?? 'US';
+			$previousLocation = $this->config['location'] ?? 'US';
+			if ($datasetLocation !== $previousLocation) {
+				$this->config['location'] = $datasetLocation;
 			}
+			$this->datasetId = $database;
+			return true;
+		} catch (ServiceException $e) {
+			$this->logDatasetError($e, $database);
+			return false;
+		} catch (Exception $e) {
+			BigQueryUtils::logQuerySafely($e->getMessage(), 'DATASET_ERROR');
+			return false;
 		}
+	}
 		private function logDatasetError($e, $database)
 		{
 			$message = $e->getMessage();
@@ -887,61 +850,50 @@ if (isset($_GET["bigquery"])) {
 			$this->queryResults = $queryResults;
 		}
 		function fetch_assoc()
-		{
-			try {
-				if (!$this->isIteratorInitialized) {
-					// SELECTクエリ結果のデバッグ情報を追加
-					$jobInfo = $this->queryResults->info();
-					error_log("BigQuery Result Debug - Job Type: " . ($jobInfo['configuration']['query']['query'] ?? 'Unknown'));
-					error_log("BigQuery Result Debug - Job State: " . ($jobInfo['status']['state'] ?? 'Unknown'));
-					error_log("BigQuery Result Debug - Total Rows: " . ($jobInfo['statistics']['query']['totalBytesProcessed'] ?? 'Unknown'));
-					
-					$this->iterator = $this->queryResults->getIterator();
-					$this->isIteratorInitialized = true;
-					
-					// イテレータが有効かどうかチェック
-					error_log("BigQuery Result Debug - Iterator Valid: " . ($this->iterator && $this->iterator->valid() ? 'true' : 'false'));
-				}
-				if ($this->iterator && $this->iterator->valid()) {
-					$row = $this->iterator->current();
-					$this->iterator->next();
-					$processedRow = array();
-					foreach ($row as $key => $value) {
-						if (is_array($value)) {
-							$processedRow[$key] = json_encode($value);
-						} elseif (is_object($value)) {
-							if ($value instanceof \DateTime) {
-								$processedRow[$key] = $value->format('Y-m-d H:i:s');
-							} elseif ($value instanceof \DateTimeInterface) {
-								$processedRow[$key] = $value->format('Y-m-d H:i:s');
-							} elseif (method_exists($value, 'format')) {
-								try {
-									$processedRow[$key] = $value->format('Y-m-d H:i:s');
-								} catch (Exception $e) {
-									$processedRow[$key] = (string) $value;
-								}
-							} elseif (method_exists($value, '__toString')) {
-								$processedRow[$key] = (string) $value;
-							} else {
-								$processedRow[$key] = json_encode($value);
-							}
-						} elseif (is_null($value)) {
-							$processedRow[$key] = null;
-						} else {
-							$processedRow[$key] = $value;
-						}
-					}
-					$this->rowNumber++;
-					error_log("BigQuery Result Debug - Row fetched: " . json_encode($processedRow));
-					return $processedRow;
-				}
-				error_log("BigQuery Result Debug - No rows available");
-				return false;
-			} catch (Exception $e) {
-				error_log("Result fetch error: " . $e->getMessage());
-				return false;
+	{
+		try {
+			if (!$this->isIteratorInitialized) {
+				$this->iterator = $this->queryResults->getIterator();
+				$this->isIteratorInitialized = true;
 			}
+			if ($this->iterator && $this->iterator->valid()) {
+				$row = $this->iterator->current();
+				$this->iterator->next();
+				$processedRow = array();
+				foreach ($row as $key => $value) {
+					if (is_array($value)) {
+						$processedRow[$key] = json_encode($value);
+					} elseif (is_object($value)) {
+						if ($value instanceof \DateTime) {
+							$processedRow[$key] = $value->format('Y-m-d H:i:s');
+						} elseif ($value instanceof \DateTimeInterface) {
+							$processedRow[$key] = $value->format('Y-m-d H:i:s');
+						} elseif (method_exists($value, 'format')) {
+							try {
+								$processedRow[$key] = $value->format('Y-m-d H:i:s');
+							} catch (Exception $e) {
+								$processedRow[$key] = (string) $value;
+							}
+						} elseif (method_exists($value, '__toString')) {
+							$processedRow[$key] = (string) $value;
+						} else {
+							$processedRow[$key] = json_encode($value);
+						}
+					} elseif (is_null($value)) {
+						$processedRow[$key] = null;
+					} else {
+						$processedRow[$key] = $value;
+					}
+				}
+				$this->rowNumber++;
+				return $processedRow;
+			}
+			return false;
+		} catch (Exception $e) {
+			error_log("Result fetch error: " . $e->getMessage());
+			return false;
 		}
+	}
 		function fetch_row()
 		{
 			$assoc = $this->fetch_assoc();
@@ -1368,100 +1320,122 @@ if (isset($_GET["bigquery"])) {
 		return "BigQuery Service Account";
 	}
 	function get_databases($flush = false)
-	{
-		global $connection;
-		$cacheKey = 'bq_databases_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default');
-		$cacheTime = 300;
-		if (!$flush) {
-			$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
-			if ($cached !== false) {
-				// Cache hit - debug logging removed
-				return $cached;
-			}
-		}
-		try {
-			$datasets = array();
-			$datasetsIterator = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->datasets(array(
-				'maxResults' => 100
-			)) : array();
-			foreach ($datasetsIterator as $dataset) {
-				$datasets[] = $dataset->id();
-			}
-			sort($datasets);
-			BigQueryCacheManager::set($cacheKey, $datasets, $cacheTime);
-			// Successful retrieval - debug logging removed
-			return $datasets;
-		} catch (Exception $e) {
-			error_log("Error listing datasets: " . $e->getMessage());
-			return array();
+{
+	global $connection;
+	$cacheKey = 'bq_databases_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default');
+	$cacheTime = 300;
+	if (!$flush) {
+		$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
+		if ($cached !== false) {
+			return $cached;
 		}
 	}
+	try {
+		$datasets = array();
+		$datasetsIterator = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->datasets(array(
+			'maxResults' => 100
+		)) : array();
+		foreach ($datasetsIterator as $dataset) {
+			$datasets[] = $dataset->id();
+		}
+		sort($datasets);
+		BigQueryCacheManager::set($cacheKey, $datasets, $cacheTime);
+		return $datasets;
+	} catch (Exception $e) {
+		error_log("Error listing datasets: " . $e->getMessage());
+		return array();
+	}
+}
 	function tables_list($database = '')
-	{
-		global $connection;
-		try {
-			$actualDatabase = '';
-			if (!empty($database)) {
-				$actualDatabase = $database;
-			} else {
-				$actualDatabase = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
-			}
-			if (empty($actualDatabase)) {
-				error_log("tables_list: No database (dataset) context available");
-				return array();
-			}
-			$cacheKey = 'bq_tables_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . '_' . $actualDatabase;
-			$cacheTime = 300;
-			$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
-			if ($cached !== false) {
-				// Cache hit for tables - debug logging removed
-				return $cached;
-			}
-			// Table listing debug logging removed
-			$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($actualDatabase) : null;
-			$tables = array();
-			$pageToken = null;
-			do {
-				$options = array('maxResults' => 100);
-				if ($pageToken) {
-					$options['pageToken'] = $pageToken;
-				}
-				$result = $dataset->tables($options);
-				foreach ($result as $table) {
-					$tables[$table->id()] = 'table';
-				}
-				$pageToken = $result->nextResultToken();
-			} while ($pageToken);
-			BigQueryCacheManager::set($cacheKey, $tables, $cacheTime);
-			// Successful table retrieval - debug logging removed
-			return $tables;
-		} catch (Exception $e) {
-			error_log("Error listing tables for database '$database' (actual: '$actualDatabase'): " . $e->getMessage());
+{
+	global $connection;
+	try {
+		$actualDatabase = '';
+		if (!empty($database)) {
+			$actualDatabase = $database;
+		} else {
+			$actualDatabase = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+		}
+		if (empty($actualDatabase)) {
+			error_log("tables_list: No database (dataset) context available");
 			return array();
 		}
+		$cacheKey = 'bq_tables_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . '_' . $actualDatabase;
+		$cacheTime = 300;
+		$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
+		if ($cached !== false) {
+			return $cached;
+		}
+		$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($actualDatabase) : null;
+		$tables = array();
+		$pageToken = null;
+		do {
+			$options = array('maxResults' => 100);
+			if ($pageToken) {
+				$options['pageToken'] = $pageToken;
+			}
+			$result = $dataset->tables($options);
+			foreach ($result as $table) {
+				$tables[$table->id()] = 'table';
+			}
+			$pageToken = $result->nextResultToken();
+		} while ($pageToken);
+		BigQueryCacheManager::set($cacheKey, $tables, $cacheTime);
+		return $tables;
+	} catch (Exception $e) {
+		error_log("Error listing tables for database '$database' (actual: '$actualDatabase'): " . $e->getMessage());
+		return array();
 	}
+}
 	function table_status($name = '', $fast = false)
-	{
-		global $connection;
-		try {
-			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
-			if (empty($database)) {
-				error_log("table_status: No database (dataset) context available, returning empty array");
+{
+	global $connection;
+	try {
+		$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+		if (empty($database)) {
+			error_log("table_status: No database (dataset) context available, returning empty array");
+			return array();
+		}
+		$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
+		$tables = array();
+		if ($name) {
+			try {
+				$table = $dataset->table($name);
+				$tableInfo = $table->info();
+				$result = array(
+					'Name' => $table->id(),
+					'Engine' => 'BigQuery',
+					'Rows' => $tableInfo['numRows'] ?? 0,
+					'Data_length' => $tableInfo['numBytes'] ?? 0,
+					'Comment' => $tableInfo['description'] ?? '',
+					'Type' => $tableInfo['type'] ?? 'TABLE',
+					'Collation' => '',
+					'Auto_increment' => '',
+					'Create_time' => $tableInfo['creationTime'] ?? '',
+					'Update_time' => $tableInfo['lastModifiedTime'] ?? '',
+					'Check_time' => '',
+					'Data_free' => 0,
+					'Index_length' => 0,
+					'Max_data_length' => 0,
+					'Avg_row_length' => $tableInfo['numRows'] > 0 ? intval(($tableInfo['numBytes'] ?? 0) / $tableInfo['numRows']) : 0,
+				);
+				$tables[$table->id()] = $result;
+			} catch (Exception $e) {
+				error_log("Error getting specific table '$name' info: " . $e->getMessage() . ", returning empty array");
 				return array();
 			}
-			// Table status debug logging removed
-			$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
-			$tables = array();
-			if ($name) {
-				try {
-					$table = $dataset->table($name);
-					$tableInfo = $table->info();
-					$result = array(
-						'Name' => $table->id(),
-						'Engine' => 'BigQuery',
+		} else {
+			foreach ($dataset->tables() as $table) {
+				$tableInfo = $table->info();
+				$result = array(
+					'Name' => $table->id(),
+					'Engine' => 'BigQuery',
+					'Comment' => $tableInfo['description'] ?? '',
+				);
+				if (!$fast) {
+					$result += array(
 						'Rows' => $tableInfo['numRows'] ?? 0,
 						'Data_length' => $tableInfo['numBytes'] ?? 0,
-						'Comment' => $tableInfo['description'] ?? '',
 						'Type' => $tableInfo['type'] ?? 'TABLE',
 						'Collation' => '',
 						'Auto_increment' => '',
@@ -1473,48 +1447,17 @@ if (isset($_GET["bigquery"])) {
 						'Max_data_length' => 0,
 						'Avg_row_length' => $tableInfo['numRows'] > 0 ? intval(($tableInfo['numBytes'] ?? 0) / $tableInfo['numRows']) : 0,
 					);
-					$tables[$table->id()] = $result;
-					// Specific table return - debug logging removed
-				} catch (Exception $e) {
-					error_log("Error getting specific table '$name' info: " . $e->getMessage() . ", returning empty array");
-					return array();
 				}
-			} else {
-				foreach ($dataset->tables() as $table) {
-					$tableInfo = $table->info();
-					$result = array(
-						'Name' => $table->id(),
-						'Engine' => 'BigQuery',
-						'Comment' => $tableInfo['description'] ?? '',
-					);
-					if (!$fast) {
-						$result += array(
-							'Rows' => $tableInfo['numRows'] ?? 0,
-							'Data_length' => $tableInfo['numBytes'] ?? 0,
-							'Type' => $tableInfo['type'] ?? 'TABLE',
-							'Collation' => '',
-							'Auto_increment' => '',
-							'Create_time' => $tableInfo['creationTime'] ?? '',
-							'Update_time' => $tableInfo['lastModifiedTime'] ?? '',
-							'Check_time' => '',
-							'Data_free' => 0,
-							'Index_length' => 0,
-							'Max_data_length' => 0,
-							'Avg_row_length' => $tableInfo['numRows'] > 0 ? intval(($tableInfo['numBytes'] ?? 0) / $tableInfo['numRows']) : 0,
-						);
-					}
-					$tables[$table->id()] = $result;
-				}
-				// Multiple tables return - debug logging removed
+				$tables[$table->id()] = $result;
 			}
-			$result = is_array($tables) ? $tables : array();
-			// Final result type - debug logging removed
-			return $result;
-		} catch (Exception $e) {
-			error_log("Error getting table status for name '$name' (database: '$database'): " . $e->getMessage() . ", returning empty array");
-			return array();
 		}
+		$result = is_array($tables) ? $tables : array();
+		return $result;
+	} catch (Exception $e) {
+		error_log("Error getting table status for name '$name' (database: '$database'): " . $e->getMessage() . ", returning empty array");
+		return array();
 	}
+}
 	function convertAdminerWhereToBigQuery($condition)
 	{
 		if (!is_string($condition)) {
@@ -1574,10 +1517,8 @@ if (isset($_GET["bigquery"])) {
 		$cacheTime = 600;
 		$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
 		if ($cached !== false) {
-			// Cache hit for fields - debug logging removed
 			return $cached;
 		}
-		// Field retrieval debug logging removed
 		$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
 		$tableObj = $dataset->table($table);
 		try {
@@ -1593,7 +1534,6 @@ if (isset($_GET["bigquery"])) {
 
 		$schemaFields = $tableInfo['schema']['fields'];
 		$fieldCount = count($schemaFields);
-		// Field count debug logging removed
 
 		// BigQueryのシステムテーブル（INFORMATION_SCHEMAなど）の大量フィールド対策
 		// max_input_vars制限を回避するため、フィールド数を制限
@@ -1634,7 +1574,6 @@ if (isset($_GET["bigquery"])) {
 		}
 
 		BigQueryCacheManager::set($cacheKey, $fields, $cacheTime);
-		// Field retrieval success - debug logging removed
 		return $fields;
 	} catch (Exception $e) {
 		error_log("Error getting table fields for '$table': " . $e->getMessage());
@@ -1751,13 +1690,11 @@ if (isset($_GET["bigquery"])) {
 		global $connection;
 		try {
 			if (!$connection || !isset($connection->bigQueryClient)) {
-				// Connection check for insert
 				return false;
 			}
 
 			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 			if (empty($database) || empty($table)) {
-				// Database/table validation for insert
 				return false;
 			}
 
@@ -1810,7 +1747,6 @@ if (isset($_GET["bigquery"])) {
 
 				// 影響行数を記録
 				$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 1;
-				// INSERT operation completed successfully
 				return true;
 			}
 
@@ -1836,13 +1772,11 @@ if (isset($_GET["bigquery"])) {
 		global $connection;
 		try {
 			if (!$connection || !isset($connection->bigQueryClient)) {
-				// Connection check for update
 				return false;
 			}
 
 			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 			if (empty($database) || empty($table)) {
-				// Database/table validation for update
 				return false;
 			}
 
@@ -1864,7 +1798,6 @@ if (isset($_GET["bigquery"])) {
 			}
 
 			if (empty($setParts)) {
-				// SET clause validation for update
 				return false;
 			}
 
@@ -1904,7 +1837,6 @@ if (isset($_GET["bigquery"])) {
 
 				// 影響行数を記録
 				$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
-				// UPDATE operation completed successfully
 				return true;
 			}
 
@@ -1930,13 +1862,11 @@ if (isset($_GET["bigquery"])) {
 		global $connection;
 		try {
 			if (!$connection || !isset($connection->bigQueryClient)) {
-				// Connection check for delete
 				return false;
 			}
 
 			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 			if (empty($database) || empty($table)) {
-				// Database/table validation for delete
 				return false;
 			}
 
@@ -1978,7 +1908,6 @@ if (isset($_GET["bigquery"])) {
 
 				// 影響行数を記録
 				$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
-				// DELETE operation completed successfully
 				return true;
 			}
 
@@ -2014,19 +1943,16 @@ if (isset($_GET["bigquery"])) {
 		global $connection;
 		try {
 			if (!$connection || !isset($connection->bigQueryClient)) {
-				// Connection check for dataset creation
 				return false;
 			}
 
 			// BigQueryのデータセット作成
-			// Creating BigQuery dataset
 
 			// 正しいBigQuery PHP SDKのAPIを使用
 			$dataset = $connection->bigQueryClient->createDataset($database, [
 				'location' => $connection->config['location'] ?? 'US'
 			]);
 
-			// Dataset created successfully
 			return true;
 
 		} catch (ServiceException $e) {
@@ -2062,18 +1988,14 @@ if (isset($_GET["bigquery"])) {
 
 		try {
 			if (!$connection || !isset($connection->bigQueryClient)) {
-				// Connection check for table creation
 				return false;
 			}
 
 			// 新規テーブル作成の場合（$table が空）
 			if ($table == "") {
-				// Creating new BigQuery table
-
 				// 現在のデータセットを取得
 				$database = $_GET['db'] ?? $connection->datasetId ?? '';
 				if (empty($database)) {
-					// Dataset selection validation for table creation
 					return false;
 				}
 
@@ -2099,7 +2021,6 @@ if (isset($_GET["bigquery"])) {
 				}
 
 				if (empty($schemaFields)) {
-					// Field validation for table creation
 					return false;
 				}
 
@@ -2119,7 +2040,6 @@ if (isset($_GET["bigquery"])) {
 				// BigQueryテーブル作成実行
 				$table = $dataset->createTable($cleanTableName, $tableOptions);
 
-				// Table created successfully
 				return true;
 
 			} else {
