@@ -471,6 +471,9 @@ if (isset($_GET["bigquery"])) {
 
 		/** @var string Additional info from last operation */
 		public $info = '';
+
+		/** @var mixed Last query result for store_result() method */
+		public $last_result = null;
 		function connect($server, $username, $password)
 		{
 			try {
@@ -755,7 +758,8 @@ if (isset($_GET["bigquery"])) {
 			}
 			$this->checkJobStatus($job);
 
-			return new Result($job);
+			// Store result for store_result() method
+			return $this->last_result = new Result($job);
 		} catch (ServiceException $e) {
 			$errorMessage = $e->getMessage();
 			$errorCode = $e->getCode();
@@ -763,10 +767,12 @@ if (isset($_GET["bigquery"])) {
 			// 400 error - query validation failed (validation failed)
 
 			BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
+			$this->last_result = false;
 			return false;
 		} catch (Exception $e) {
 			error_log("BigQuery General Error: " . $e->getMessage());
 			BigQueryUtils::logQuerySafely($e->getMessage(), 'ERROR');
+			$this->last_result = false;
 			return false;
 		}
 	}
@@ -871,10 +877,10 @@ if (isset($_GET["bigquery"])) {
 		}
 
 		function store_result()
-		{
-			// BigQueryは結果セットストレージをサポートしないため、falseを返す
-			return false;
-		}
+	{
+		// 保存されたクエリ結果を返す
+		return $this->last_result;
+	}
 
 		function next_result()
 		{
@@ -890,10 +896,20 @@ if (isset($_GET["bigquery"])) {
 		private $fieldsCache = null;
 		private $iterator = null;
 		private $isIteratorInitialized = false;
+	public $num_rows = 0;
 		function __construct($queryResults)
-		{
-			$this->queryResults = $queryResults;
+	{
+		$this->queryResults = $queryResults;
+		
+		// BigQuery query results row count retrieval
+		try {
+			$jobInfo = $queryResults->info();
+			$this->num_rows = (int)($jobInfo['totalRows'] ?? 0);
+		} catch (Exception $e) {
+			// Default to 0 if row count retrieval fails
+			$this->num_rows = 0;
 		}
+	}
 		function fetch_assoc()
 		{
 			try {
@@ -952,21 +968,24 @@ if (isset($_GET["bigquery"])) {
 			return count($this->fieldsCache);
 		}
 		function fetch_field($offset = 0)
-		{
-			if ($this->fieldsCache === null) {
-				$this->fieldsCache = $this->queryResults->info()['schema']['fields'] ?? array();
-			}
-			if (!isset($this->fieldsCache[$offset])) {
-				return false;
-			}
-			$field = $this->fieldsCache[$offset];
-			return (object) array(
-				'name' => $field['name'],
-				'type' => $this->mapBigQueryType($field['type']),
-				'length' => null,
-				'flags' => ($field['mode'] ?? 'NULLABLE') === 'REQUIRED' ? 'NOT NULL' : ''
-			);
+	{
+		if ($this->fieldsCache === null) {
+			$this->fieldsCache = $this->queryResults->info()['schema']['fields'] ?? array();
 		}
+		if (!isset($this->fieldsCache[$offset])) {
+			return false;
+		}
+		$field = $this->fieldsCache[$offset];
+		return (object) array(
+			'name' => $field['name'],
+			'type' => $this->mapBigQueryType($field['type']),
+			'length' => null,
+			'flags' => ($field['mode'] ?? 'NULLABLE') === 'REQUIRED' ? 'NOT NULL' : '',
+			'charsetnr' => $this->getBigQueryCharsetNr($field['type']),
+			'orgname' => $field['name'],
+			'orgtable' => ''
+		);
+	}
 		private function mapBigQueryType($bigQueryType)
 		{
 			$typeMap = array(
@@ -992,6 +1011,45 @@ if (isset($_GET["bigquery"])) {
 			);
 			return $typeMap[strtoupper($bigQueryType)] ?? 'text';
 		}
+
+	private function getBigQueryCharsetNr($bigQueryType)
+	{
+		$baseType = strtoupper(preg_replace('/\([^)]*\)/', '', $bigQueryType));
+		
+		// BigQuery data types mapped to appropriate MySQL charset numbers
+		switch ($baseType) {
+			case 'BYTES':
+				// Binary data - MySQL charset 63 (binary)
+				return 63;
+			case 'STRING':
+			case 'JSON':
+				// Text data - MySQL charset 33 (UTF-8)
+				return 33;
+			case 'INT64':
+			case 'INTEGER':
+			case 'FLOAT64':
+			case 'FLOAT':
+			case 'NUMERIC':
+			case 'BIGNUMERIC':
+			case 'BOOLEAN':
+			case 'BOOL':
+			case 'DATE':
+			case 'TIME':
+			case 'DATETIME':
+			case 'TIMESTAMP':
+				// Numeric, date, and boolean data - binary charset 63
+				return 63;
+			case 'ARRAY':
+			case 'STRUCT':
+			case 'RECORD':
+			case 'GEOGRAPHY':
+				// Complex data types - text charset 33
+				return 33;
+			default:
+				// Default to text charset
+				return 33;
+		}
+	}
 	}
 	class Driver
 	{
@@ -2175,6 +2233,36 @@ if (!function_exists('query')) {
 			return $connection->query($query);
 		}
 		return false;
+	}
+}
+
+if (!function_exists('explain')) {
+	/**
+	 * BigQuery EXPLAIN文実行
+	 * @param Db $connection BigQuery接続オブジェクト
+	 * @param string $query SQLクエリ
+	 * @return Result|false 成功時Result、失敗時false
+	 */
+	function explain($connection, $query)
+	{
+		if (!$connection || !method_exists($connection, 'query')) {
+			return false;
+		}
+
+		try {
+			// BigQuery EXPLAIN文の場合はそのまま実行
+			if (stripos(trim($query), 'EXPLAIN') === 0) {
+				return $connection->query($query);
+			}
+
+			// 通常のクエリの場合はEXPLAIN文に変換
+			$explainQuery = "EXPLAIN " . $query;
+			return $connection->query($explainQuery);
+
+		} catch (Exception $e) {
+			error_log("BigQuery EXPLAIN error: " . $e->getMessage());
+			return false;
+		}
 	}
 }
 

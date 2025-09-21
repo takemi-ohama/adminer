@@ -20,6 +20,7 @@ WORKDIR /var/www/html
 # Copy the adminer project structure
 COPY adminer/ ./adminer/
 COPY plugins/ ./plugins/
+COPY externals/ ./externals/
 COPY vendor/ ./vendor/
 COPY composer.json ./
 COPY composer.lock ./
