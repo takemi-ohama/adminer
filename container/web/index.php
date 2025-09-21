@@ -12,8 +12,6 @@ function adminer_object()
 	include_once __DIR__ . '/adminer/include/plugin.inc.php';
 
 	require_once __DIR__ . '/plugins/drivers/bigquery.php';
-	require_once __DIR__ . '/plugins/login-bigquery.php';
-	require_once __DIR__ . '/plugins/bigquery-css.php';
 
 	$plugins = array(
 		new AdminerLoginBigQuery(array(
