@@ -700,12 +700,25 @@ if (isset($_GET["bigquery"])) {
 		function query($query)
 		{
 			try {
+				// データセットが設定されていない場合、URLパラメーターから取得
+				if (empty($this->datasetId) && isset($_GET['db']) && !empty($_GET['db'])) {
+					$this->datasetId = $_GET['db'];
+					error_log("BigQuery Query Debug - Dataset set from URL: " . $this->datasetId);
+				}
+				
 				// READ-ONLYモード制限の設定確認
 				if (getenv('BIGQUERY_READONLY_MODE') === 'true') {
 					$this->validateReadOnlyQuery($query);
 				}
 
+				// クエリ詳細デバッグログ追加
+				error_log("BigQuery Query Debug - Raw Query: " . $query);
+				error_log("BigQuery Query Debug - Dataset: " . $this->datasetId);
+				error_log("BigQuery Query Debug - Project: " . $this->projectId);
+
 				$queryLocation = $this->determineQueryLocation();
+				error_log("BigQuery Query Debug - Location: " . $queryLocation);
+				
 				$queryJob = $this->bigQueryClient->query($query)
 					->useLegacySql(false)
 					->location($queryLocation);
@@ -714,12 +727,39 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 				$this->checkJobStatus($job);
+				
+				// 成功時の詳細情報をログ出力
+				$jobInfo = $job->info();
+				error_log("BigQuery Query Debug - Job completed successfully");
+				error_log("BigQuery Query Debug - Job ID: " . ($jobInfo['id'] ?? 'Unknown'));
+				
 				// Query executed successfully
 				return new Result($job);
 			} catch (ServiceException $e) {
+				// BigQueryサービスエラーの詳細ログ
+				$errorMessage = $e->getMessage();
+				$errorCode = $e->getCode();
+				error_log("BigQuery SERVICE_ERROR Details:");
+				error_log("  - Code: " . $errorCode);
+				error_log("  - Message: " . $errorMessage);
+				error_log("  - Query: " . substr($query, 0, 200));
+				
+				// 400エラーの場合は具体的な原因を調査
+				if ($errorCode == 400) {
+					error_log("BigQuery 400 Error Analysis:");
+					error_log("  - Current Dataset: " . $this->datasetId);
+					error_log("  - Current Project: " . $this->projectId);
+					
+					// クエリ内容に基づいた詳細分析
+					if (preg_match('/SELECT.*FROM\s+([^\s]+)/i', $query, $matches)) {
+						error_log("  - Referenced Table: " . $matches[1]);
+					}
+				}
+				
 				BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
 				return false;
 			} catch (Exception $e) {
+				error_log("BigQuery General Error: " . $e->getMessage());
 				BigQueryUtils::logQuerySafely($e->getMessage(), 'ERROR');
 				return false;
 			}
@@ -850,8 +890,17 @@ if (isset($_GET["bigquery"])) {
 		{
 			try {
 				if (!$this->isIteratorInitialized) {
+					// SELECTクエリ結果のデバッグ情報を追加
+					$jobInfo = $this->queryResults->info();
+					error_log("BigQuery Result Debug - Job Type: " . ($jobInfo['configuration']['query']['query'] ?? 'Unknown'));
+					error_log("BigQuery Result Debug - Job State: " . ($jobInfo['status']['state'] ?? 'Unknown'));
+					error_log("BigQuery Result Debug - Total Rows: " . ($jobInfo['statistics']['query']['totalBytesProcessed'] ?? 'Unknown'));
+					
 					$this->iterator = $this->queryResults->getIterator();
 					$this->isIteratorInitialized = true;
+					
+					// イテレータが有効かどうかチェック
+					error_log("BigQuery Result Debug - Iterator Valid: " . ($this->iterator && $this->iterator->valid() ? 'true' : 'false'));
 				}
 				if ($this->iterator && $this->iterator->valid()) {
 					$row = $this->iterator->current();
@@ -883,8 +932,10 @@ if (isset($_GET["bigquery"])) {
 						}
 					}
 					$this->rowNumber++;
+					error_log("BigQuery Result Debug - Row fetched: " . json_encode($processedRow));
 					return $processedRow;
 				}
+				error_log("BigQuery Result Debug - No rows available");
 				return false;
 			} catch (Exception $e) {
 				error_log("Result fetch error: " . $e->getMessage());
@@ -1173,6 +1224,43 @@ if (isset($_GET["bigquery"])) {
 		// グローバルdelete()関数を呼び出し
 		return delete($table, $queryWhere, $limit);
 	}
+
+	/**
+	 * BigQuery用全フィールド取得メソッド
+	 * Database schemaページで使用される
+	 * @return array<string, array<array{field:string, null:bool, type:string, length:?string}>>
+	 */
+	function allFields(): array
+	{
+		$return = array();
+		try {
+			foreach (tables_list() as $table => $type) {
+				$tableFields = fields($table);
+				foreach ($tableFields as $field) {
+					$return[$table][] = $field;
+				}
+			}
+			return $return;
+		} catch (Exception $e) {
+			error_log("BigQuery allFields error: " . $e->getMessage());
+			return array();
+		}
+	}
+
+	/**
+	 * BigQuery用検索条件変換メソッド
+	 * 検索条件のフィールド識別子を適切に変換する
+	 * @param string $idf フィールド識別子
+	 * @param array $val 検索値（op, val）
+	 * @param array $field フィールド定義
+	 * @return string 変換済み識別子
+	 */
+	function convertSearch(string $idf, array $val, array $field): string
+	{
+		// BigQueryでは特別な変換は不要で、識別子をそのまま返す
+		// 必要に応じて将来的にBigQuery固有の検索最適化を追加可能
+		return $idf;
+	}
 	}
 	function support($feature)
 	{
@@ -1204,6 +1292,7 @@ if (isset($_GET["bigquery"])) {
 			'dump',
 			'event',
 			'move_col',
+			'move_tables',    // テーブル移動（BigQuery未対応）
 			'privileges',
 			'procedure',
 			'routine',
@@ -2053,6 +2142,71 @@ if (isset($_GET["bigquery"])) {
 		}
 	}
 
+	/**
+	 * BigQuery テーブル移動機能（未対応）
+	 * BigQueryは異なるデータセット間でのテーブル移動をサポートしていない
+	 * @param array $tables テーブル一覧
+	 * @param array $views ビュー一覧 
+	 * @param string $target 移動先データセット
+	 * @return bool 常にfalse（未対応）
+	 */
+	function move_tables($tables, $views, $target)
+	{
+		// BigQueryは異なるデータセット間でのテーブル移動を直接サポートしていない
+		// CREATE TABLE AS SELECT + DROP TABLE の組み合わせが必要だが、
+		// 複雑な操作となるため現在は未実装
+		return false;
+	}
+
+	/**
+	 * BigQuery未対応機能のエラー表示
+	 * @param string $feature 機能名
+	 * @param string $reason 対応していない理由
+	 * @return void
+	 */
+	function show_unsupported_feature_message($feature, $reason = '')
+	{
+		$defaultReasons = array(
+			'move_tables' => 'BigQuery does not support moving tables between datasets directly. Use CREATE TABLE AS SELECT + DROP TABLE instead.',
+			'schema' => 'BigQuery uses datasets instead of schemas. Please use the dataset view for schema information.',
+			'import' => 'BigQuery import functionality is not yet implemented. Please use the BigQuery console or API for bulk imports.',
+			'export' => 'BigQuery export functionality is not yet implemented. Please use the BigQuery console or API for exports.',
+			'analyze' => 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.',
+			'optimize' => 'BigQuery automatically optimizes storage and query performance.',
+			'search_tables' => 'Cross-table search is not yet implemented for BigQuery.',
+		);
+		
+		$message = $reason ?: ($defaultReasons[$feature] ?? 'This feature is not supported in BigQuery driver.');
+		
+		echo '<div class="error">';
+		echo '<h3>Feature Not Supported: ' . htmlspecialchars($feature) . '</h3>';
+		echo '<p>' . htmlspecialchars($message) . '</p>';
+		echo '<p><a href="javascript:history.back()">← Go Back</a></p>';
+		echo '</div>';
+	}
+
+
+	// search_tables関数は削除（Adminerコアと重複のため）
+// 代わりにDriverクラス内で処理
+
+	/**
+	 * テーブル分析機能（BigQuery未対応）
+	 */
+	function analyze_table($table)
+	{
+		show_unsupported_feature_message('analyze');
+		return false;
+	}
+
+	/**
+	 * テーブル最適化機能（BigQuery未対応）
+	 */
+	function optimize_table($table)
+	{
+		show_unsupported_feature_message('optimize');
+		return false;
+	}
+
 	}
 }
 if (!function_exists('query')) {
@@ -2065,3 +2219,31 @@ if (!function_exists('query')) {
 		return false;
 	}
 }
+
+if (!function_exists('schema')) {
+	/**
+	 * BigQuery Database schema機能
+	 * BigQueryではschemaの代わりにデータセット情報を表示
+	 */
+	function schema()
+	{
+		show_unsupported_feature_message('schema', 'BigQuery uses datasets instead of traditional schemas. Dataset information is available in the main database view.');
+		return;
+	}
+}
+
+
+if (!function_exists('import_sql')) {
+	/**
+	 * BigQuery Import機能
+	 * SQLファイルインポート（BigQueryでは未実装）
+	 */
+	function import_sql($file)
+	{
+		show_unsupported_feature_message('import', 'BigQuery import functionality is not yet implemented. Please use the BigQuery console or API for bulk imports.');
+		return false;
+	}
+}
+
+// dump_csv関数はAdminerコアに存在するため、BigQuery用のカスタム実装は不要
+// エクスポート機能が必要な場合は、support()でexportをfalseに設定することで無効化される
