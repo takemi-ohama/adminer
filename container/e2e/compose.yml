@@ -5,17 +5,14 @@ services:
       dockerfile: container/e2e/Dockerfile
     container_name: playwright-e2e
     volumes:
-      - workspace:/app
+      - ../../:/app
     environment:
       - BASE_URL=http://adminer-bigquery-test
       - GOOGLE_CLOUD_PROJECT=adminer-test-472623
     networks:
       - adminer_net
 
-volumes:
-  workspace:
-    external: true
-    name: adminer_workspace
+# Direct host mount - no external volume needed
 
 networks:
   adminer_net:

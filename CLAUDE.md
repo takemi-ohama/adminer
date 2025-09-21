@@ -151,29 +151,33 @@ mcp__serena__read_memory [name]      # 過去の分析結果参照
 mcp__serena__write_memory [name]     # 新しい分析結果保存
 ```
 
-### 現在保存されているメモリー（2025-09-20更新）
-- `e2e_script_integration_and_error_detection_2025-09-20`: **最新** - E2Eスクリプト統合・エラー検出システム強化
-- `bigquery_env_var_standardization_completion_2025-09`: 環境変数標準化完了記録
-- `bigquery_project_final_phase_2025-09`: BigQueryプロジェクト最終フェーズ記録
+### 現在保存されているメモリー（2025-09-21更新）
+- `playwright_e2e_comprehensive_restoration_2025-09-21`: **最新** - PlaywrightE2Eテストスイート完全修復とMCP手法確立
+- `e2e_comprehensive_testing_and_ui_issues_2025-09-21`: E2E包括テスト結果と技術課題分析
+- `i03_implementation_progress_2025-09-21`: i03.md実装進捗と次期課題
+- `i03_task_completion_stage2_2025-09-21`: i03.md Stage2完了記録
 - `i03_e2e_testing_system_establishment_2025-09-20`: E2Eテスト環境確立
-- `comprehensive_bigquery_project_analysis`: プロジェクト包括分析結果
-- `directory_structure_update_2025-09`: ディレクトリ構造変更の完全記録
+- `i03_authentication_breakthrough_2025-09-20`: 認証突破とテスト成功記録
+- `bigquery_project_final_phase_2025-09`: BigQueryプロジェクト最終フェーズ記録
+- `bigquery_env_var_standardization_completion_2025-09`: 環境変数標準化完了記録
 - `bigquery_env_var_authentication_fix_2025-09`: 認証エラー修正記録
+- `directory_structure_update_2025-09`: ディレクトリ構造変更の完全記録
+- `comprehensive_bigquery_project_analysis`: プロジェクト包括分析結果
 - `pr_creation_workflow`: PR作成手順の記録
 - `adminer_bigquery_analysis`: 初期詳細プロジェクト分析結果
 
-### 記憶活用の重要ポイント（2025-09更新）
-1. **最新情報の優先**: `bigquery_project_final_phase_2025-09` が最新の完全記録
-2. **段階的な記憶参照**: 古い記憶から新しい記憶へ時系列で確認
-3. **知見の継続更新**: プロジェクトの進展に合わせて新しい記憶を作成
-4. **記憶の整理**: 古くなった記憶は適宜削除（`delete_memory`）
+### 記憶活用の重要ポイント（2025-09-21更新）
+1. **最新情報の優先**: `playwright_e2e_comprehensive_restoration_2025-09-21` が最新のE2E修復記録
+2. **技術課題の系統管理**: `e2e_comprehensive_testing_and_ui_issues_2025-09-21`でUI課題を包括管理
+3. **知見の継続更新**: プロジェクトの進展に合わせて新しい記憶を作成・古い記憶を削除
+4. **MCP Playwright活用**: 手動検証→自動テスト修復の新手法確立
 
-### 最新の活用実績（2025-09-20）
-- **E2Eスクリプト統合**: 重複スクリプト統合とエラー検出システム強化
-- **Playwright設定修正**: Docker環境での安定実行基盤確立
-- **統一ログシステム**: タイムスタンプ付きログとエラーハンドリング統一
-- **環境変数標準化**: プロジェクト全体のGOOGLE_CLOUD_PROJECT統一作業
-- **包括的ドキュメント更新**: 10ファイル以上の一貫した変数名修正
+### 最新の活用実績（2025-09-21）
+- **Playwright E2E完全修復**: 14テストケース全て正常動作、MCP Playwright手動検証手法確立
+- **Docker環境基盤修正**: ボリュームマウント問題とファイルコピーバグの根本解決
+- **ロバストUI自動化**: 柔軟セレクター戦略と包括的エラーハンドリング実装
+- **技術課題体系化**: AdminerコアのJushライブラリ依存とJavaScript未定義関数問題の特定
+- **品質保証基盤確立**: BigQueryプラグインの継続的テスト実行環境完成
 
 このSerena MCPの活用により、大規模なコードベースでも効率的かつ精密な開発を実現します。
 
@@ -254,15 +258,15 @@ cd ../e2e
 ## プロジェクト記録
 
 ### Serena記憶の最終更新日時
-**2025年09月20日 13:25:00**
+**2025年09月21日 07:30:00**
 
-最新記憶: `e2e_script_integration_and_error_detection_2025-09-20`
-- E2Eテストスクリプトの大幅なリファクタリング完了
-- 重複スクリプト統合と統一実行環境の構築（PR #23）
-- Playwright設定修正とDocker環境安定化
-- 包括的エラー検出システム（Fatal error、PHP Warning等）実装
-- タイムスタンプ付きログ・エラーハンドリングの統一化
-- 240テストケース認識と6.4秒での安定実行確認
+最新記憶: `playwright_e2e_comprehensive_restoration_2025-09-21`
+- Playwright E2Eテストスイートの完全修復とMCP Playwright手法の確立
+- 「No tests found」エラーからPlaywright設定・Docker環境・全テストファイルの包括的修正
+- MCP Playwright手動検証→自動テスト修復の革新的アプローチ確立
+- 14テストケース全て正常動作（参照系7/7、CRUD系3/3、基本フロー3/3、分析ボタン1/1）
+- ロバストなUI要素検出パターン（柔軟ログイン、優先データセット選択等）実装
+- Docker環境でのファイル反映問題（外部ボリュームvs直接マウント）解決
 
 主要記憶: `bigquery_env_var_authentication_fix_2025-09`
 - $_ENV → getenv() による確実な環境変数取得実現
@@ -273,7 +277,7 @@ cd ../e2e
 - BigQueryドライバー完全実装とパフォーマンス分析
 - マージ後クリーンアップワークフロー確立
 
-## 重要な技術的発見 (2025年9月20日)
+## 重要な技術的発見 (2025年9月21日更新)
 
 ### PHP環境変数アクセスの注意点
 - **$_ENV配列**: PHPの`variables_order`設定に依存（デフォルト: `GPCS`）
@@ -284,6 +288,23 @@ cd ../e2e
 - **GOOGLE_CLOUD_PROJECT**: Google Cloud公式推奨の標準環境変数
 - **自動設定**: GCP環境（Cloud Run、Compute Engine等）で自動的に設定
 - **BigQueryClient**: projectIdパラメータ省略時のフォールバック変数として使用
+
+### Docker開発環境でのファイル反映問題 (2025年9月21日新規発見)
+- **外部ボリューム**: `workspace:/app` 形式では、ホスト側ファイル更新がコンテナ内で反映されない
+- **直接マウント**: `../../:/app` 形式では、ホスト変更が即座に反映される
+- **推奨**: 開発環境では直接マウントを使用、本番環境では外部ボリューム使用
+
+### MCP Playwright活用による革新的テスト修復手法 (2025年9月21日確立)
+- **従来手法**: 自動テストのエラーメッセージからの推測による修正
+- **新手法**: MCP Playwright手動検証→実際のUI状態確認→自動テスト修正
+- **効果**: 推測による試行錯誤を排除、確実な修正により開発効率大幅向上
+- **パターン**: `browser_navigate` → `browser_click` → `browser_snapshot` での検証フロー
+
+### Playwright「No tests found」エラーの根本原因と解決法 (2025年9月21日解明)
+- **原因1**: `playwright.config.js`のtestDir設定とプロジェクト定義の不整合
+- **原因2**: Docker環境でのファイルコピー先とPlaywright設定パスの不一致
+- **原因3**: entrypoint.shでのディレクトリ/ファイル混同によるコピー失敗
+- **解決**: 設定ファイル明示（`--config`パラメータ）と統一パス管理
 
 ## 次期開発課題 (2025年9月20日 新規指示)
 

@@ -34,7 +34,6 @@ if (isset($_GET["bigquery"])) {
 			if (isset(self::$pool[$key])) {
 				self::$usageTimestamps[$key] = time();
 				$age = time() - self::$creationTimes[$key];
-				// Connection pool reuse logging removed as per code review
 				return self::$pool[$key];
 			}
 			if (count(self::$pool) >= self::$maxConnections) {
@@ -53,7 +52,6 @@ if (isset($_GET["bigquery"])) {
 			self::$pool[$key] = $client;
 			self::$usageTimestamps[$key] = time();
 			self::$creationTimes[$key] = time();
-			// Connection creation logging removed as per code review
 			return $client;
 		}
 		private static function evictOldestConnection()
@@ -65,7 +63,6 @@ if (isset($_GET["bigquery"])) {
 			unset(self::$pool[$oldestKey]);
 			unset(self::$usageTimestamps[$oldestKey]);
 			unset(self::$creationTimes[$oldestKey]);
-			// Connection eviction logging removed as per code review
 		}
 		function clearPool()
 		{
@@ -73,7 +70,6 @@ if (isset($_GET["bigquery"])) {
 			self::$pool = array();
 			self::$usageTimestamps = array();
 			self::$creationTimes = array();
-			// Connection pool clearing logging removed as per code review
 		}
 		function getStats()
 		{
@@ -273,16 +269,16 @@ if (isset($_GET["bigquery"])) {
 				strlen($projectId) <= 30;
 		}
 		static function escapeIdentifier($identifier)
-	{
-		// 既にバッククォートで囲まれている場合は、そのまま返す
-		if (preg_match('/^`[^`]*`$/', $identifier)) {
-			return $identifier;
-		}
+		{
+			// 既にバッククォートで囲まれている場合は、そのまま返す
+			if (preg_match('/^`[^`]*`$/', $identifier)) {
+				return $identifier;
+			}
 
-		// バッククォートを含む場合は、重複を防ぐため一度除去してから再エスケープ
-		$cleanIdentifier = trim($identifier, '`');
-		return "`" . str_replace("`", "``", $cleanIdentifier) . "`";
-	}
+			// バッククォートを含む場合は、重複を防ぐため一度除去してから再エスケープ
+			$cleanIdentifier = trim($identifier, '`');
+			return "`" . str_replace("`", "``", $cleanIdentifier) . "`";
+		}
 		static function logQuerySafely($query, $context = "QUERY")
 		{
 			$sanitizers = array(
@@ -403,22 +399,23 @@ if (isset($_GET["bigquery"])) {
 			return null;
 		}
 
-	/**
-	 * Build full table name with project and dataset qualifiers
-	 * @param string $table テーブル名
-	 * @param string $database データセット名
-	 * @param string $projectId プロジェクトID
-	 * @return string 完全修飾テーブル名
-	 */
-	static function buildFullTableName($table, $database, $projectId)
-	{
-		return "`" . $projectId . "`.`" . $database . "`.`" . $table . "`";
-	}
+		/**
+		 * Build full table name with project and dataset qualifiers
+		 * @param string $table テーブル名
+		 * @param string $database データセット名
+		 * @param string $projectId プロジェクトID
+		 * @return string 完全修飾テーブル名
+		 */
+		static function buildFullTableName($table, $database, $projectId)
+		{
+			return "`" . $projectId . "`.`" . $database . "`.`" . $table . "`";
+		}
 	}
 
 	// Adminerコアとの互換性のためのidf_escape()関数
 	if (!function_exists('Adminer\\idf_escape')) {
-		function idf_escape($idf) {
+		function idf_escape($idf)
+		{
 			return BigQueryUtils::escapeIdentifier($idf);
 		}
 	}
@@ -427,6 +424,19 @@ if (isset($_GET["bigquery"])) {
 	 */
 	class Db
 	{
+		/**
+		 * BigQuery unsupported feature error messages
+		 * Extracted for better maintainability and localization support
+		 */
+		const UNSUPPORTED_FEATURE_MESSAGES = array(
+			'move_tables' => 'BigQuery does not support moving tables between datasets directly. Use CREATE TABLE AS SELECT + DROP TABLE instead.',
+			'schema' => 'BigQuery uses datasets instead of schemas. Please use the dataset view for schema information.',
+			'import' => 'BigQuery import functionality is not yet implemented. Please use the BigQuery console or API for bulk imports.',
+			'export' => 'BigQuery export functionality is not yet implemented. Please use the BigQuery console or API for exports.',
+			'analyze' => 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.',
+			'optimize' => 'BigQuery automatically optimizes storage and query performance.',
+			'search_tables' => 'Cross-table search is not yet implemented for BigQuery.',
+		);
 		/** @var Db|null Singleton instance */
 		static $instance;
 
@@ -473,7 +483,6 @@ if (isset($_GET["bigquery"])) {
 				if (!$this->isLocationExplicitlySet($server)) {
 					$this->scheduleLocationDetection($this->projectId, $location);
 				}
-				// Connection successful - BigQuery client initialized
 				return true;
 			} catch (ServiceException $e) {
 				$this->logConnectionError($e, 'ServiceException');
@@ -529,7 +538,6 @@ if (isset($_GET["bigquery"])) {
 				'location' => $location,
 				'credentialsPath' => $credentialsPath
 			));
-			// Connection pool initialized successfully
 		}
 		private function logConnectionError($e, $type)
 		{
@@ -635,16 +643,15 @@ if (isset($_GET["bigquery"])) {
 						if ($detectedLocation !== $defaultLocation) {
 							$this->config['location'] = $detectedLocation;
 							$this->setCachedLocation($projectId, $detectedLocation);
-							error_log("BigQuery: Ultra-fast location detection: '$detectedLocation' for project '$projectId'");
 						}
 						break;
 					} catch (Exception $e) {
-						error_log("BigQuery: Lightweight location detection failed: " . $e->getMessage());
+						// Location detection failed - continue silently
 						break;
 					}
 				}
 			} catch (Exception $e) {
-				error_log("BigQuery: Background location detection failed: " . $e->getMessage());
+				// Location detection failed - continue with default location
 			}
 		}
 
@@ -670,16 +677,14 @@ if (isset($_GET["bigquery"])) {
 						$detectedLocation = $datasetInfo['location'] ?? $defaultLocation;
 						if ($detectedLocation !== $defaultLocation) {
 							self::setCachedLocationStatic($projectId, $detectedLocation);
-							error_log("BigQuery: Background location detection: '$detectedLocation' for project '$projectId'");
 						}
 						break;
 					} catch (Exception $e) {
-						error_log("BigQuery: Background location detection failed: " . $e->getMessage());
 						break;
 					}
 				}
 			} catch (Exception $e) {
-				error_log("BigQuery: Background location detection error: " . $e->getMessage());
+				// Background location detection failed - continue silently
 			}
 		}
 
@@ -698,32 +703,57 @@ if (isset($_GET["bigquery"])) {
 			@file_put_contents($cacheFile, json_encode($cacheData), LOCK_EX);
 		}
 		function query($query)
-		{
-			try {
-				// READ-ONLYモード制限の設定確認
-				if (getenv('BIGQUERY_READONLY_MODE') === 'true') {
-					$this->validateReadOnlyQuery($query);
-				}
-
-				$queryLocation = $this->determineQueryLocation();
-				$queryJob = $this->bigQueryClient->query($query)
-					->useLegacySql(false)
-					->location($queryLocation);
-				$job = $this->bigQueryClient->runQuery($queryJob);
-				if (!$job->isComplete()) {
-					$job->waitUntilComplete();
-				}
-				$this->checkJobStatus($job);
-				// Query executed successfully
-				return new Result($job);
-			} catch (ServiceException $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
-				return false;
-			} catch (Exception $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'ERROR');
+	{
+		try {
+			// ANALYZE TABLE クエリの特別処理
+			if (preg_match('/^\s*ANALYZE\s+TABLE\s+/i', $query)) {
+				$this->error = 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.';
 				return false;
 			}
+
+			// Dataset ID validation and retrieval from URL parameter
+			if (empty($this->datasetId) && isset($_GET['db']) && !empty($_GET['db'])) {
+				// Validate dataset name: BigQuery dataset IDs must be 1-1024 characters, letters, numbers, and underscores only
+				if (preg_match('/^[A-Za-z0-9_]{1,1024}$/', $_GET['db'])) {
+					$this->datasetId = $_GET['db'];
+				} else {
+					error_log("BigQuery: Invalid dataset name provided: " . $_GET['db']);
+					$this->error = 'Invalid dataset name. Dataset names must contain only letters, numbers, and underscores (1-1024 characters).';
+					return false;
+				}
+			}
+
+			// READ-ONLYモード制限の設定確認
+			if (getenv('BIGQUERY_READONLY_MODE') === 'true') {
+				$this->validateReadOnlyQuery($query);
+			}
+
+			$queryLocation = $this->determineQueryLocation();
+
+			$queryJob = $this->bigQueryClient->query($query)
+				->useLegacySql(false)
+				->location($queryLocation);
+			$job = $this->bigQueryClient->runQuery($queryJob);
+			if (!$job->isComplete()) {
+				$job->waitUntilComplete();
+			}
+			$this->checkJobStatus($job);
+
+			return new Result($job);
+		} catch (ServiceException $e) {
+			$errorMessage = $e->getMessage();
+			$errorCode = $e->getCode();
+
+			// 400 error - query validation failed (validation failed)
+
+			BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
+			return false;
+		} catch (Exception $e) {
+			error_log("BigQuery General Error: " . $e->getMessage());
+			BigQueryUtils::logQuerySafely($e->getMessage(), 'ERROR');
+			return false;
 		}
+	}
 		private function checkJobStatus($job)
 		{
 			$jobInfo = $job->info();
@@ -763,12 +793,11 @@ if (isset($_GET["bigquery"])) {
 					$datasetInfo = $dataset->info();
 					$datasetLocation = $datasetInfo['location'] ?? null;
 					if ($datasetLocation && $datasetLocation !== ($this->config['location'] ?? '')) {
-						error_log("BigQuery: Using dataset location '$datasetLocation' for query execution");
 						$this->config['location'] = $datasetLocation;
 						return $datasetLocation;
 					}
 				} catch (Exception) {
-					error_log("BigQuery: Failed to get dataset location, falling back to config location");
+					// Failed to get dataset location
 				}
 			}
 			return $this->config['location'] ?? 'US';
@@ -782,11 +811,9 @@ if (isset($_GET["bigquery"])) {
 				$datasetLocation = $datasetInfo['location'] ?? 'US';
 				$previousLocation = $this->config['location'] ?? 'US';
 				if ($datasetLocation !== $previousLocation) {
-					// Dataset location updated
 					$this->config['location'] = $datasetLocation;
 				}
 				$this->datasetId = $database;
-				// Dataset selected successfully
 				return true;
 			} catch (ServiceException $e) {
 				$this->logDatasetError($e, $database);
@@ -812,27 +839,32 @@ if (isset($_GET["bigquery"])) {
 			return BigQueryUtils::escapeIdentifier($idf);
 		}
 		function error()
+	{
+		// 特定のエラーメッセージが設定されている場合はそれを返す
+		if (!empty($this->error)) {
+			return $this->error;
+		}
+		
+		return "Check server logs for detailed error information";
+	}
+
+		function multi_query($query)
 		{
-			return "Check server logs for detailed error information";
+			// BigQueryは複数クエリをサポートしないため、単一クエリとして処理
+			return $this->query($query);
 		}
 
-	function multi_query($query)
-	{
-		// BigQueryは複数クエリをサポートしないため、単一クエリとして処理
-		return $this->query($query);
-	}
+		function store_result()
+		{
+			// BigQueryは結果セットストレージをサポートしないため、falseを返す
+			return false;
+		}
 
-	function store_result()
-	{
-		// BigQueryは結果セットストレージをサポートしないため、falseを返す
-		return false;
-	}
-
-	function next_result()
-	{
-		// BigQueryは複数結果セットをサポートしないため、falseを返す
-		return false;
-	}
+		function next_result()
+		{
+			// BigQueryは複数結果セットをサポートしないため、falseを返す
+			return false;
+		}
 	}
 	class Result
 	{
@@ -968,44 +1000,44 @@ if (isset($_GET["bigquery"])) {
 			"REGEXP",
 			"NOT REGEXP"
 		);
-	/**
-	 * @var array BigQuery partitioning columns (not supported, so empty)
-	 */
-	public $partitionBy = array();
+		/**
+		 * @var array BigQuery partitioning columns (not supported, so empty)
+		 */
+		public $partitionBy = array();
 
-	/**
-	 * @var array BigQuery unsigned integer types (not applicable, so empty)
-	 */
-	public $unsigned = array();
+		/**
+		 * @var array BigQuery unsigned integer types (not applicable, so empty)
+		 */
+		public $unsigned = array();
 
-	/**
-	 * @var array BigQuery generated columns (not supported, so empty)
-	 */
-	public $generated = array();
+		/**
+		 * @var array BigQuery generated columns (not supported, so empty)
+		 */
+		public $generated = array();
 
-	/**
-	 * @var array BigQuery enum type lengths (not supported, so empty)
-	 */
-	public $enumLength = array();
+		/**
+		 * @var array BigQuery enum type lengths (not supported, so empty)
+		 */
+		public $enumLength = array();
 
-	/**
-	 * @var array BigQuery insert functions (empty - only standard input supported)
-	 */
-	public $insertFunctions = array();
+		/**
+		 * @var array BigQuery insert functions (empty - only standard input supported)
+		 */
+		public $insertFunctions = array();
 
-	/**
-	 * @var array BigQuery edit functions (empty - only standard editing supported)
-	 */
-	public $editFunctions = array();
+		/**
+		 * @var array BigQuery edit functions (empty - only standard editing supported)
+		 */
+		public $editFunctions = array();
 
-	// BigQuery用データ型定義（Adminer互換形式）
-	protected $types = array(
-		array("INT64" => 0, "INTEGER" => 0, "FLOAT64" => 0, "FLOAT" => 0, "NUMERIC" => 0, "BIGNUMERIC" => 0),
-		array("STRING" => 0, "BYTES" => 0),
-		array("DATE" => 0, "TIME" => 0, "DATETIME" => 0, "TIMESTAMP" => 0),
-		array("BOOLEAN" => 0, "BOOL" => 0),
-		array("ARRAY" => 0, "STRUCT" => 0, "JSON" => 0, "GEOGRAPHY" => 0)
-	);
+		// BigQuery用データ型定義（Adminer互換形式）
+		protected $types = array(
+			array("INT64" => 0, "INTEGER" => 0, "FLOAT64" => 0, "FLOAT" => 0, "NUMERIC" => 0, "BIGNUMERIC" => 0),
+			array("STRING" => 0, "BYTES" => 0),
+			array("DATE" => 0, "TIME" => 0, "DATETIME" => 0, "TIMESTAMP" => 0),
+			array("BOOLEAN" => 0, "BOOL" => 0),
+			array("ARRAY" => 0, "STRUCT" => 0, "JSON" => 0, "GEOGRAPHY" => 0)
+		);
 
 		static function connect($server, $username, $password)
 		{
@@ -1020,13 +1052,13 @@ if (isset($_GET["bigquery"])) {
 			return null;
 		}
 		function structuredTypes()
-{
-	$allTypes = array();
-	foreach ($this->types as $typeGroup) {
-		$allTypes = array_merge($allTypes, array_keys($typeGroup));
-	}
-	return $allTypes;
-}
+		{
+			$allTypes = array();
+			foreach ($this->types as $typeGroup) {
+				$allTypes = array_merge($allTypes, array_keys($typeGroup));
+			}
+			return $allTypes;
+		}
 		function inheritsFrom($table)
 		{
 			return array();
@@ -1048,131 +1080,168 @@ if (isset($_GET["bigquery"])) {
 			return BigQueryUtils::generateFieldConversion($field);
 		}
 
-	function hasCStyleEscapes(): bool
-	{
-		return false; // BigQuery does not support C-style escapes
-	}
+		function hasCStyleEscapes(): bool
+		{
+			return false; // BigQuery does not support C-style escapes
+		}
 
-	function warnings()
-	{
-		// BigQueryはクエリ警告をサポートしないため、空配列を返す
-		return array();
-	}
+		function warnings()
+		{
+			// BigQueryはクエリ警告をサポートしないため、空配列を返す
+			return array();
+		}
 
 
-	/**
-	 * BigQueryストレージエンジン（固定値）
-	 * @return array BigQueryはストレージエンジンとして'BigQuery'のみサポート
-	 */
-	function engines()
-	{
-		return array('BigQuery');
-	}
+		/**
+		 * BigQueryストレージエンジン（固定値）
+		 * @return array BigQueryはストレージエンジンとして'BigQuery'のみサポート
+		 */
+		function engines()
+		{
+			return array('BigQuery');
+		}
 
-	/**
-	 * BigQuery用データ型定義（Driverクラスメソッド）
-	 * Adminerが要求するDriver::types()メソッド
-	 * @return array BigQueryでサポートされるデータ型
-	 */
-	function types()
-	{
-		return array(
-			'Numbers' => array(
-				'INT64' => 0,
-				'INTEGER' => 0,
-				'FLOAT64' => 0,
-				'FLOAT' => 0,
-				'NUMERIC' => 0,
-				'BIGNUMERIC' => 0
-			),
-			'Strings' => array(
-				'STRING' => 0,
-				'BYTES' => 0
-			),
-			'Date and time' => array(
-				'DATE' => 0,
-				'TIME' => 0,
-				'DATETIME' => 0,
-				'TIMESTAMP' => 0
-			),
-			'Boolean' => array(
-				'BOOLEAN' => 0,
-				'BOOL' => 0
-			),
-			'Complex' => array(
-				'ARRAY' => 0,
-				'STRUCT' => 0,
-				'JSON' => 0,
-				'GEOGRAPHY' => 0
-			)
-		);
-	}
+		/**
+		 * BigQuery用データ型定義（Driverクラスメソッド）
+		 * Adminerが要求するDriver::types()メソッド
+		 * @return array BigQueryでサポートされるデータ型
+		 */
+		function types()
+		{
+			return array(
+				'Numbers' => array(
+					'INT64' => 0,
+					'INTEGER' => 0,
+					'FLOAT64' => 0,
+					'FLOAT' => 0,
+					'NUMERIC' => 0,
+					'BIGNUMERIC' => 0
+				),
+				'Strings' => array(
+					'STRING' => 0,
+					'BYTES' => 0
+				),
+				'Date and time' => array(
+					'DATE' => 0,
+					'TIME' => 0,
+					'DATETIME' => 0,
+					'TIMESTAMP' => 0
+				),
+				'Boolean' => array(
+					'BOOLEAN' => 0,
+					'BOOL' => 0
+				),
+				'Complex' => array(
+					'ARRAY' => 0,
+					'STRUCT' => 0,
+					'JSON' => 0,
+					'GEOGRAPHY' => 0
+				)
+			);
+		}
 
-	/**
-	 * BigQuery用enum長取得メソッド
-	 * BigQueryはenum型をサポートしないため、常に空配列を返す
-	 * @param array $field フィールド定義
-	 * @return array 空配列（BigQueryにはenum型が存在しない）
-	 */
-	function enumLength($field)
-	{
-		// BigQueryはenum型をサポートしないため、常に空配列を返す
-		return array();
-	}
+		/**
+		 * BigQuery用enum長取得メソッド
+		 * BigQueryはenum型をサポートしないため、常に空配列を返す
+		 * @param array $field フィールド定義
+		 * @return array 空配列（BigQueryにはenum型が存在しない）
+		 */
+		function enumLength($field)
+		{
+			// BigQueryはenum型をサポートしないため、常に空配列を返す
+			return array();
+		}
 
-	/**
-	 * BigQuery用値逆変換関数取得メソッド
-	 * BigQueryは特別な値変換をサポートしないため、常にnullを返す
-	 * @param array $field フィールド定義
-	 * @return null BigQueryでは逆変換関数は使用しない
-	 */
-	function unconvertFunction($field)
-	{
-		// BigQueryは特別な値変換をサポートしないため、nullを返す
-		return null;
-	}
+		/**
+		 * BigQuery用値逆変換関数取得メソッド
+		 * BigQueryは特別な値変換をサポートしないため、常にnullを返す
+		 * @param array $field フィールド定義
+		 * @return null BigQueryでは逆変換関数は使用しない
+		 */
+		function unconvertFunction($field)
+		{
+			// BigQueryは特別な値変換をサポートしないため、nullを返す
+			return null;
+		}
 
-	/**
-	 * BigQuery用データ挿入メソッド
-	 * グローバルinsert()関数を呼び出す
-	 * @param string $table テーブル名
-	 * @param array $set 挿入データ（フィールド名 => 値の配列）
-	 * @return bool 成功時true
-	 */
-	function insert($table, $set)
-	{
-		// グローバルinsert()関数を呼び出し
-		return insert($table, $set);
-	}
+		/**
+		 * BigQuery用データ挿入メソッド
+		 * グローバルinsert()関数を呼び出す
+		 * @param string $table テーブル名
+		 * @param array $set 挿入データ（フィールド名 => 値の配列）
+		 * @return bool 成功時true
+		 */
+		function insert($table, $set)
+		{
+			// グローバルinsert()関数を呼び出し
+			return insert($table, $set);
+		}
 
-	/**
-	 * BigQuery用データ更新メソッド
-	 * グローバルupdate()関数を呼び出す
-	 * @param string $table テーブル名
-	 * @param array $set 更新データ（フィールド名 => 値の配列）
-	 * @param string $queryWhere WHERE条件
-	 * @param int $limit 制限行数
-	 * @return bool 成功時true
-	 */
-	function update($table, $set, $queryWhere = '', $limit = 0)
-	{
-		// グローバルupdate()関数を呼び出し
-		return update($table, $set, $queryWhere, $limit);
-	}
+		/**
+		 * BigQuery用データ更新メソッド
+		 * グローバルupdate()関数を呼び出す
+		 * @param string $table テーブル名
+		 * @param array $set 更新データ（フィールド名 => 値の配列）
+		 * @param string $queryWhere WHERE条件
+		 * @param int $limit 制限行数
+		 * @return bool 成功時true
+		 */
+		function update($table, $set, $queryWhere = '', $limit = 0)
+		{
+			// グローバルupdate()関数を呼び出し
+			return update($table, $set, $queryWhere, $limit);
+		}
 
-	/**
-	 * BigQuery用データ削除メソッド
-	 * グローバルdelete()関数を呼び出す
-	 * @param string $table テーブル名
-	 * @param string $queryWhere WHERE条件
-	 * @param int $limit 制限行数
-	 * @return bool 成功時true
-	 */
-	function delete($table, $queryWhere = '', $limit = 0)
-	{
-		// グローバルdelete()関数を呼び出し
-		return delete($table, $queryWhere, $limit);
-	}
+		/**
+		 * BigQuery用データ削除メソッド
+		 * グローバルdelete()関数を呼び出す
+		 * @param string $table テーブル名
+		 * @param string $queryWhere WHERE条件
+		 * @param int $limit 制限行数
+		 * @return bool 成功時true
+		 */
+		function delete($table, $queryWhere = '', $limit = 0)
+		{
+			// グローバルdelete()関数を呼び出し
+			return delete($table, $queryWhere, $limit);
+		}
+
+		/**
+		 * BigQuery用全フィールド取得メソッド
+		 * Database schemaページで使用される
+		 * @return array<string, array<array{field:string, null:bool, type:string, length:?string}>>
+		 */
+		function allFields(): array
+		{
+			$return = array();
+			try {
+				foreach (tables_list() as $table => $type) {
+					$tableFields = fields($table);
+					foreach ($tableFields as $field) {
+						$return[$table][] = $field;
+					}
+				}
+				return $return;
+			} catch (Exception $e) {
+				error_log("BigQuery allFields error: " . $e->getMessage());
+				return array();
+			}
+		}
+
+		/**
+		 * BigQuery用検索条件変換メソッド
+		 * 検索条件のフィールド識別子を適切に変換する
+		 * @param string $idf フィールド識別子
+		 * @param array $val 検索値（op, val）
+		 * @param array $field フィールド定義
+		 * @return string 変換済み識別子
+		 */
+		function convertSearch(string $idf, array $val, array $field): string
+		{
+			// BigQueryでは特別な変換は不要で、識別子をそのまま返す
+			// 必要に応じて将来的にBigQuery固有の検索最適化を追加可能
+			return $idf;
+		}
 	}
 	function support($feature)
 	{
@@ -1204,6 +1273,7 @@ if (isset($_GET["bigquery"])) {
 			'dump',
 			'event',
 			'move_col',
+			'move_tables',    // Table move (not supported by BigQuery)
 			'privileges',
 			'procedure',
 			'routine',
@@ -1286,7 +1356,6 @@ if (isset($_GET["bigquery"])) {
 		if (!$flush) {
 			$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
 			if ($cached !== false) {
-				// Cache hit - debug logging removed
 				return $cached;
 			}
 		}
@@ -1300,7 +1369,6 @@ if (isset($_GET["bigquery"])) {
 			}
 			sort($datasets);
 			BigQueryCacheManager::set($cacheKey, $datasets, $cacheTime);
-			// Successful retrieval - debug logging removed
 			return $datasets;
 		} catch (Exception $e) {
 			error_log("Error listing datasets: " . $e->getMessage());
@@ -1325,10 +1393,8 @@ if (isset($_GET["bigquery"])) {
 			$cacheTime = 300;
 			$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
 			if ($cached !== false) {
-				// Cache hit for tables - debug logging removed
 				return $cached;
 			}
-			// Table listing debug logging removed
 			$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($actualDatabase) : null;
 			$tables = array();
 			$pageToken = null;
@@ -1344,7 +1410,6 @@ if (isset($_GET["bigquery"])) {
 				$pageToken = $result->nextResultToken();
 			} while ($pageToken);
 			BigQueryCacheManager::set($cacheKey, $tables, $cacheTime);
-			// Successful table retrieval - debug logging removed
 			return $tables;
 		} catch (Exception $e) {
 			error_log("Error listing tables for database '$database' (actual: '$actualDatabase'): " . $e->getMessage());
@@ -1360,7 +1425,6 @@ if (isset($_GET["bigquery"])) {
 				error_log("table_status: No database (dataset) context available, returning empty array");
 				return array();
 			}
-			// Table status debug logging removed
 			$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
 			$tables = array();
 			if ($name) {
@@ -1385,7 +1449,6 @@ if (isset($_GET["bigquery"])) {
 						'Avg_row_length' => $tableInfo['numRows'] > 0 ? intval(($tableInfo['numBytes'] ?? 0) / $tableInfo['numRows']) : 0,
 					);
 					$tables[$table->id()] = $result;
-					// Specific table return - debug logging removed
 				} catch (Exception $e) {
 					error_log("Error getting specific table '$name' info: " . $e->getMessage() . ", returning empty array");
 					return array();
@@ -1416,10 +1479,8 @@ if (isset($_GET["bigquery"])) {
 					}
 					$tables[$table->id()] = $result;
 				}
-				// Multiple tables return - debug logging removed
 			}
 			$result = is_array($tables) ? $tables : array();
-			// Final result type - debug logging removed
 			return $result;
 		} catch (Exception $e) {
 			error_log("Error getting table status for name '$name' (database: '$database'): " . $e->getMessage() . ", returning empty array");
@@ -1473,85 +1534,81 @@ if (isset($_GET["bigquery"])) {
 		return $condition;
 	}
 	function fields($table)
-{
-	global $connection;
-	try {
-		$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
-		if (empty($database)) {
-			error_log("fields: No database (dataset) context available for table '$table'");
-			return array();
-		}
-		$cacheKey = 'bq_fields_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . '_' . $database . '_' . $table;
-		$cacheTime = 600;
-		$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
-		if ($cached !== false) {
-			// Cache hit for fields - debug logging removed
-			return $cached;
-		}
-		// Field retrieval debug logging removed
-		$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
-		$tableObj = $dataset->table($table);
+	{
+		global $connection;
 		try {
-			$tableInfo = $tableObj->info();
+			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+			if (empty($database)) {
+				error_log("fields: No database (dataset) context available for table '$table'");
+				return array();
+			}
+			$cacheKey = 'bq_fields_' . ($connection && isset($connection->projectId) ? $connection->projectId : 'default') . '_' . $database . '_' . $table;
+			$cacheTime = 600;
+			$cached = BigQueryCacheManager::get($cacheKey, $cacheTime);
+			if ($cached !== false) {
+				return $cached;
+			}
+			$dataset = ($connection && isset($connection->bigQueryClient)) ? $connection->bigQueryClient->dataset($database) : null;
+			$tableObj = $dataset->table($table);
+			try {
+				$tableInfo = $tableObj->info();
+			} catch (Exception $e) {
+				error_log("Table '$table' does not exist in dataset '$database' or access error: " . $e->getMessage());
+				return array();
+			}
+			if (!isset($tableInfo['schema']['fields'])) {
+				error_log("No schema fields found for table '$table'");
+				return array();
+			}
+
+			$schemaFields = $tableInfo['schema']['fields'];
+			$fieldCount = count($schemaFields);
+
+			// BigQueryのシステムテーブル（INFORMATION_SCHEMAなど）の大量フィールド対策
+			// max_input_vars制限を回避するため、フィールド数を制限
+			$maxFields = 1000; // 元の制限値に戻す
+			if ($fieldCount > $maxFields) {
+				// Field count limit warning - keeping for operational monitoring
+				$schemaFields = array_slice($schemaFields, 0, $maxFields);
+			}
+
+			$fields = array();
+			static $typeCache = array();
+			foreach ($schemaFields as $field) {
+				$bigQueryType = $field['type'] ?? 'STRING';
+				if (!isset($typeCache[$bigQueryType])) {
+					$typeCache[$bigQueryType] = BigQueryConfig::mapType($bigQueryType);
+				}
+				$adminerTypeInfo = $typeCache[$bigQueryType];
+				$length = null;
+				if (preg_match('/\((\d+(?:,\d+)?)\)/', $bigQueryType, $matches)) {
+					$length = $matches[1];
+				}
+				$typeStr = $adminerTypeInfo['type'];
+				if ($length !== null) {
+					$typeStr .= "($length)";
+				} elseif (isset($adminerTypeInfo['length']) && $adminerTypeInfo['length'] !== null) {
+					$typeStr .= "(" . $adminerTypeInfo['length'] . ")";
+				}
+				$fields[$field['name']] = array(
+					'field' => $field['name'],
+					'type' => $typeStr,
+					'full_type' => $typeStr,
+					'null' => ($field['mode'] ?? 'NULLABLE') !== 'REQUIRED',
+					'default' => null,
+					'auto_increment' => false,
+					'comment' => $field['description'] ?? '',
+					'privileges' => array('select' => 1, 'insert' => 1, 'update' => 1, 'where' => 1, 'order' => 1)
+				);
+			}
+
+			BigQueryCacheManager::set($cacheKey, $fields, $cacheTime);
+			return $fields;
 		} catch (Exception $e) {
-			error_log("Table '$table' does not exist in dataset '$database' or access error: " . $e->getMessage());
+			error_log("Error getting table fields for '$table': " . $e->getMessage());
 			return array();
 		}
-		if (!isset($tableInfo['schema']['fields'])) {
-			error_log("No schema fields found for table '$table'");
-			return array();
-		}
-
-		$schemaFields = $tableInfo['schema']['fields'];
-		$fieldCount = count($schemaFields);
-		// Field count debug logging removed
-
-		// BigQueryのシステムテーブル（INFORMATION_SCHEMAなど）の大量フィールド対策
-		// max_input_vars制限を回避するため、フィールド数を制限
-		$maxFields = 1000; // 元の制限値に戻す
-		if ($fieldCount > $maxFields) {
-			// Field count limit warning - keeping for operational monitoring
-			$schemaFields = array_slice($schemaFields, 0, $maxFields);
-		}
-
-		$fields = array();
-		static $typeCache = array();
-		foreach ($schemaFields as $field) {
-			$bigQueryType = $field['type'] ?? 'STRING';
-			if (!isset($typeCache[$bigQueryType])) {
-				$typeCache[$bigQueryType] = BigQueryConfig::mapType($bigQueryType);
-			}
-			$adminerTypeInfo = $typeCache[$bigQueryType];
-			$length = null;
-			if (preg_match('/\((\d+(?:,\d+)?)\)/', $bigQueryType, $matches)) {
-				$length = $matches[1];
-			}
-			$typeStr = $adminerTypeInfo['type'];
-			if ($length !== null) {
-				$typeStr .= "($length)";
-			} elseif (isset($adminerTypeInfo['length']) && $adminerTypeInfo['length'] !== null) {
-				$typeStr .= "(" . $adminerTypeInfo['length'] . ")";
-			}
-			$fields[$field['name']] = array(
-				'field' => $field['name'],
-				'type' => $typeStr,
-				'full_type' => $typeStr,
-				'null' => ($field['mode'] ?? 'NULLABLE') !== 'REQUIRED',
-				'default' => null,
-				'auto_increment' => false,
-				'comment' => $field['description'] ?? '',
-				'privileges' => array('select' => 1, 'insert' => 1, 'update' => 1, 'where' => 1, 'order' => 1)
-			);
-		}
-
-		BigQueryCacheManager::set($cacheKey, $fields, $cacheTime);
-		// Field retrieval success - debug logging removed
-		return $fields;
-	} catch (Exception $e) {
-		error_log("Error getting table fields for '$table': " . $e->getMessage());
-		return array();
 	}
-}
 	function select($table, array $select, array $where, array $group, array $order = array(), $limit = 1, $page = 0, $print = false)
 	{
 		global $connection;
@@ -1651,407 +1708,449 @@ if (isset($_GET["bigquery"])) {
 			return null;
 		}
 
-	/**
-	 * BigQuery INSERT文実行
-	 * @param string $table テーブル名
-	 * @param array $set 挿入データ（フィールド名 => 値の配列）
-	 * @return bool 成功時true
-	 */
-	function insert($table, $set)
-	{
-		global $connection;
-		try {
-			if (!$connection || !isset($connection->bigQueryClient)) {
-				// Connection check for insert
-				return false;
-			}
-
-			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
-			if (empty($database) || empty($table)) {
-				// Database/table validation for insert
-				return false;
-			}
-
-			// テーブルスキーマ情報を取得してフィールド型を確認
-			$tableFields = fields($table);
-
-			// フィールド名と値を分離
-			$fields = array();
-			$values = array();
-			foreach ($set as $field => $value) {
-				// フィールド名から既存のバッククォートを除去してから再エスケープ
-				$cleanFieldName = trim(str_replace('`', '', $field));
-				$cleanField = BigQueryUtils::escapeIdentifier($cleanFieldName);
-				$fields[] = $cleanField;
-
-				// 共通の型変換ヘルパーを使用
-				$fieldInfo = $tableFields[$cleanFieldName] ?? null;
-				$fieldType = $fieldInfo['type'] ?? 'string';
-				$values[] = BigQueryUtils::convertValueForBigQuery($value, $fieldType);
-			}
-
-			// INSERT文組み立て
-			$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
-			$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
-			$fieldsStr = implode(", ", $fields);
-			$valuesStr = implode(", ", $values);
-			$insertQuery = "INSERT INTO $fullTableName ($fieldsStr) VALUES ($valuesStr)";
-
-			BigQueryUtils::logQuerySafely($insertQuery, "INSERT");
-
-			// BigQuery接続でクエリ実行
-			$queryLocation = $connection->config['location'] ?? 'US';
-			$queryJob = $connection->bigQueryClient->query($insertQuery)
-				->useLegacySql(false)
-				->location($queryLocation);
-
-			$job = $connection->bigQueryClient->runQuery($queryJob);
-			if (!$job->isComplete()) {
-				$job->waitUntilComplete();
-			}
-
-			// ジョブステータス確認
-			$jobInfo = $job->info();
-			if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
-				$errorResult = $jobInfo['status']['errorResult'] ?? null;
-				if ($errorResult) {
-					error_log("BigQuery INSERT failed: " . ($errorResult['message'] ?? 'Unknown error'));
+		/**
+		 * BigQuery INSERT文実行
+		 * @param string $table テーブル名
+		 * @param array $set 挿入データ（フィールド名 => 値の配列）
+		 * @return bool 成功時true
+		 */
+		function insert($table, $set)
+		{
+			global $connection;
+			try {
+				if (!$connection || !isset($connection->bigQueryClient)) {
 					return false;
 				}
 
-				// 影響行数を記録
-				$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 1;
-				// INSERT operation completed successfully
+				$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+				if (empty($database) || empty($table)) {
+					return false;
+				}
+
+				// テーブルスキーマ情報を取得してフィールド型を確認
+				$tableFields = fields($table);
+
+				// フィールド名と値を分離
+				$fields = array();
+				$values = array();
+				foreach ($set as $field => $value) {
+					// フィールド名から既存のバッククォートを除去してから再エスケープ
+					$cleanFieldName = trim(str_replace('`', '', $field));
+					$cleanField = BigQueryUtils::escapeIdentifier($cleanFieldName);
+					$fields[] = $cleanField;
+
+					// 共通の型変換ヘルパーを使用
+					$fieldInfo = $tableFields[$cleanFieldName] ?? null;
+					$fieldType = $fieldInfo['type'] ?? 'string';
+					$values[] = BigQueryUtils::convertValueForBigQuery($value, $fieldType);
+				}
+
+				// INSERT文組み立て
+				$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
+				$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
+				$fieldsStr = implode(", ", $fields);
+				$valuesStr = implode(", ", $values);
+				$insertQuery = "INSERT INTO $fullTableName ($fieldsStr) VALUES ($valuesStr)";
+
+				BigQueryUtils::logQuerySafely($insertQuery, "INSERT");
+
+				// BigQuery接続でクエリ実行
+				$queryLocation = $connection->config['location'] ?? 'US';
+				$queryJob = $connection->bigQueryClient->query($insertQuery)
+					->useLegacySql(false)
+					->location($queryLocation);
+
+				$job = $connection->bigQueryClient->runQuery($queryJob);
+				if (!$job->isComplete()) {
+					$job->waitUntilComplete();
+				}
+
+				// ジョブステータス確認
+				$jobInfo = $job->info();
+				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+					$errorResult = $jobInfo['status']['errorResult'] ?? null;
+					if ($errorResult) {
+						error_log("BigQuery INSERT failed: " . ($errorResult['message'] ?? 'Unknown error'));
+						return false;
+					}
+
+					// 影響行数を記録
+					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 1;
+					return true;
+				}
+
+				return false;
+			} catch (ServiceException $e) {
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'INSERT_SERVICE_ERROR');
+				return false;
+			} catch (Exception $e) {
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'INSERT_ERROR');
+				return false;
+			}
+		}
+
+		/**
+		 * BigQuery UPDATE文実行
+		 * @param string $table テーブル名
+		 * @param array $set 更新データ（フィールド名 => 値の配列）
+		 * @param string $queryWhere WHERE条件（Adminer形式）
+		 * @return bool 成功時true
+		 */
+		function update($table, $set, $queryWhere = '', $limit = 0)
+		{
+			global $connection;
+			try {
+				if (!$connection || !isset($connection->bigQueryClient)) {
+					return false;
+				}
+
+				$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+				if (empty($database) || empty($table)) {
+					return false;
+				}
+
+				// テーブルスキーマ情報を取得してフィールド型を確認
+				$tableFields = fields($table);
+
+				// SET句の構築
+				$setParts = array();
+				foreach ($set as $field => $value) {
+					// フィールド名から既存のバッククォートを除去してから再エスケープ
+					$cleanFieldName = trim(str_replace('`', '', $field));
+					$cleanField = BigQueryUtils::escapeIdentifier($cleanFieldName);
+
+					// 共通の型変換ヘルパーを使用
+					$fieldInfo = $tableFields[$cleanFieldName] ?? null;
+					$fieldType = $fieldInfo['type'] ?? 'string';
+					$convertedValue = BigQueryUtils::convertValueForBigQuery($value, $fieldType);
+					$setParts[] = "$cleanField = $convertedValue";
+				}
+
+				if (empty($setParts)) {
+					return false;
+				}
+
+				// WHERE句の処理（AdminerのqueryWhereをBigQueryに変換）
+				$whereClause = '';
+				if (!empty($queryWhere)) {
+					$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
+				}
+
+				// UPDATE文組み立て
+				$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
+				$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
+				$setStr = implode(", ", $setParts);
+				$updateQuery = "UPDATE $fullTableName SET $setStr $whereClause";
+
+				BigQueryUtils::logQuerySafely($updateQuery, "UPDATE");
+
+				// BigQuery接続でクエリ実行
+				$queryLocation = $connection->config['location'] ?? 'US';
+				$queryJob = $connection->bigQueryClient->query($updateQuery)
+					->useLegacySql(false)
+					->location($queryLocation);
+
+				$job = $connection->bigQueryClient->runQuery($queryJob);
+				if (!$job->isComplete()) {
+					$job->waitUntilComplete();
+				}
+
+				// ジョブステータス確認
+				$jobInfo = $job->info();
+				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+					$errorResult = $jobInfo['status']['errorResult'] ?? null;
+					if ($errorResult) {
+						error_log("BigQuery UPDATE failed: " . ($errorResult['message'] ?? 'Unknown error'));
+						return false;
+					}
+
+					// 影響行数を記録
+					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
+					return true;
+				}
+
+				return false;
+			} catch (ServiceException $e) {
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'UPDATE_SERVICE_ERROR');
+				return false;
+			} catch (Exception $e) {
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'UPDATE_ERROR');
+				return false;
+			}
+		}
+
+		/**
+		 * BigQuery DELETE文実行
+		 * @param string $table テーブル名
+		 * @param string $queryWhere WHERE条件（Adminer形式）
+		 * @param int $limit 削除する行数制限
+		 * @return bool 成功時true
+		 */
+		function delete($table, $queryWhere = '', $limit = 0)
+		{
+			global $connection;
+			try {
+				if (!$connection || !isset($connection->bigQueryClient)) {
+					return false;
+				}
+
+				$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+				if (empty($database) || empty($table)) {
+					return false;
+				}
+
+				// WHERE句の処理（AdminerのqueryWhereをBigQueryに変換）
+				$whereClause = '';
+				if (!empty($queryWhere) && trim($queryWhere) !== '') {
+					$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
+				} else {
+					// WHERE句がない場合は安全のため削除を制限
+					throw new InvalidArgumentException("BigQuery: DELETE without WHERE clause is not allowed. Please specify WHERE conditions to avoid accidental data deletion.");
+				}
+
+				// DELETE文組み立て
+				$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
+				$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
+				$deleteQuery = "DELETE FROM $fullTableName $whereClause";
+
+				BigQueryUtils::logQuerySafely($deleteQuery, "DELETE");
+
+				// BigQuery接続でクエリ実行
+				$queryLocation = $connection->config['location'] ?? 'US';
+				$queryJob = $connection->bigQueryClient->query($deleteQuery)
+					->useLegacySql(false)
+					->location($queryLocation);
+
+				$job = $connection->bigQueryClient->runQuery($queryJob);
+				if (!$job->isComplete()) {
+					$job->waitUntilComplete();
+				}
+
+				// ジョブステータス確認
+				$jobInfo = $job->info();
+				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+					$errorResult = $jobInfo['status']['errorResult'] ?? null;
+					if ($errorResult) {
+						error_log("BigQuery DELETE failed: " . ($errorResult['message'] ?? 'Unknown error'));
+						return false;
+					}
+
+					// 影響行数を記録
+					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
+					return true;
+				}
+
+				return false;
+			} catch (ServiceException $e) {
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'DELETE_SERVICE_ERROR');
+				return false;
+			} catch (Exception $e) {
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'DELETE_ERROR');
+				return false;
+			}
+		}
+
+		/**
+		 * BigQuery用最後に挿入されたID取得
+		 * BigQueryにはAUTO_INCREMENTがないため、常にnullを返す
+		 * @return null
+		 */
+		function last_id()
+		{
+			// BigQueryにはAUTO_INCREMENTの概念がないため、nullを返す
+			return null;
+		}
+
+		/**
+		 * BigQuery データセット作成
+		 * @param string $database データセット名
+		 * @param string $collation 照合順序（BigQueryでは未使用）
+		 * @return bool 作成成功時true
+		 */
+		function create_database($database, $collation)
+		{
+			global $connection;
+			try {
+				if (!$connection || !isset($connection->bigQueryClient)) {
+					return false;
+				}
+
+				// BigQueryのデータセット作成
+
+				// 正しいBigQuery PHP SDKのAPIを使用
+				$dataset = $connection->bigQueryClient->createDataset($database, [
+					'location' => $connection->config['location'] ?? 'US'
+				]);
+
 				return true;
-			}
 
-			return false;
-		} catch (ServiceException $e) {
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'INSERT_SERVICE_ERROR');
-			return false;
-		} catch (Exception $e) {
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'INSERT_ERROR');
-			return false;
+			} catch (ServiceException $e) {
+				$message = $e->getMessage();
+				if (strpos($message, 'Already Exists') !== false) {
+					error_log("BigQuery: Dataset '$database' already exists");
+					return false;
+				}
+				error_log("BigQuery: Dataset creation failed - " . $message);
+				return false;
+			} catch (Exception $e) {
+				error_log("BigQuery: Dataset creation error - " . $e->getMessage());
+				return false;
+			}
 		}
-	}
 
-	/**
-	 * BigQuery UPDATE文実行
-	 * @param string $table テーブル名
-	 * @param array $set 更新データ（フィールド名 => 値の配列）
-	 * @param string $queryWhere WHERE条件（Adminer形式）
-	 * @return bool 成功時true
-	 */
-	function update($table, $set, $queryWhere = '', $limit = 0)
-	{
-		global $connection;
-		try {
-			if (!$connection || !isset($connection->bigQueryClient)) {
-				// Connection check for update
-				return false;
-			}
+		/**
+		 * BigQuery テーブル作成・変更関数
+		 * @param string $table 既存テーブル名（空の場合は新規作成）
+		 * @param string $name 新しいテーブル名
+		 * @param array $fields フィールド定義配列
+		 * @param array $foreign 外部キー（BigQueryでは未サポート）
+		 * @param string $comment テーブルコメント
+		 * @param string $engine エンジン（BigQueryでは固定）
+		 * @param string $collation 照合順序（BigQueryでは未サポート）
+		 * @param string $auto_increment 自動増分（BigQueryでは未サポート）
+		 * @param string $partitioning パーティショニング（BigQueryでは未サポート）
+		 * @return bool 作成成功時true
+		 */
+		function alter_table($table, $name, $fields, $foreign, $comment, $engine, $collation, $auto_increment, $partitioning)
+		{
+			global $connection;
 
-			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
-			if (empty($database) || empty($table)) {
-				// Database/table validation for update
-				return false;
-			}
-
-			// テーブルスキーマ情報を取得してフィールド型を確認
-			$tableFields = fields($table);
-
-			// SET句の構築
-			$setParts = array();
-			foreach ($set as $field => $value) {
-				// フィールド名から既存のバッククォートを除去してから再エスケープ
-				$cleanFieldName = trim(str_replace('`', '', $field));
-				$cleanField = BigQueryUtils::escapeIdentifier($cleanFieldName);
-
-				// 共通の型変換ヘルパーを使用
-				$fieldInfo = $tableFields[$cleanFieldName] ?? null;
-				$fieldType = $fieldInfo['type'] ?? 'string';
-				$convertedValue = BigQueryUtils::convertValueForBigQuery($value, $fieldType);
-				$setParts[] = "$cleanField = $convertedValue";
-			}
-
-			if (empty($setParts)) {
-				// SET clause validation for update
-				return false;
-			}
-
-			// WHERE句の処理（AdminerのqueryWhereをBigQueryに変換）
-			$whereClause = '';
-			if (!empty($queryWhere)) {
-				$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
-			}
-
-			// UPDATE文組み立て
-			$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
-			$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
-			$setStr = implode(", ", $setParts);
-			$updateQuery = "UPDATE $fullTableName SET $setStr $whereClause";
-
-			BigQueryUtils::logQuerySafely($updateQuery, "UPDATE");
-
-			// BigQuery接続でクエリ実行
-			$queryLocation = $connection->config['location'] ?? 'US';
-			$queryJob = $connection->bigQueryClient->query($updateQuery)
-				->useLegacySql(false)
-				->location($queryLocation);
-
-			$job = $connection->bigQueryClient->runQuery($queryJob);
-			if (!$job->isComplete()) {
-				$job->waitUntilComplete();
-			}
-
-			// ジョブステータス確認
-			$jobInfo = $job->info();
-			if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
-				$errorResult = $jobInfo['status']['errorResult'] ?? null;
-				if ($errorResult) {
-					error_log("BigQuery UPDATE failed: " . ($errorResult['message'] ?? 'Unknown error'));
+			try {
+				if (!$connection || !isset($connection->bigQueryClient)) {
 					return false;
 				}
 
-				// 影響行数を記録
-				$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
-				// UPDATE operation completed successfully
-				return true;
-			}
+				// 新規テーブル作成の場合（$table が空）
+				if ($table == "") {
+					// 現在のデータセットを取得
+					$database = $_GET['db'] ?? $connection->datasetId ?? '';
+					if (empty($database)) {
+						return false;
+					}
 
-			return false;
-		} catch (ServiceException $e) {
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'UPDATE_SERVICE_ERROR');
-			return false;
-		} catch (Exception $e) {
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'UPDATE_ERROR');
-			return false;
-		}
-	}
+					$dataset = $connection->bigQueryClient->dataset($database);
 
-	/**
-	 * BigQuery DELETE文実行
-	 * @param string $table テーブル名
-	 * @param string $queryWhere WHERE条件（Adminer形式）
-	 * @param int $limit 削除する行数制限
-	 * @return bool 成功時true
-	 */
-	function delete($table, $queryWhere = '', $limit = 0)
-	{
-		global $connection;
-		try {
-			if (!$connection || !isset($connection->bigQueryClient)) {
-				// Connection check for delete
-				return false;
-			}
+					// フィールド定義をBigQueryスキーマ形式に変換
+					$schemaFields = array();
+					foreach ($fields as $field) {
+						if (isset($field[1]) && is_array($field[1])) {
+							// BigQuery用にフィールド名からバッククオートを削除
+							$fieldName = trim(str_replace('`', '', $field[1][0] ?? ''));
+							$fieldType = trim($field[1][1] ?? 'STRING');
+							$fieldMode = ($field[1][3] ?? false) ? 'REQUIRED' : 'NULLABLE';
 
-			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
-			if (empty($database) || empty($table)) {
-				// Database/table validation for delete
-				return false;
-			}
-
-			// WHERE句の処理（AdminerのqueryWhereをBigQueryに変換）
-			$whereClause = '';
-			if (!empty($queryWhere) && trim($queryWhere) !== '') {
-				$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
-			} else {
-				// WHERE句がない場合は安全のため削除を制限
-				throw new InvalidArgumentException("BigQuery: DELETE without WHERE clause is not allowed. Please specify WHERE conditions to avoid accidental data deletion.");
-			}
-
-			// DELETE文組み立て
-			$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
-			$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
-			$deleteQuery = "DELETE FROM $fullTableName $whereClause";
-
-			BigQueryUtils::logQuerySafely($deleteQuery, "DELETE");
-
-			// BigQuery接続でクエリ実行
-			$queryLocation = $connection->config['location'] ?? 'US';
-			$queryJob = $connection->bigQueryClient->query($deleteQuery)
-				->useLegacySql(false)
-				->location($queryLocation);
-
-			$job = $connection->bigQueryClient->runQuery($queryJob);
-			if (!$job->isComplete()) {
-				$job->waitUntilComplete();
-			}
-
-			// ジョブステータス確認
-			$jobInfo = $job->info();
-			if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
-				$errorResult = $jobInfo['status']['errorResult'] ?? null;
-				if ($errorResult) {
-					error_log("BigQuery DELETE failed: " . ($errorResult['message'] ?? 'Unknown error'));
-					return false;
-				}
-
-				// 影響行数を記録
-				$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
-				// DELETE operation completed successfully
-				return true;
-			}
-
-			return false;
-		} catch (ServiceException $e) {
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'DELETE_SERVICE_ERROR');
-			return false;
-		} catch (Exception $e) {
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'DELETE_ERROR');
-			return false;
-		}
-	}
-
-	/**
-	 * BigQuery用最後に挿入されたID取得
-	 * BigQueryにはAUTO_INCREMENTがないため、常にnullを返す
-	 * @return null
-	 */
-	function last_id()
-	{
-		// BigQueryにはAUTO_INCREMENTの概念がないため、nullを返す
-		return null;
-	}
-
-	/**
-	 * BigQuery データセット作成
-	 * @param string $database データセット名
-	 * @param string $collation 照合順序（BigQueryでは未使用）
-	 * @return bool 作成成功時true
-	 */
-	function create_database($database, $collation)
-	{
-		global $connection;
-		try {
-			if (!$connection || !isset($connection->bigQueryClient)) {
-				// Connection check for dataset creation
-				return false;
-			}
-
-			// BigQueryのデータセット作成
-			// Creating BigQuery dataset
-
-			// 正しいBigQuery PHP SDKのAPIを使用
-			$dataset = $connection->bigQueryClient->createDataset($database, [
-				'location' => $connection->config['location'] ?? 'US'
-			]);
-
-			// Dataset created successfully
-			return true;
-
-		} catch (ServiceException $e) {
-			$message = $e->getMessage();
-			if (strpos($message, 'Already Exists') !== false) {
-				error_log("BigQuery: Dataset '$database' already exists");
-				return false;
-			}
-			error_log("BigQuery: Dataset creation failed - " . $message);
-			return false;
-		} catch (Exception $e) {
-			error_log("BigQuery: Dataset creation error - " . $e->getMessage());
-			return false;
-		}
-	}
-
-	/**
-	 * BigQuery テーブル作成・変更関数
-	 * @param string $table 既存テーブル名（空の場合は新規作成）
-	 * @param string $name 新しいテーブル名
-	 * @param array $fields フィールド定義配列
-	 * @param array $foreign 外部キー（BigQueryでは未サポート）
-	 * @param string $comment テーブルコメント
-	 * @param string $engine エンジン（BigQueryでは固定）
-	 * @param string $collation 照合順序（BigQueryでは未サポート）
-	 * @param string $auto_increment 自動増分（BigQueryでは未サポート）
-	 * @param string $partitioning パーティショニング（BigQueryでは未サポート）
-	 * @return bool 作成成功時true
-	 */
-	function alter_table($table, $name, $fields, $foreign, $comment, $engine, $collation, $auto_increment, $partitioning)
-	{
-		global $connection;
-
-		try {
-			if (!$connection || !isset($connection->bigQueryClient)) {
-				// Connection check for table creation
-				return false;
-			}
-
-			// 新規テーブル作成の場合（$table が空）
-			if ($table == "") {
-				// Creating new BigQuery table
-
-				// 現在のデータセットを取得
-				$database = $_GET['db'] ?? $connection->datasetId ?? '';
-				if (empty($database)) {
-					// Dataset selection validation for table creation
-					return false;
-				}
-
-				$dataset = $connection->bigQueryClient->dataset($database);
-
-				// フィールド定義をBigQueryスキーマ形式に変換
-				$schemaFields = array();
-				foreach ($fields as $field) {
-					if (isset($field[1]) && is_array($field[1])) {
-						// BigQuery用にフィールド名からバッククオートを削除
-						$fieldName = trim(str_replace('`', '', $field[1][0] ?? ''));
-						$fieldType = trim($field[1][1] ?? 'STRING');
-						$fieldMode = ($field[1][3] ?? false) ? 'REQUIRED' : 'NULLABLE';
-
-						if (!empty($fieldName)) {
-							$schemaFields[] = array(
-								'name' => $fieldName,
-								'type' => strtoupper($fieldType),
-								'mode' => $fieldMode
-							);
+							if (!empty($fieldName)) {
+								$schemaFields[] = array(
+									'name' => $fieldName,
+									'type' => strtoupper($fieldType),
+									'mode' => $fieldMode
+								);
+							}
 						}
 					}
-				}
 
-				if (empty($schemaFields)) {
-					// Field validation for table creation
+					if (empty($schemaFields)) {
+						return false;
+					}
+
+					// テーブル作成オプション
+					$tableOptions = array(
+						'schema' => array('fields' => $schemaFields)
+					);
+
+					// コメントがある場合は追加
+					if (!empty($comment)) {
+						$tableOptions['description'] = $comment;
+					}
+
+					// BigQuery用にテーブル名からバッククオートを削除
+					$cleanTableName = trim(str_replace('`', '', $name));
+
+					// BigQueryテーブル作成実行
+					$table = $dataset->createTable($cleanTableName, $tableOptions);
+
+					return true;
+
+				} else {
+					// テーブル変更（既存テーブルの更新）
+					// Table modification not yet implemented
 					return false;
 				}
 
-				// テーブル作成オプション
-				$tableOptions = array(
-					'schema' => array('fields' => $schemaFields)
-				);
-
-				// コメントがある場合は追加
-				if (!empty($comment)) {
-					$tableOptions['description'] = $comment;
+			} catch (ServiceException $e) {
+				$message = $e->getMessage();
+				if (strpos($message, 'Already Exists') !== false) {
+					error_log("BigQuery: Table '$name' already exists");
+					return false;
 				}
-
-				// BigQuery用にテーブル名からバッククオートを削除
-				$cleanTableName = trim(str_replace('`', '', $name));
-
-				// BigQueryテーブル作成実行
-				$table = $dataset->createTable($cleanTableName, $tableOptions);
-
-				// Table created successfully
-				return true;
-
-			} else {
-				// テーブル変更（既存テーブルの更新）
-				// Table modification not yet implemented
+				error_log("BigQuery: Table creation failed - " . $message);
+				return false;
+			} catch (Exception $e) {
+				error_log("BigQuery: Table creation error - " . $e->getMessage());
 				return false;
 			}
+		}
 
-		} catch (ServiceException $e) {
-			$message = $e->getMessage();
-			if (strpos($message, 'Already Exists') !== false) {
-				error_log("BigQuery: Table '$name' already exists");
-				return false;
-			}
-			error_log("BigQuery: Table creation failed - " . $message);
-			return false;
-		} catch (Exception $e) {
-			error_log("BigQuery: Table creation error - " . $e->getMessage());
+		/**
+		 * BigQuery テーブル移動機能（未対応）
+		 * BigQueryは異なるデータセット間でのテーブル移動をサポートしていない
+		 * @param array $tables テーブル一覧
+		 * @param array $views ビュー一覧
+		 * @param string $target 移動先データセット
+		 * @return bool 常にfalse（未対応）
+		 */
+		function move_tables($tables, $views, $target)
+		{
+			// BigQueryは異なるデータセット間でのテーブル移動を直接サポートしていない
+			// CREATE TABLE AS SELECT + DROP TABLE の組み合わせが必要だが、
+			// 複雑な操作となるため現在は未実装
 			return false;
 		}
-	}
+
+		/**
+		 * BigQuery未対応機能のエラー表示
+		 * @param string $feature 機能名
+		 * @param string $reason 対応していない理由
+		 * @return void
+		 */
+		function show_unsupported_feature_message($feature, $reason = '')
+		{
+			$message = $reason ?: (self::UNSUPPORTED_FEATURE_MESSAGES[$feature] ?? 'This feature is not supported in BigQuery driver.');
+
+			echo '<div class="error">';
+			echo '<h3>Feature Not Supported: ' . htmlspecialchars($feature) . '</h3>';
+			echo '<p>' . htmlspecialchars($message) . '</p>';
+			echo '<p><a href="javascript:history.back()">← Go Back</a></p>';
+			echo '</div>';
+		}
+
+
+		// search_tables関数は削除（Adminerコアと重複のため）
+// 代わりにDriverクラス内で処理
+
+		/**
+		 * テーブル分析機能（BigQuery未対応）
+		 */
+		function analyze_table($table)
+		{
+			global $connection;
+			
+			// BigQuery用の適切なエラーメッセージを設定
+			if ($connection) {
+				$connection->error = 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.';
+			}
+			
+			return false;
+		}
+
+		/**
+		 * テーブル最適化機能（BigQuery未対応）
+		 */
+		function optimize_table($table)
+		{
+			show_unsupported_feature_message('optimize');
+			return false;
+		}
 
 	}
 }
@@ -2065,3 +2164,31 @@ if (!function_exists('query')) {
 		return false;
 	}
 }
+
+if (!function_exists('schema')) {
+	/**
+	 * BigQuery Database schema機能
+	 * BigQueryではschemaの代わりにデータセット情報を表示
+	 */
+	function schema()
+	{
+		show_unsupported_feature_message('schema', 'BigQuery uses datasets instead of traditional schemas. Dataset information is available in the main database view.');
+		return;
+	}
+}
+
+
+if (!function_exists('import_sql')) {
+	/**
+	 * BigQuery Import機能
+	 * SQLファイルインポート（BigQueryでは未実装）
+	 */
+	function import_sql($file)
+	{
+		show_unsupported_feature_message('import', 'BigQuery import functionality is not yet implemented. Please use the BigQuery console or API for bulk imports.');
+		return false;
+	}
+}
+
+// dump_csv関数はAdminerコアに存在するため、BigQuery用のカスタム実装は不要
+// エクスポート機能が必要な場合は、support()でexportをfalseに設定することで無効化される

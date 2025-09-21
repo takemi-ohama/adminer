@@ -7,6 +7,10 @@ echo "📦 E2E環境セットアップ中..." >&2
 # E2E環境のファイルをセットアップ
 cp /usr/local/src/container/e2e/package.json /app/ 2>/dev/null || true
 mkdir -p /app/container/e2e
+# ディレクトリが存在する場合は削除してからファイルをコピー
+rm -rf /app/container/e2e/package.json 2>/dev/null || true
+rm -rf /app/container/e2e/playwright.config.js 2>/dev/null || true
+cp /usr/local/src/container/e2e/package.json /app/container/e2e/ 2>/dev/null || true
 cp /usr/local/src/container/e2e/playwright.config.js /app/container/e2e/ 2>/dev/null || true
 mkdir -p /app/container/e2e/tests
 cp -r /usr/local/src/container/e2e/tests/* /app/container/e2e/tests/ 2>/dev/null || true
@@ -32,7 +36,7 @@ if [ -f "$1" ]; then
     # テストファイルの相対パスを計算して実行
     TEST_FILE=$(basename "$1")
     cd /app/container/e2e
-    npx playwright test "tests/$TEST_FILE" --reporter=line
+    npx playwright test "tests/$TEST_FILE" --project=chromium --reporter=line
   else
     echo "📋 スクリプトファイル実行: $1" >&2
     # 通常のスクリプトファイルを実行
