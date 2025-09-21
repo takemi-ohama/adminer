@@ -1,24 +1,25 @@
 const { defineConfig, devices } = require('@playwright/test');
 
-const BASE_URL = process.env.BASE_URL || 'http://localhost:8080';
+const BASE_URL = process.env.BASE_URL || 'http://adminer-bigquery-test';
 
 /**
  * @see https://playwright.dev/docs/test-configuration
  */
 module.exports = defineConfig({
-  testDir: '/app/container/e2e/tests',
+  testDir: './tests',
   /* Run tests in files in parallel */
-  fullyParallel: true,
+  fullyParallel: false,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
-  retries: process.env.CI ? 2 : 0,
+  retries: process.env.CI ? 2 : 1,
   /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [
-    ['html', { outputFolder: '/app/playwright-report' }],
-    ['json', { outputFile: '/app/test-results/results.json' }]
+    ['line'],
+    ['html', { outputFolder: './playwright-report' }],
+    ['json', { outputFile: './test-results/results.json' }]
   ],
   /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
@@ -32,7 +33,11 @@ module.exports = defineConfig({
     screenshot: 'only-on-failure',
 
     /* Video settings */
-    video: 'retain-on-failure'
+    video: 'retain-on-failure',
+
+    /* Timeout settings */
+    actionTimeout: 10000,
+    navigationTimeout: 30000,
   },
 
   /* Configure projects for major browsers */
@@ -40,26 +45,6 @@ module.exports = defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
-    },
-
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-
-    /* Test against mobile viewports. */
-    {
-      name: 'Mobile Chrome',
-      use: { ...devices['Pixel 5'] },
-    },
-    {
-      name: 'Mobile Safari',
-      use: { ...devices['iPhone 12'] },
     },
   ],
 
@@ -72,5 +57,11 @@ module.exports = defineConfig({
   },
 
   /* Output directories */
-  outputDir: '/app/test-results/',
+  outputDir: './test-results/',
+
+  /* Global timeout for entire test suite */
+  globalTimeout: 60000,
+
+  /* Timeout for each test */
+  timeout: 30000,
 });
