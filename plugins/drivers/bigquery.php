@@ -901,12 +901,12 @@ if (isset($_GET["bigquery"])) {
 	{
 		$this->queryResults = $queryResults;
 		
-		// BigQueryクエリ結果から行数を取得
+		// BigQuery query results row count retrieval
 		try {
 			$jobInfo = $queryResults->info();
-			$this->num_rows = isset($jobInfo['totalRows']) ? (int)$jobInfo['totalRows'] : 0;
+			$this->num_rows = (int)($jobInfo['totalRows'] ?? 0);
 		} catch (Exception $e) {
-			// 行数取得に失敗した場合は0を設定
+			// Default to 0 if row count retrieval fails
 			$this->num_rows = 0;
 		}
 	}
