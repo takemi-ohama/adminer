@@ -1383,7 +1383,7 @@ if (isset($_GET["bigquery"])) {
 	/**
 	 * BigQuery EXPLAIN機能
 	 * @param string $query 実行クエリ
-	 * @return bool 成功時true
+	 * @return mixed クエリ結果オブジェクト（成功時）、失敗時はfalse
 	 */
 	function explain($query)
 	{
@@ -1416,11 +1416,8 @@ if (isset($_GET["bigquery"])) {
 		<style>
 		/* BigQuery非対応機能を非表示 - より強い優先度で適用 */
 		
-		/* Database画面のSearch data in tables機能を非表示 - より具体的なセレクター */
-		.search-tables,
-		fieldset:has(legend:contains('Search data in tables')),
-		fieldset legend:contains('Search data in tables'),
-		p:has(input[name='query']) {
+		/* Database画面のSearch data in tables機能を非表示 */
+		.search-tables {
 			display: none !important;
 			visibility: hidden !important;
 		}
@@ -1496,24 +1493,21 @@ if (isset($_GET["bigquery"])) {
 		
 		/* Index関連機能を非表示 */
 		.indexes,
-		a[href*='indexes'],
-		th:contains('Indexes') {
+		a[href*='indexes'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
 		
 		/* Foreign key関連機能を非表示 */
 		.foreign-keys,
-		a[href*='foreign'],
-		th:contains('Foreign keys') {
+		a[href*='foreign'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
 		
 		/* Trigger関連機能を非表示 */
 		.triggers,
-		a[href*='trigger'],
-		th:contains('Triggers') {
+		a[href*='trigger'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
@@ -1547,40 +1541,19 @@ if (isset($_GET["bigquery"])) {
 		}
 		
 		/* Auto increment機能を非表示 */
-		label:has(input[name*='auto_increment']),
 		input[name*='auto_increment'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
 		
-		/* Default value機能を非表示 */
-		label:has(input[name*='default']):not(:has(select)) {
-			display: none !important;
-			visibility: hidden !important;
-		}
-		
 		/* Comment機能を非表示（テーブルレベル） */
-		label:has(input[name='Comment']),
 		input[name='Comment'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
 		
 		/* Collation機能を非表示 */
-		select[name*='collation'],
-		label:has(select[name*='collation']) {
-			display: none !important;
-			visibility: hidden !important;
-		}
-		
-		/* Engine選択を非表示 */
-		select[name='Engine']:not(:has(option[value='BigQuery'])) {
-			display: none !important;
-			visibility: hidden !important;
-		}
-		
-		/* Partition機能を非表示 */
-		fieldset:has(input[name*='partition']) {
+		select[name*='collation'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
@@ -1589,26 +1562,6 @@ if (isset($_GET["bigquery"])) {
 		input[type='submit'][value*='Fulltext'] {
 			display: none !important;
 			visibility: hidden !important;
-		}
-		
-		/* 重要：Selected fieldset（Drop/Truncateボタンを含む）は必ず表示 */
-		fieldset:has(legend:contains('Selected')) {
-			display: block !important;
-			visibility: visible !important;
-			opacity: 1 !important;
-		}
-
-		/* Selected fieldset内のdivとinputも表示 */
-		fieldset:has(legend:contains('Selected')) div {
-			display: block !important;
-			visibility: visible !important;
-			opacity: 1 !important;
-		}
-
-		fieldset:has(legend:contains('Selected')) div input {
-			display: inline-block !important;
-			visibility: visible !important;
-			opacity: 1 !important;
 		}
 		
 		/* Truncate/Dropボタンの明示的な表示 */
@@ -1649,13 +1602,13 @@ if (isset($_GET["bigquery"])) {
 			
 			// 非対応ボタンを非表示（TruncateとDropは除外）
 			var buttonsToHide = [
-				'input[value=\\\"Analyze\\\"]',
-				'input[value=\\\"Optimize\\\"]', 
-				'input[value=\\\"Repair\\\"]',
-				'input[value=\\\"Check\\\"]',
-				'input[value=\\\"Move\\\"]',
-				'input[value=\\\"Copy\\\"]',
-				'input[value=\\\"Import\\\"]'
+				'input[value=\"Analyze\"]',
+				'input[value=\"Optimize\"]', 
+				'input[value=\"Repair\"]',
+				'input[value=\"Check\"]',
+				'input[value=\"Move\"]',
+				'input[value=\"Copy\"]',
+				'input[value=\"Import\"]'
 			];
 			
 			buttonsToHide.forEach(function(selector) {
@@ -1666,7 +1619,7 @@ if (isset($_GET["bigquery"])) {
 				});
 			});
 			
-			// *** 重要：Selectedフィールドセットの強制表示 ***
+			// *** 重要：Selected フィールドセットの強制表示 ***
 			var selectedFieldsets = document.querySelectorAll('fieldset');
 			selectedFieldsets.forEach(function(fieldset) {
 				var legend = fieldset.querySelector('legend');
@@ -1688,8 +1641,8 @@ if (isset($_GET["bigquery"])) {
 
 			// Truncate/Dropボタンの最強レベルでの強制表示
 			var buttonsToShow = [
-				'input[name=\\\"truncate\\\"]',
-				'input[name=\\\"drop\\\"]'
+				'input[name=\"truncate\"]',
+				'input[name=\"drop\"]'
 			];
 
 			buttonsToShow.forEach(function(selector) {
@@ -2772,9 +2725,6 @@ if (!function_exists('repair_table')) {
 }
 
 if (!function_exists('analyze_table')) {
-if (!function_exists('explain')) {
-	// この関数は削除され、Driverクラスのexplainメソッドで実装されています
-}
 
 	/**
 	 * テーブル分析機能
