@@ -711,7 +711,7 @@ if (isset($_GET["bigquery"])) {
 	{
 		try {
 			// テーブル操作クエリの特別処理
-			if (preg_match('/^\s*(ANALYZE|OPTIMIZE|CHECK|REPAIR)\s+TABLE\s+/i', $query, $matches)) {
+			if (preg_match('/^\\s*(ANALYZE|OPTIMIZE|CHECK|REPAIR)\\s+TABLE\\s+/i', $query, $matches)) {
 				$operation = strtolower($matches[1]);
 				switch ($operation) {
 					case 'analyze':
@@ -758,9 +758,10 @@ if (isset($_GET["bigquery"])) {
 			}
 			$this->checkJobStatus($job);
 
-			// Store result for store_result() method
-			$this->last_result = new Result($job);
-			return $this->last_result;
+			// Store result for store_result() method (improved exception safety)
+			$result = new Result($job);
+			$this->last_result = $result;
+			return $result;
 		} catch (ServiceException $e) {
 			$errorMessage = $e->getMessage();
 			$errorCode = $e->getCode();
@@ -1015,16 +1016,16 @@ if (isset($_GET["bigquery"])) {
 
 	private function getBigQueryCharsetNr($bigQueryType)
 	{
-		$baseType = strtoupper(preg_replace('/\(.*\)/', '', $bigQueryType));
+		$baseType = strtoupper(preg_replace('/\\([^)]*\\)/', '', $bigQueryType));
 		
-		// BigQueryのデータ型に基づいて適切な文字セット番号を返す
+		// BigQuery data types mapped to appropriate MySQL charset numbers
 		switch ($baseType) {
 			case 'BYTES':
-				// バイナリデータ - MySQLの63番（binary）相当
+				// Binary data - MySQL charset 63 (binary)
 				return 63;
 			case 'STRING':
 			case 'JSON':
-				// テキストデータ - MySQLのUTF-8相当（33番）
+				// Text data - MySQL charset 33 (UTF-8)
 				return 33;
 			case 'INT64':
 			case 'INTEGER':
@@ -1038,16 +1039,16 @@ if (isset($_GET["bigquery"])) {
 			case 'TIME':
 			case 'DATETIME':
 			case 'TIMESTAMP':
-				// 数値・日付・論理値データ - バイナリ扱い（63番）
+				// Numeric, date, and boolean data - binary charset 63
 				return 63;
 			case 'ARRAY':
 			case 'STRUCT':
 			case 'RECORD':
 			case 'GEOGRAPHY':
-				// 複合データ型 - テキスト扱い（33番）
+				// Complex data types - text charset 33
 				return 33;
 			default:
-				// デフォルトはテキスト扱い
+				// Default to text charset
 				return 33;
 		}
 	}
