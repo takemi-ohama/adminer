@@ -13,11 +13,13 @@ function adminer_object()
 
 	require_once __DIR__ . '/plugins/drivers/bigquery.php';
 	require_once __DIR__ . '/plugins/login-bigquery.php';
+	require_once __DIR__ . '/plugins/bigquery-css.php';
 
 	$plugins = array(
 		new AdminerLoginBigQuery(array(
 			'project_id' => getenv('GOOGLE_CLOUD_PROJECT')
 		)),
+		new AdminerBigQueryCSS(),
 	);
 
 	return new \Adminer\Plugins($plugins);

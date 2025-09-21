@@ -1316,6 +1316,428 @@ if (isset($_GET["bigquery"])) {
 			// 必要に応じて将来的にBigQuery固有の検索最適化を追加可能
 			return $idf;
 		}
+
+		/**
+		 * BigQuery テーブル削除機能
+		 * @param array $tables 削除するテーブル名の配列
+		 * @return bool 成功時true、失敗時false
+		 */
+		function dropTables($tables)
+		{
+			global $connection;
+
+			if (!$connection || !isset($connection->bigQueryClient)) {
+				return false;
+			}
+
+			$errors = array();
+			$successCount = 0;
+
+			try {
+				// 現在のデータセットを取得
+				$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+				if (empty($database)) {
+					return false;
+				}
+
+				foreach ($tables as $table) {
+					if (empty($table)) {
+						continue;
+					}
+
+					try {
+						// BigQueryでのDROP TABLE実行
+						$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
+						$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
+						$query = "DROP TABLE $fullTableName";
+						
+						BigQueryUtils::logQuerySafely($query, "DROP_TABLE");
+						$result = $connection->query($query);
+						
+						if ($result !== false) {
+							$successCount++;
+						} else {
+							$errors[] = "Failed to drop table: $table";
+						}
+					} catch (Exception $e) {
+						$errors[] = "Drop table '$table' failed: " . $e->getMessage();
+						BigQueryUtils::logQuerySafely($e->getMessage(), 'DROP_TABLE_ERROR');
+					}
+				}
+
+				// エラーがある場合は接続エラーとして記録
+				if (!empty($errors) && $connection) {
+					$connection->error = implode('; ', $errors);
+				}
+
+				return $successCount > 0;
+			} catch (Exception $e) {
+				if ($connection) {
+					$connection->error = "DROP TABLES failed: " . $e->getMessage();
+				}
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'DROP_TABLES_ERROR');
+				return false;
+			}
+		}
+
+	/**
+	 * BigQuery EXPLAIN機能
+	 * @param string $query 実行クエリ
+	 * @return bool 成功時true
+	 */
+	function explain($query)
+	{
+		global $connection;
+		if (!$connection || !isset($connection->bigQueryClient)) {
+			return false;
+		}
+		
+		try {
+			// BigQueryのEXPLAIN文を実行
+			$explainQuery = "EXPLAIN " . $query;
+			BigQueryUtils::logQuerySafely($explainQuery, "EXPLAIN");
+			$result = $connection->query($explainQuery);
+			return $result;
+		} catch (Exception $e) {
+			BigQueryUtils::logQuerySafely($e->getMessage(), 'EXPLAIN_ERROR');
+			return false;
+		}
+	}
+
+	/**
+	 * BigQuery用CSS出力メソッド
+	 * BigQueryでサポートされていない機能のUI要素を非表示にする
+	 * Truncate、Dropは利用可能なため除外
+	 * @return string CSS文字列
+	 */
+	function css()
+	{
+		return "
+		<style>
+		/* BigQuery非対応機能を非表示 - より強い優先度で適用 */
+		
+		/* Database画面のSearch data in tables機能を非表示 - より具体的なセレクター */
+		.search-tables,
+		fieldset:has(legend:contains('Search data in tables')),
+		fieldset legend:contains('Search data in tables'),
+		p:has(input[name='query']) {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Analyze機能を非表示 */
+		.analyze,
+		input[value='Analyze'],
+		input[type='submit'][value='Analyze'],
+		a[href*='analyze'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Optimize機能を非表示 */
+		.optimize,
+		input[value='Optimize'],
+		input[type='submit'][value='Optimize'],
+		a[href*='optimize'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Repair機能を非表示 */
+		.repair,
+		input[value='Repair'],
+		input[type='submit'][value='Repair'],
+		a[href*='repair'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Check機能を非表示 */
+		.check,
+		input[value='Check'],
+		input[type='submit'][value='Check'],
+		a[href*='check'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Move機能を非表示 */
+		.move,
+		input[value='Move'],
+		input[type='submit'][value='Move'],
+		a[href*='move'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Copy機能を非表示 */
+		.copy,
+		input[value='Copy'],
+		input[type='submit'][value='Copy'],
+		a[href*='copy'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Import機能を非表示 */
+		.import,
+		input[value='Import'],
+		input[type='submit'][value='Import'],
+		a[href*='import'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Export機能（一部）を非表示 */
+		select[name='format'] option[value='csv+excel'],
+		select[name='format'] option[value='xml'] {
+			display: none !important;
+		}
+		
+		/* Index関連機能を非表示 */
+		.indexes,
+		a[href*='indexes'],
+		th:contains('Indexes') {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Foreign key関連機能を非表示 */
+		.foreign-keys,
+		a[href*='foreign'],
+		th:contains('Foreign keys') {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Trigger関連機能を非表示 */
+		.triggers,
+		a[href*='trigger'],
+		th:contains('Triggers') {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Event関連機能を非表示 */
+		.events,
+		a[href*='event'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Routine関連機能を非表示 */
+		.routines,
+		a[href*='routine'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Sequence関連機能を非表示 */
+		.sequences,
+		a[href*='sequence'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* User types関連機能を非表示 */
+		.user-types,
+		a[href*='type'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Auto increment機能を非表示 */
+		label:has(input[name*='auto_increment']),
+		input[name*='auto_increment'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Default value機能を非表示 */
+		label:has(input[name*='default']):not(:has(select)) {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Comment機能を非表示（テーブルレベル） */
+		label:has(input[name='Comment']),
+		input[name='Comment'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Collation機能を非表示 */
+		select[name*='collation'],
+		label:has(select[name*='collation']) {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Engine選択を非表示 */
+		select[name='Engine']:not(:has(option[value='BigQuery'])) {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* Partition機能を非表示 */
+		fieldset:has(input[name*='partition']) {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* FullText検索機能を非表示 */
+		input[type='submit'][value*='Fulltext'] {
+			display: none !important;
+			visibility: hidden !important;
+		}
+		
+		/* 重要：Selected fieldset（Drop/Truncateボタンを含む）は必ず表示 */
+		fieldset:has(legend:contains('Selected')) {
+			display: block !important;
+			visibility: visible !important;
+			opacity: 1 !important;
+		}
+
+		/* Selected fieldset内のdivとinputも表示 */
+		fieldset:has(legend:contains('Selected')) div {
+			display: block !important;
+			visibility: visible !important;
+			opacity: 1 !important;
+		}
+
+		fieldset:has(legend:contains('Selected')) div input {
+			display: inline-block !important;
+			visibility: visible !important;
+			opacity: 1 !important;
+		}
+		
+		/* Truncate/Dropボタンの明示的な表示 */
+		input[value='Truncate'],
+		input[type='submit'][value='Truncate'],
+		input[name='truncate'] {
+			display: inline-block !important;
+			visibility: visible !important;
+		}
+
+		input[value='Drop'],
+		input[type='submit'][value='Drop'],
+		input[name='drop'] {
+			display: inline-block !important;
+			visibility: visible !important;
+		}
+		
+		/* BigQuery対応機能のラベル改善 */
+		body.bigquery .h2 {
+			position: relative;
+		}
+		
+		body.bigquery .h2:after {
+			content: ' (BigQuery)';
+			font-size: 0.8em;
+			color: #666;
+		}
+		</style>
+		<script>
+		// *** BigQuery強制表示機能 - 複数タイミングで実行 ***
+		function forceBigQueryButtonsDisplay() {
+			console.log('BigQuery強制表示実行開始');
+			
+			// BigQueryドライバー使用時にbody要素にクラス追加
+			if (document.querySelector('title') && document.querySelector('title').textContent.includes('BigQuery')) {
+				document.body.classList.add('bigquery');
+			}
+			
+			// 非対応ボタンを非表示（TruncateとDropは除外）
+			var buttonsToHide = [
+				'input[value=\\\"Analyze\\\"]',
+				'input[value=\\\"Optimize\\\"]', 
+				'input[value=\\\"Repair\\\"]',
+				'input[value=\\\"Check\\\"]',
+				'input[value=\\\"Move\\\"]',
+				'input[value=\\\"Copy\\\"]',
+				'input[value=\\\"Import\\\"]'
+			];
+			
+			buttonsToHide.forEach(function(selector) {
+				var elements = document.querySelectorAll(selector);
+				elements.forEach(function(element) {
+					element.style.display = 'none';
+					element.style.visibility = 'hidden';
+				});
+			});
+			
+			// *** 重要：Selectedフィールドセットの強制表示 ***
+			var selectedFieldsets = document.querySelectorAll('fieldset');
+			selectedFieldsets.forEach(function(fieldset) {
+				var legend = fieldset.querySelector('legend');
+				if (legend && legend.textContent.includes('Selected')) {
+					console.log('Selected fieldset found, forcing display');
+					fieldset.style.setProperty('display', 'block', 'important');
+					fieldset.style.setProperty('visibility', 'visible', 'important');
+					fieldset.style.setProperty('opacity', '1', 'important');
+
+					// fieldset内のdivも強制表示
+					var divs = fieldset.querySelectorAll('div');
+					divs.forEach(function(div) {
+						div.style.setProperty('display', 'block', 'important');
+						div.style.setProperty('visibility', 'visible', 'important');
+						div.style.setProperty('opacity', '1', 'important');
+					});
+				}
+			});
+
+			// Truncate/Dropボタンの最強レベルでの強制表示
+			var buttonsToShow = [
+				'input[name=\\\"truncate\\\"]',
+				'input[name=\\\"drop\\\"]'
+			];
+
+			buttonsToShow.forEach(function(selector) {
+				var elements = document.querySelectorAll(selector);
+				console.log('Found buttons for', selector, ':', elements.length);
+				elements.forEach(function(element) {
+					// ボタン自体を最強レベルで表示
+					element.style.setProperty('display', 'inline-block', 'important');
+					element.style.setProperty('visibility', 'visible', 'important');
+					element.style.setProperty('opacity', '1', 'important');
+
+					// 親要素チェーンも最強レベルで表示
+					var parent = element.parentElement;
+					while (parent && parent.tagName !== 'BODY') {
+						if (parent.tagName === 'FIELDSET' || parent.tagName === 'DIV') {
+							parent.style.setProperty('display', parent.tagName === 'FIELDSET' ? 'block' : 'block', 'important');
+							parent.style.setProperty('visibility', 'visible', 'important');
+							parent.style.setProperty('opacity', '1', 'important');
+						}
+						parent = parent.parentElement;
+					}
+				});
+			});
+			
+			console.log('BigQuery強制表示実行完了');
+		}
+		
+		// 複数のタイミングで確実に実行
+		// 1. DOMContentLoaded（通常のタイミング）
+		document.addEventListener('DOMContentLoaded', forceBigQueryButtonsDisplay);
+		
+		// 2. window.load（全リソース読み込み完了後）
+		window.addEventListener('load', forceBigQueryButtonsDisplay);
+		
+		// 3. 即座実行（既にDOMが読み込まれている場合）
+		if (document.readyState === 'loading') {
+			// まだ読み込み中
+		} else {
+			// 既に読み込み完了
+			forceBigQueryButtonsDisplay();
+		}
+		
+		// 4. 遅延実行（最後の保険）
+		setTimeout(forceBigQueryButtonsDisplay, 500);
+		setTimeout(forceBigQueryButtonsDisplay, 1000);
+		</script>
+		";
+	}
 	}
 	function support($feature)
 	{
@@ -1333,6 +1755,8 @@ if (isset($_GET["bigquery"])) {
 			'update',         // データ更新
 			'delete',         // データ削除
 			'drop_table',     // テーブル削除
+			'truncate',       // テーブル内容全削除（BigQueryサポート）
+			'drop',           // オブジェクト削除（BigQueryサポート）
 			'select',         // データ選択
 			'export',         // データエクスポート
 		);
@@ -1358,7 +1782,12 @@ if (isset($_GET["bigquery"])) {
 			'variables',
 			'descidx',
 			'check',
-			'schema'
+			'schema',
+			// BigQueryで非対応の機能を追加（UI非表示用）
+			'analyze',        // ANALYZE TABLE機能
+			'optimize',       // OPTIMIZE TABLE機能
+			'repair',         // REPAIR TABLE機能
+			'search_tables',  // Search data in tables機能
 		);
 		if (in_array($feature, $supportedFeatures)) {
 			return true;
@@ -2236,35 +2665,6 @@ if (!function_exists('query')) {
 	}
 }
 
-if (!function_exists('explain')) {
-	/**
-	 * BigQuery EXPLAIN文実行
-	 * @param Db $connection BigQuery接続オブジェクト
-	 * @param string $query SQLクエリ
-	 * @return Result|false 成功時Result、失敗時false
-	 */
-	function explain($connection, $query)
-	{
-		if (!$connection || !method_exists($connection, 'query')) {
-			return false;
-		}
-
-		try {
-			// BigQuery EXPLAIN文の場合はそのまま実行
-			if (stripos(trim($query), 'EXPLAIN') === 0) {
-				return $connection->query($query);
-			}
-
-			// 通常のクエリの場合はEXPLAIN文に変換
-			$explainQuery = "EXPLAIN " . $query;
-			return $connection->query($explainQuery);
-
-		} catch (Exception $e) {
-			error_log("BigQuery EXPLAIN error: " . $e->getMessage());
-			return false;
-		}
-	}
-}
 
 if (!function_exists('schema')) {
 	/**
@@ -2290,6 +2690,7 @@ if (!function_exists('import_sql')) {
 		return false;
 	}
 
+
 	/**
 	 * テーブル削除機能 (TRUNCATE TABLE)
 	 * @param string $table テーブル名
@@ -2299,19 +2700,30 @@ if (!function_exists('import_sql')) {
 	{
 		global $connection;
 
-		if (!$connection) {
+		if (!$connection || !isset($connection->bigQueryClient)) {
 			return false;
 		}
 
 		try {
+			// 現在のデータセットを取得
+			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+			if (empty($database) || empty($table)) {
+				return false;
+			}
+
 			// BigQueryでは TRUNCATE TABLE がサポートされているため実装
-			$query = "TRUNCATE TABLE `" . $connection->datasetId . "`.`" . $table . "`";
+			$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
+			$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
+			$query = "TRUNCATE TABLE $fullTableName";
+			
+			BigQueryUtils::logQuerySafely($query, "TRUNCATE");
 			$result = $connection->query($query);
 			return $result !== false;
 		} catch (Exception $e) {
 			if ($connection) {
 				$connection->error = "TRUNCATE TABLE failed: " . $e->getMessage();
 			}
+			BigQueryUtils::logQuerySafely($e->getMessage(), 'TRUNCATE_ERROR');
 			return false;
 		}
 	}
@@ -2360,6 +2772,10 @@ if (!function_exists('repair_table')) {
 }
 
 if (!function_exists('analyze_table')) {
+if (!function_exists('explain')) {
+	// この関数は削除され、Driverクラスのexplainメソッドで実装されています
+}
+
 	/**
 	 * テーブル分析機能
 	 * @param string $table テーブル名
