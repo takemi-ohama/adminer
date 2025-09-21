@@ -435,6 +435,8 @@ if (isset($_GET["bigquery"])) {
 			'export' => 'BigQuery export functionality is not yet implemented. Please use the BigQuery console or API for exports.',
 			'analyze' => 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.',
 			'optimize' => 'BigQuery automatically optimizes storage and query performance.',
+			'check' => 'BigQuery does not support CHECK TABLE operations as data integrity is automatically maintained.',
+			'repair' => 'BigQuery does not support REPAIR TABLE operations as storage is managed automatically.',
 			'search_tables' => 'Cross-table search is not yet implemented for BigQuery.',
 		);
 		/** @var Db|null Singleton instance */
@@ -705,9 +707,23 @@ if (isset($_GET["bigquery"])) {
 		function query($query)
 	{
 		try {
-			// ANALYZE TABLE クエリの特別処理
-			if (preg_match('/^\s*ANALYZE\s+TABLE\s+/i', $query)) {
-				$this->error = 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.';
+			// テーブル操作クエリの特別処理
+			if (preg_match('/^\s*(ANALYZE|OPTIMIZE|CHECK|REPAIR)\s+TABLE\s+/i', $query, $matches)) {
+				$operation = strtolower($matches[1]);
+				switch ($operation) {
+					case 'analyze':
+						$this->error = 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.';
+						break;
+					case 'optimize':
+						$this->error = 'BigQuery automatically optimizes storage and query performance.';
+						break;
+					case 'check':
+						$this->error = 'BigQuery does not support CHECK TABLE operations as data integrity is automatically maintained.';
+						break;
+					case 'repair':
+						$this->error = 'BigQuery does not support REPAIR TABLE operations as storage is managed automatically.';
+						break;
+				}
 				return false;
 			}
 
@@ -2107,53 +2123,50 @@ if (isset($_GET["bigquery"])) {
 			return false;
 		}
 
-		/**
-		 * BigQuery未対応機能のエラー表示
-		 * @param string $feature 機能名
-		 * @param string $reason 対応していない理由
-		 * @return void
-		 */
-		function show_unsupported_feature_message($feature, $reason = '')
-		{
-			$message = $reason ?: (self::UNSUPPORTED_FEATURE_MESSAGES[$feature] ?? 'This feature is not supported in BigQuery driver.');
-
-			echo '<div class="error">';
-			echo '<h3>Feature Not Supported: ' . htmlspecialchars($feature) . '</h3>';
-			echo '<p>' . htmlspecialchars($message) . '</p>';
-			echo '<p><a href="javascript:history.back()">← Go Back</a></p>';
-			echo '</div>';
-		}
 
 
 		// search_tables関数は削除（Adminerコアと重複のため）
 // 代わりにDriverクラス内で処理
 
-		/**
-		 * テーブル分析機能（BigQuery未対応）
-		 */
-		function analyze_table($table)
-		{
-			global $connection;
-			
-			// BigQuery用の適切なエラーメッセージを設定
-			if ($connection) {
-				$connection->error = 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.';
-			}
-			
-			return false;
-		}
+		// analyze_table は グローバル関数として定義済み
 
-		/**
-		 * テーブル最適化機能（BigQuery未対応）
-		 */
-		function optimize_table($table)
-		{
-			show_unsupported_feature_message('optimize');
-			return false;
-		}
+		// optimize_table は グローバル関数として定義済み
 
 	}
 }
+
+if (!function_exists('show_unsupported_feature_message')) {
+	/**
+	 * BigQuery未対応機能のエラー表示（グローバル関数版）
+	 * @param string $feature 機能名
+	 * @param string $reason 対応していない理由
+	 * @return void
+	 */
+	function show_unsupported_feature_message($feature, $reason = '')
+	{
+		// BigQuery未対応機能メッセージの定義
+		$unsupported_messages = array(
+			'move_tables' => 'BigQuery does not support moving tables between datasets directly. Use CREATE TABLE AS SELECT + DROP TABLE instead.',
+			'schema' => 'BigQuery uses datasets instead of schemas. Please use the dataset view for schema information.',
+			'import' => 'BigQuery import functionality is not yet implemented. Please use the BigQuery console or API for bulk imports.',
+			'export' => 'BigQuery export functionality is not yet implemented. Please use the BigQuery console or API for exports.',
+			'analyze' => 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.',
+			'optimize' => 'BigQuery automatically optimizes storage and query performance.',
+			'check' => 'BigQuery does not support CHECK TABLE operations as data integrity is automatically maintained.',
+			'repair' => 'BigQuery does not support REPAIR TABLE operations as storage is managed automatically.',
+			'search_tables' => 'Cross-table search is not yet implemented for BigQuery.',
+		);
+
+		$message = $reason ?: ($unsupported_messages[$feature] ?? 'This feature is not supported in BigQuery driver.');
+
+		echo '<div class="error">';
+		echo '<h3>Feature Not Supported: ' . htmlspecialchars($feature) . '</h3>';
+		echo '<p>' . htmlspecialchars($message) . '</p>';
+		echo '<p><a href="javascript:history.back()">← Go Back</a></p>';
+		echo '</div>';
+	}
+}
+
 if (!function_exists('query')) {
 	function query($query)
 	{
@@ -2186,6 +2199,87 @@ if (!function_exists('import_sql')) {
 	function import_sql($file)
 	{
 		show_unsupported_feature_message('import', 'BigQuery import functionality is not yet implemented. Please use the BigQuery console or API for bulk imports.');
+		return false;
+	}
+
+	/**
+	 * テーブル削除機能 (TRUNCATE TABLE)
+	 * @param string $table テーブル名
+	 * @return bool 成功時true、失敗時false
+	 */
+	function truncate_table($table)
+	{
+		global $connection;
+
+		if (!$connection) {
+			return false;
+		}
+
+		try {
+			// BigQueryでは TRUNCATE TABLE がサポートされているため実装
+			$query = "TRUNCATE TABLE `" . $connection->datasetId . "`.`" . $table . "`";
+			$result = $connection->query($query);
+			return $result !== false;
+		} catch (Exception $e) {
+			if ($connection) {
+				$connection->error = "TRUNCATE TABLE failed: " . $e->getMessage();
+			}
+			return false;
+		}
+	}
+}
+
+// drop_tables関数は既にAdminerコアで定義されているため、BigQuery固有の実装は不要
+// 必要に応じてDriverクラス内でカスタム実装する
+
+if (!function_exists('check_table')) {
+	/**
+	 * テーブルチェック機能
+	 * @param string $table テーブル名
+	 * @return bool 成功時true、失敗時false (BigQueryでは未対応)
+	 */
+	function check_table($table)
+	{
+		show_unsupported_feature_message('check');
+		return false;
+	}
+}
+
+if (!function_exists('optimize_table')) {
+	/**
+	 * テーブル最適化機能
+	 * @param string $table テーブル名
+	 * @return bool 成功時true、失敗時false (BigQueryでは未対応)
+	 */
+	function optimize_table($table)
+	{
+		show_unsupported_feature_message('optimize');
+		return false;
+	}
+}
+
+if (!function_exists('repair_table')) {
+	/**
+	 * テーブル修復機能
+	 * @param string $table テーブル名
+	 * @return bool 成功時true、失敗時false (BigQueryでは未対応)
+	 */
+	function repair_table($table)
+	{
+		show_unsupported_feature_message('repair');
+		return false;
+	}
+}
+
+if (!function_exists('analyze_table')) {
+	/**
+	 * テーブル分析機能
+	 * @param string $table テーブル名
+	 * @return bool 成功時true、失敗時false (BigQueryでは未対応)
+	 */
+	function analyze_table($table)
+	{
+		show_unsupported_feature_message('analyze');
 		return false;
 	}
 }
