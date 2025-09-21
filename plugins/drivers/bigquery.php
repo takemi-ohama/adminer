@@ -424,6 +424,19 @@ if (isset($_GET["bigquery"])) {
 	 */
 	class Db
 	{
+		/**
+		 * BigQuery unsupported feature error messages
+		 * Extracted for better maintainability and localization support
+		 */
+		const UNSUPPORTED_FEATURE_MESSAGES = array(
+			'move_tables' => 'BigQuery does not support moving tables between datasets directly. Use CREATE TABLE AS SELECT + DROP TABLE instead.',
+			'schema' => 'BigQuery uses datasets instead of schemas. Please use the dataset view for schema information.',
+			'import' => 'BigQuery import functionality is not yet implemented. Please use the BigQuery console or API for bulk imports.',
+			'export' => 'BigQuery export functionality is not yet implemented. Please use the BigQuery console or API for exports.',
+			'analyze' => 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.',
+			'optimize' => 'BigQuery automatically optimizes storage and query performance.',
+			'search_tables' => 'Cross-table search is not yet implemented for BigQuery.',
+		);
 		/** @var Db|null Singleton instance */
 		static $instance;
 
@@ -698,9 +711,16 @@ if (isset($_GET["bigquery"])) {
 				return false;
 			}
 
-			// データセットが設定されていない場合、URLパラメーターから取得
+			// Dataset ID validation and retrieval from URL parameter
 			if (empty($this->datasetId) && isset($_GET['db']) && !empty($_GET['db'])) {
-				$this->datasetId = $_GET['db'];
+				// Validate dataset name: BigQuery dataset IDs must be 1-1024 characters, letters, numbers, and underscores only
+				if (preg_match('/^[A-Za-z0-9_]{1,1024}$/', $_GET['db'])) {
+					$this->datasetId = $_GET['db'];
+				} else {
+					error_log("BigQuery: Invalid dataset name provided: " . $_GET['db']);
+					$this->error = 'Invalid dataset name. Dataset names must contain only letters, numbers, and underscores (1-1024 characters).';
+					return false;
+				}
 			}
 
 			// READ-ONLYモード制限の設定確認
@@ -724,10 +744,7 @@ if (isset($_GET["bigquery"])) {
 			$errorMessage = $e->getMessage();
 			$errorCode = $e->getCode();
 
-			// 400エラーの場合は具体的な原因を調査
-			if ($errorCode == 400) {
-				// 400 error - query validation failed
-			}
+			// 400 error - query validation failed (validation failed)
 
 			BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
 			return false;
@@ -1256,7 +1273,7 @@ if (isset($_GET["bigquery"])) {
 			'dump',
 			'event',
 			'move_col',
-			'move_tables',    // テーブル移動（BigQuery未対応）
+			'move_tables',    // Table move (not supported by BigQuery)
 			'privileges',
 			'procedure',
 			'routine',
@@ -2098,17 +2115,7 @@ if (isset($_GET["bigquery"])) {
 		 */
 		function show_unsupported_feature_message($feature, $reason = '')
 		{
-			$defaultReasons = array(
-				'move_tables' => 'BigQuery does not support moving tables between datasets directly. Use CREATE TABLE AS SELECT + DROP TABLE instead.',
-				'schema' => 'BigQuery uses datasets instead of schemas. Please use the dataset view for schema information.',
-				'import' => 'BigQuery import functionality is not yet implemented. Please use the BigQuery console or API for bulk imports.',
-				'export' => 'BigQuery export functionality is not yet implemented. Please use the BigQuery console or API for exports.',
-				'analyze' => 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.',
-				'optimize' => 'BigQuery automatically optimizes storage and query performance.',
-				'search_tables' => 'Cross-table search is not yet implemented for BigQuery.',
-			);
-
-			$message = $reason ?: ($defaultReasons[$feature] ?? 'This feature is not supported in BigQuery driver.');
+			$message = $reason ?: (self::UNSUPPORTED_FEATURE_MESSAGES[$feature] ?? 'This feature is not supported in BigQuery driver.');
 
 			echo '<div class="error">';
 			echo '<h3>Feature Not Supported: ' . htmlspecialchars($feature) . '</h3>';

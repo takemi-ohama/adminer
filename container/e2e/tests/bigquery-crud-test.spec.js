@@ -132,7 +132,7 @@ test.describe('BigQuery Adminer Plugin - 更新系テスト', () => {
     console.log('✅ SQL入力エリアを発見');
 
     // DDL文のテスト（CREATE TABLE - BigQueryではエラーが期待される）
-    const createTableQuery = `CREATE TABLE IF NOT EXISTS test_dataset.test_table (
+    const createTableQuery = `CREATE TABLE IF NOT EXISTS ${TEST_DATASET}.test_table (
       id INT64,
       name STRING,
       created_at TIMESTAMP
