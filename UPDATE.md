@@ -292,3 +292,117 @@ ReferenceError: 未定義関数
 4. **JavaScript機能補完** - BigQuery固有のUI最適化実装
 
 E2E包括テストにより、**実際のユーザー操作シナリオ**での品質検証が完了し、production環境への展開準備が整いました。
+
+## 📋 未実装・未対応機能リスト - 2025-09-21 ✅
+
+### 🚨 Fatal/Critical レベル（即座対応必要）
+
+#### A. 静的リソース不足（最優先）
+- **Jushライブラリ**: `/externals/jush/` 配下の全ファイル不足
+  - `jush.css`, `jush-dark.css`, `jush.js`
+  - `jush-sql.js`, `jush-autocomplete-sql.js`, `jush-textarea.js`
+  - **影響**: SQL編集・シンタックスハイライト機能が完全停止
+- **編集スクリプト**: `/static/editing.js` 不足
+  - **影響**: Adminer UI操作（フォーム編集・ナビゲーション）が機能不全
+
+#### B. JavaScript関数未定義エラー
+- `helpMouseout()`, `syntaxHighlighting()`, `dbMouseDown()` 未実装
+- **影響**: UI操作時のクライアントサイドエラー頻発
+
+### 🔧 Major レベル（機能的重要性：高）
+
+#### A. SQL Command 結果表示機能
+- **現状**: クエリ実行はできるが結果が表示されない
+- **原因**: `select()` メソッドの戻り値処理不完全
+- **必要**: BigQueryResult オブジェクトの完全実装
+
+#### B. Alter Table カラム表示問題
+- **現状**: カラム追加・変更画面でカラム情報が表示されない
+- **原因**: `fields()` メソッドの戻り値形式がAdminer仕様と不一致
+- **必要**: カラム情報の正確なフォーマット実装
+
+#### C. Database 切り替え機能
+- **現状**: プロジェクト間の切り替えができない
+- **必要**: `databases()` での複数プロジェクト対応
+- **技術課題**: 認証情報の動的切り替え
+
+### ⚠️ Medium レベル（実装推奨）
+
+#### A. BigQuery特有機能の適切な制限表示
+- **Foreign Key**: 「BigQueryは外部キーをサポートしていません」
+- **Index**: 「BigQueryは従来のインデックスを使用しません」
+- **Trigger**: 「BigQueryはトリガーをサポートしていません」
+- **View with Check Option**: BigQuery制約の明確化
+
+#### B. エクスポート機能制限
+- **CSV Export**: BigQuery固有のDATE/DATETIME型の適切な変換
+- **SQL Export**: BigQuery DDLとしての適切な出力形式
+- **現状**: Adminerコアのsupport()による制御のみ
+
+#### C. 高度なクエリ機能
+- **EXPLAIN**: BigQuery dry-run機能との統合改善
+- **クエリヒストリー**: BigQuery Jobs APIとの連携
+- **パーティション情報**: BigQueryテーブル固有情報の表示
+
+### 🎯 Low レベル（将来的改善）
+
+#### A. UI/UX 最適化
+- **BigQuery固有エラーメッセージ**: より詳細で有用なガイダンス
+- **データ型表示**: BigQuery固有型（GEOGRAPHY、ARRAY等）の適切な表示
+- **クエリエディター**: BigQuery構文に最適化されたヘルプ機能
+
+#### B. パフォーマンス最適化
+- **Connection Pooling**: BigQueryClient の再利用最適化
+- **Result Caching**: 大量データクエリの結果キャッシュ
+- **Pagination**: BigQuery API の効率的なページング
+
+#### C. セキュリティ・認証強化
+- **OAuth2 対応**: サービスアカウント以外の認証方式
+- **Project Level Security**: プロジェクト間の権限分離
+- **Audit Logging**: 操作履歴の記録とトラッキング
+
+### 📊 E2E テスト改善項目
+
+#### A. テストカバレッジ拡張
+- **更新系操作**: INSERT/UPDATE/DELETE の包括テスト
+- **エラーケース**: 権限不足・接続失敗時の適切な処理確認
+- **長時間操作**: BigQueryジョブの非同期処理テスト
+
+#### B. テスト環境安定化
+- **静的リソース**: テスト環境でのJushライブラリ配置
+- **認証エラー**: 403 Forbidden エラーの原因調査と対策
+- **タイムアウト**: 30秒制限の調整または分割実行
+
+### 🏆 実装完了項目（参考）
+
+#### ✅ 基本機能（完成）
+- BigQuery接続・認証（サービスアカウント）
+- データセット・テーブル一覧表示
+- 基本的なSQL SELECT クエリ実行
+- テーブル操作ボタン（Analyze/Optimize/Check/Repair/Truncate/Drop）
+
+#### ✅ エラーハンドリング（完成）
+- Fatal Error 完全解消（4件）
+- 適切な BigQuery 制約メッセージ表示
+- 未実装機能の適切なガイダンス
+
+#### ✅ 開発・テスト基盤（完成）
+- Docker 開発環境
+- Playwright E2E テスト システム
+- 継続的品質保証フレームワーク
+
+### 📋 実装優先順位
+
+#### **最優先（即座実行）**: Fatal/Critical レベル
+1. Jushライブラリ配置 → UI機能復活
+2. JavaScript関数実装 → エラー解消
+
+#### **高優先（1週間内）**: Major レベル
+1. SQL Command 結果表示 → コア機能完成
+2. Database 切り替え → ユーザビリティ向上
+
+#### **中優先（1ヶ月内）**: Medium レベル
+1. BigQuery制約の適切な表示 → ユーザー体験向上
+2. エクスポート機能拡張 → 実用性向上
+
+この未実装・未対応リストにより、BigQuery Adminerドライバーの完全実装に向けた体系的なロードマップが確立されました。
