@@ -18,6 +18,7 @@
 - `mcp__github__create_pull_request`を使用してPRを作成
 - タイトル: 日本語で変更内容を要約
 - body: Summary、Test planを含む定型フォーマット
+    - Summaryの末尾に <!-- I want to review in Japanese. --> を入れる
 
 ## 命名規則
 - ブランチ名: 英語（例: update-config, validation-error）
