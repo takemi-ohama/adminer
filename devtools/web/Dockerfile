@@ -1,6 +1,7 @@
-FROM php:8.3-apache
+# Build stage - Adminer本体の取得と依存関係インストール
+FROM php:8.3-apache AS build
 
-# Install necessary packages and extensions
+# ビルド用ツールのインストール
 RUN apt-get update && apt-get install -y \
     unzip \
     curl \
@@ -14,48 +15,63 @@ RUN apt-get update && apt-get install -y \
 # Install Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Set working directory
-WORKDIR /var/www/html
+# 作業ディレクトリ設定
+WORKDIR /app
 
-# Copy the adminer project structure
-COPY adminer/ ./adminer/
-COPY plugins/ ./plugins/
-COPY externals/ ./externals/
-COPY vendor/ ./vendor/
-COPY composer.json ./
-COPY composer.lock ./
-COPY Makefile ./
+# Adminer本体をclone（軽量化のため shallow clone）
+RUN git clone --depth 1 https://github.com/vrana/adminer.git /tmp/adminer-src
 
-# Copy test-specific files to the web root
-COPY container/web/index.php ./
-COPY container/web/.htaccess ./
+# Adminer本体のsubmoduleをinstall
+RUN cd /tmp/adminer-src && git submodule update --init --recursive
 
-# Install PHP dependencies
+# Adminer本体をすべてコピー（全てのincludeファイルとディレクトリ）
+RUN mkdir -p /app/adminer && \
+    cp -r /tmp/adminer-src/adminer/* /app/adminer/ && \
+    mkdir -p /app/externals && \
+    cp -r /tmp/adminer-src/externals/* /app/externals/
+
+# プロジェクト固有ファイルをコピー
+COPY plugins/ /app/plugins/
+COPY composer.json /app/
+COPY composer.lock /app/
+
+# 依存関係インストール
 RUN composer install --no-dev --optimize-autoloader
 
-# Setup Apache configuration
-RUN a2enmod rewrite
-RUN echo "ServerName localhost" >> /etc/apache2/apache2.conf
+# Production stage - 本番用最小イメージ
+FROM php:8.3-apache AS production
 
-# PHP設定の最適化
-RUN echo "date.timezone = UTC" >> /usr/local/etc/php/php.ini-production && \
-    echo "memory_limit = 512M" >> /usr/local/etc/php/php.ini-production && \
-    echo "max_execution_time = 300" >> /usr/local/etc/php/php.ini-production && \
-    echo "max_input_vars = 50000" >> /usr/local/etc/php/php.ini-production && \
-    echo "max_input_nesting_level = 128" >> /usr/local/etc/php/php.ini-production && \
-    echo "apc.enabled=1" >> /usr/local/etc/php/php.ini-production && \
-    echo "apc.shm_size=64M" >> /usr/local/etc/php/php.ini-production && \
-    echo "apc.ttl=7200" >> /usr/local/etc/php/php.ini-production && \
-    echo "apc.enable_cli=1" >> /usr/local/etc/php/php.ini-production && \
-    cp /usr/local/etc/php/php.ini-production /usr/local/etc/php/php.ini
+# 本番用最小限パッケージのインストール
+RUN apt-get update \
+    && docker-php-ext-install pdo \
+    && pecl install apcu \
+    && docker-php-ext-enable apcu \
+    && rm -rf /var/lib/apt/lists/*
 
-# BigQuery設定用の環境変数
+# 作業ディレクトリ設定
+WORKDIR /var/www/html
+
+# ビルドステージから必要ファイルをコピー
+COPY --from=build /app/adminer ./adminer
+COPY --from=build /app/plugins ./plugins
+COPY --from=build /app/externals ./externals
+COPY --from=build /app/vendor ./vendor
+
+# 設定ファイルをコピー
+COPY devtools/web/index.php ./
+COPY devtools/web/.htaccess ./
+COPY devtools/web/php.ini /usr/local/etc/php/php.ini
+
+# Apache設定
+RUN a2enmod rewrite && \
+    echo "ServerName localhost" >> /etc/apache2/apache2.conf
+
+# BigQuery設定用環境変数
 ENV HOME=/var/www
 ENV COMPOSER_HOME=/tmp/composer
 
-# Set proper permissions
-RUN chown -R www-data:www-data /var/www/html
-RUN chmod -R 755 /var/www/html
+# 権限設定
+RUN chown -R www-data:www-data /var/www/html && \
+    chmod -R 755 /var/www/html
 
-# Expose port 80
 EXPOSE 80
