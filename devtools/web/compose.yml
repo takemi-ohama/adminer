@@ -8,7 +8,7 @@ services:
       - "8080:80"
     volumes:
       # Google Credentials をホストからマウント
-      - /home/hammer/adminer-test-owner.json:/etc/google_credentials.json:ro
+      - /var/tmp/adminer-test-owner.json:/etc/google_credentials.json:ro
     environment:
       - GOOGLE_APPLICATION_CREDENTIALS=/etc/google_credentials.json
       - GOOGLE_CLOUD_PROJECT=adminer-test-472623

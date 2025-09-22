@@ -4,9 +4,7 @@ FROM php:8.3-apache AS build
 # ビルド用ツールのインストール
 RUN apt-get update && apt-get install -y \
     unzip \
-    curl \
     git \
-    make \
     && docker-php-ext-install pdo \
     && pecl install apcu \
     && docker-php-ext-enable apcu \

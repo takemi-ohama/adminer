@@ -1,0 +1,18 @@
+services:
+  adminer-bigquery:
+    image: ghcr.io/takemi-ohama/adminer-bigquery:latest
+    container_name: adminer-bigquery-prod
+    ports:
+      - "8081:80"
+    volumes:
+      - /var/tmp/google_credential.json:/etc/google_credential.json:ro
+    environment:
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/google_credential.json
+      - GOOGLE_CLOUD_PROJECT=nyle-carmo-analysis
+    networks:
+      - adminer_net
+    restart: unless-stopped
+
+networks:
+  adminer_net:
+    external: true
