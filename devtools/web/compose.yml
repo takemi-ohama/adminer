@@ -2,7 +2,7 @@ services:
   adminer-bigquery-test:
     build:
       context: ../../
-      dockerfile: container/web/Dockerfile
+      dockerfile: devtools/web/Dockerfile
     container_name: adminer-bigquery-test
     ports:
       - "8080:80"
