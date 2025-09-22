@@ -9,13 +9,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ~/.claude.json:/home/ubuntu/.claude.json
       - ~/.serena:/home/ubuntu/.serena
+      - ~/.docker:/home/ubuntu/.docker
       - ~/.aws:/home/ubuntu/.aws
       - ~/.gitconfig:/home/ubuntu/.gitconfig
       - ~/.git-credentials:/home/ubuntu/.git-credentials
-      - /home/hammer/adminer-test-owner.json:/etc/google_credentials.json:ro
-      - ~/.clasprc.json:/home/ubuntu/.clasprc.json
-      # 共有ワークスペースvolume
-      - workspace:/home/ubuntu/work
+      - ~/adminer-test-owner.json:/etc/google_credentials.json:ro
+      - work:/home/ubuntu/work
     env_file: ../.env
     user: "${U_ID}:${G_ID}"
     group_add: ["${DOCKER_GID}"]
@@ -23,7 +22,7 @@ services:
     networks:
       - net
 volumes:
-  workspace:
+  work:
     driver: local
 
 networks:
