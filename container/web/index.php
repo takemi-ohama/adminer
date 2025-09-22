@@ -14,10 +14,10 @@ function adminer_object()
 	require_once __DIR__ . '/plugins/drivers/bigquery.php';
 
 	$plugins = array(
-		new AdminerLoginBigQuery(array(
+		new \Adminer\AdminerLoginBigQuery(array(
 			'project_id' => getenv('GOOGLE_CLOUD_PROJECT')
 		)),
-		new AdminerBigQueryCSS(),
+		new \Adminer\AdminerBigQueryCSS(),
 	);
 
 	return new \Adminer\Plugins($plugins);

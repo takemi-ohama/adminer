@@ -13,16 +13,13 @@ if (function_exists('Adminer\\add_driver')) {
 
 if (isset($_GET["bigquery"])) {
 	define('Adminer\DRIVER', "bigquery");
-	
+
 	class BigQueryConnectionPool
 	{
-		
+
 		private static $pool = array();
-
 		private static $maxConnections = 3;
-
 		private static $usageTimestamps = array();
-
 		private static $creationTimes = array();
 		static function getConnection($key, $config)
 		{
@@ -155,11 +152,11 @@ if (isset($_GET["bigquery"])) {
 			'schema' => false,
 		);
 		public const CACHE_CONFIG = array(
-			'credentials_ttl' => 10,
+			'credentials_ttl' => 86400,
 			'location_ttl' => 86400,
-			'databases_ttl' => 300,
-			'tables_ttl' => 300,
-			'fields_ttl' => 600,
+			'databases_ttl' => 600,
+			'tables_ttl' => 600,
+			'fields_ttl' => 300,
 			'apcu_shm_size' => '64M',
 			'connection_pool_max' => 3,
 		);
@@ -260,7 +257,7 @@ if (isset($_GET["bigquery"])) {
 		}
 		static function escapeIdentifier($identifier)
 		{
-			
+
 			if (preg_match('/^`[^`]*`$/', $identifier)) {
 				return $identifier;
 			}
@@ -283,7 +280,7 @@ if (isset($_GET["bigquery"])) {
 
 		static function convertValueForBigQuery($value, $fieldType)
 		{
-			
+
 			if ($value === null) {
 				return 'NULL';
 			}
@@ -300,7 +297,7 @@ if (isset($_GET["bigquery"])) {
 			} elseif (strpos($fieldType, 'time') !== false) {
 				return "TIME('" . str_replace("'", "''", $cleanValue) . "')";
 			} elseif (strpos($fieldType, 'int') !== false || strpos($fieldType, 'float') !== false || strpos($fieldType, 'numeric') !== false || strpos($fieldType, 'decimal') !== false) {
-				
+
 				if (is_numeric($cleanValue)) {
 					return $cleanValue;
 				} else {
@@ -393,10 +390,10 @@ if (isset($_GET["bigquery"])) {
 			return BigQueryUtils::escapeIdentifier($idf);
 		}
 	}
-	
+
 	class Db
 	{
-		
+
 		const UNSUPPORTED_FEATURE_MESSAGES = array(
 			'move_tables' => 'BigQuery does not support moving tables between datasets directly. Use CREATE TABLE AS SELECT + DROP TABLE instead.',
 			'schema' => 'BigQuery uses datasets instead of schemas. Please use the dataset view for schema information.',
@@ -408,7 +405,7 @@ if (isset($_GET["bigquery"])) {
 			'repair' => 'BigQuery does not support REPAIR TABLE operations as storage is managed automatically.',
 			'search_tables' => 'Cross-table search is not yet implemented for BigQuery.',
 		);
-		
+
 		static $instance;
 
 		public $bigQueryClient;
@@ -608,22 +605,22 @@ if (isset($_GET["bigquery"])) {
 						}
 						break;
 					} catch (Exception $e) {
-						
+
 						break;
 					}
 				}
 			} catch (Exception $e) {
-				
+
 			}
 		}
 
 		private static function performBackgroundLocationDetection($projectId, $defaultLocation, $clientKey)
 		{
 			try {
-				
+
 				$client = BigQueryConnectionPool::getConnectionFromPool($clientKey);
 				if (!$client) {
-					return; 
+					return;
 				}
 
 				$datasets = $client->datasets(['maxResults' => 1]);
@@ -640,7 +637,7 @@ if (isset($_GET["bigquery"])) {
 					}
 				}
 			} catch (Exception $e) {
-				
+
 			}
 		}
 
@@ -654,69 +651,69 @@ if (isset($_GET["bigquery"])) {
 			@file_put_contents($cacheFile, json_encode($cacheData), LOCK_EX);
 		}
 		function query($query)
-	{
-		try {
-			
-			if (preg_match('/^\s*(ANALYZE|OPTIMIZE|CHECK|REPAIR)\s+TABLE\s+/i', $query, $matches)) {
-				$operation = strtolower($matches[1]);
-				switch ($operation) {
-					case 'analyze':
-						$this->error = 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.';
-						break;
-					case 'optimize':
-						$this->error = 'BigQuery automatically optimizes storage and query performance.';
-						break;
-					case 'check':
-						$this->error = 'BigQuery does not support CHECK TABLE operations as data integrity is automatically maintained.';
-						break;
-					case 'repair':
-						$this->error = 'BigQuery does not support REPAIR TABLE operations as storage is managed automatically.';
-						break;
-				}
-				return false;
-			}
+		{
+			try {
 
-			if (empty($this->datasetId) && isset($_GET['db']) && !empty($_GET['db'])) {
-				
-				if (preg_match('/^[A-Za-z0-9_]{1,1024}$/', $_GET['db'])) {
-					$this->datasetId = $_GET['db'];
-				} else {
-					error_log("BigQuery: Invalid dataset name provided: " . $_GET['db']);
-					$this->error = 'Invalid dataset name. Dataset names must contain only letters, numbers, and underscores (1-1024 characters).';
+				if (preg_match('/^\s*(ANALYZE|OPTIMIZE|CHECK|REPAIR)\s+TABLE\s+/i', $query, $matches)) {
+					$operation = strtolower($matches[1]);
+					switch ($operation) {
+						case 'analyze':
+							$this->error = 'BigQuery does not support ANALYZE TABLE operations as it automatically optimizes queries.';
+							break;
+						case 'optimize':
+							$this->error = 'BigQuery automatically optimizes storage and query performance.';
+							break;
+						case 'check':
+							$this->error = 'BigQuery does not support CHECK TABLE operations as data integrity is automatically maintained.';
+							break;
+						case 'repair':
+							$this->error = 'BigQuery does not support REPAIR TABLE operations as storage is managed automatically.';
+							break;
+					}
 					return false;
 				}
+
+				if (empty($this->datasetId) && isset($_GET['db']) && !empty($_GET['db'])) {
+
+					if (preg_match('/^[A-Za-z0-9_]{1,1024}$/', $_GET['db'])) {
+						$this->datasetId = $_GET['db'];
+					} else {
+						error_log("BigQuery: Invalid dataset name provided: " . $_GET['db']);
+						$this->error = 'Invalid dataset name. Dataset names must contain only letters, numbers, and underscores (1-1024 characters).';
+						return false;
+					}
+				}
+
+				if (getenv('BIGQUERY_READONLY_MODE') === 'true') {
+					$this->validateReadOnlyQuery($query);
+				}
+
+				$queryLocation = $this->determineQueryLocation();
+
+				$queryJob = $this->bigQueryClient->query($query)
+					->useLegacySql(false)
+					->location($queryLocation);
+				$job = $this->bigQueryClient->runQuery($queryJob);
+				if (!$job->isComplete()) {
+					$job->waitUntilComplete();
+				}
+				$this->checkJobStatus($job);
+
+				return $this->last_result = new Result($job);
+			} catch (ServiceException $e) {
+				$errorMessage = $e->getMessage();
+				$errorCode = $e->getCode();
+
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
+				$this->last_result = false;
+				return false;
+			} catch (Exception $e) {
+				error_log("BigQuery General Error: " . $e->getMessage());
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'ERROR');
+				$this->last_result = false;
+				return false;
 			}
-
-			if (getenv('BIGQUERY_READONLY_MODE') === 'true') {
-				$this->validateReadOnlyQuery($query);
-			}
-
-			$queryLocation = $this->determineQueryLocation();
-
-			$queryJob = $this->bigQueryClient->query($query)
-				->useLegacySql(false)
-				->location($queryLocation);
-			$job = $this->bigQueryClient->runQuery($queryJob);
-			if (!$job->isComplete()) {
-				$job->waitUntilComplete();
-			}
-			$this->checkJobStatus($job);
-
-			return $this->last_result = new Result($job);
-		} catch (ServiceException $e) {
-			$errorMessage = $e->getMessage();
-			$errorCode = $e->getCode();
-
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'SERVICE_ERROR');
-			$this->last_result = false;
-			return false;
-		} catch (Exception $e) {
-			error_log("BigQuery General Error: " . $e->getMessage());
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'ERROR');
-			$this->last_result = false;
-			return false;
 		}
-	}
 		private function checkJobStatus($job)
 		{
 			$jobInfo = $job->info();
@@ -760,7 +757,7 @@ if (isset($_GET["bigquery"])) {
 						return $datasetLocation;
 					}
 				} catch (Exception) {
-					
+
 				}
 			}
 			return $this->config['location'] ?? 'US';
@@ -802,30 +799,30 @@ if (isset($_GET["bigquery"])) {
 			return BigQueryUtils::escapeIdentifier($idf);
 		}
 		function error()
-	{
-		
-		if (!empty($this->error)) {
-			return $this->error;
+		{
+
+			if (!empty($this->error)) {
+				return $this->error;
+			}
+
+			return "Check server logs for detailed error information";
 		}
-		
-		return "Check server logs for detailed error information";
-	}
 
 		function multi_query($query)
 		{
-			
+
 			return $this->query($query);
 		}
 
 		function store_result()
-	{
-		
-		return $this->last_result;
-	}
+		{
+
+			return $this->last_result;
+		}
 
 		function next_result()
 		{
-			
+
 			return false;
 		}
 	}
@@ -837,19 +834,19 @@ if (isset($_GET["bigquery"])) {
 		private $fieldsCache = null;
 		private $iterator = null;
 		private $isIteratorInitialized = false;
-	public $num_rows = 0;
+		public $num_rows = 0;
 		function __construct($queryResults)
-	{
-		$this->queryResults = $queryResults;
-		
-		try {
-			$jobInfo = $queryResults->info();
-			$this->num_rows = (int)($jobInfo['totalRows'] ?? 0);
-		} catch (Exception $e) {
-			
-			$this->num_rows = 0;
+		{
+			$this->queryResults = $queryResults;
+
+			try {
+				$jobInfo = $queryResults->info();
+				$this->num_rows = (int) ($jobInfo['totalRows'] ?? 0);
+			} catch (Exception $e) {
+
+				$this->num_rows = 0;
+			}
 		}
-	}
 		function fetch_assoc()
 		{
 			try {
@@ -908,24 +905,24 @@ if (isset($_GET["bigquery"])) {
 			return count($this->fieldsCache);
 		}
 		function fetch_field($offset = 0)
-	{
-		if ($this->fieldsCache === null) {
-			$this->fieldsCache = $this->queryResults->info()['schema']['fields'] ?? array();
+		{
+			if ($this->fieldsCache === null) {
+				$this->fieldsCache = $this->queryResults->info()['schema']['fields'] ?? array();
+			}
+			if (!isset($this->fieldsCache[$offset])) {
+				return false;
+			}
+			$field = $this->fieldsCache[$offset];
+			return (object) array(
+				'name' => $field['name'],
+				'type' => $this->mapBigQueryType($field['type']),
+				'length' => null,
+				'flags' => ($field['mode'] ?? 'NULLABLE') === 'REQUIRED' ? 'NOT NULL' : '',
+				'charsetnr' => $this->getBigQueryCharsetNr($field['type']),
+				'orgname' => $field['name'],
+				'orgtable' => ''
+			);
 		}
-		if (!isset($this->fieldsCache[$offset])) {
-			return false;
-		}
-		$field = $this->fieldsCache[$offset];
-		return (object) array(
-			'name' => $field['name'],
-			'type' => $this->mapBigQueryType($field['type']),
-			'length' => null,
-			'flags' => ($field['mode'] ?? 'NULLABLE') === 'REQUIRED' ? 'NOT NULL' : '',
-			'charsetnr' => $this->getBigQueryCharsetNr($field['type']),
-			'orgname' => $field['name'],
-			'orgtable' => ''
-		);
-	}
 		private function mapBigQueryType($bigQueryType)
 		{
 			$typeMap = array(
@@ -952,43 +949,43 @@ if (isset($_GET["bigquery"])) {
 			return $typeMap[strtoupper($bigQueryType)] ?? 'text';
 		}
 
-	private function getBigQueryCharsetNr($bigQueryType)
-	{
-		$baseType = strtoupper(preg_replace('/\([^)]*\)/', '', $bigQueryType));
-		
-		switch ($baseType) {
-			case 'BYTES':
-				
-				return 63;
-			case 'STRING':
-			case 'JSON':
-				
-				return 33;
-			case 'INT64':
-			case 'INTEGER':
-			case 'FLOAT64':
-			case 'FLOAT':
-			case 'NUMERIC':
-			case 'BIGNUMERIC':
-			case 'BOOLEAN':
-			case 'BOOL':
-			case 'DATE':
-			case 'TIME':
-			case 'DATETIME':
-			case 'TIMESTAMP':
-				
-				return 63;
-			case 'ARRAY':
-			case 'STRUCT':
-			case 'RECORD':
-			case 'GEOGRAPHY':
-				
-				return 33;
-			default:
-				
-				return 33;
+		private function getBigQueryCharsetNr($bigQueryType)
+		{
+			$baseType = strtoupper(preg_replace('/\([^)]*\)/', '', $bigQueryType));
+
+			switch ($baseType) {
+				case 'BYTES':
+
+					return 63;
+				case 'STRING':
+				case 'JSON':
+
+					return 33;
+				case 'INT64':
+				case 'INTEGER':
+				case 'FLOAT64':
+				case 'FLOAT':
+				case 'NUMERIC':
+				case 'BIGNUMERIC':
+				case 'BOOLEAN':
+				case 'BOOL':
+				case 'DATE':
+				case 'TIME':
+				case 'DATETIME':
+				case 'TIMESTAMP':
+
+					return 63;
+				case 'ARRAY':
+				case 'STRUCT':
+				case 'RECORD':
+				case 'GEOGRAPHY':
+
+					return 33;
+				default:
+
+					return 33;
+			}
 		}
-	}
 	}
 	class Driver
 	{
@@ -1013,7 +1010,7 @@ if (isset($_GET["bigquery"])) {
 			"REGEXP",
 			"NOT REGEXP"
 		);
-		
+
 		public $partitionBy = array();
 
 		public $unsigned = array();
@@ -1077,12 +1074,12 @@ if (isset($_GET["bigquery"])) {
 
 		function hasCStyleEscapes(): bool
 		{
-			return false; 
+			return false;
 		}
 
 		function warnings()
 		{
-			
+
 			return array();
 		}
 
@@ -1127,31 +1124,31 @@ if (isset($_GET["bigquery"])) {
 
 		function enumLength($field)
 		{
-			
+
 			return array();
 		}
 
 		function unconvertFunction($field)
 		{
-			
+
 			return null;
 		}
 
 		function insert($table, $set)
 		{
-			
+
 			return insert($table, $set);
 		}
 
 		function update($table, $set, $queryWhere = '', $limit = 0)
 		{
-			
+
 			return update($table, $set, $queryWhere, $limit);
 		}
 
 		function delete($table, $queryWhere = '', $limit = 0)
 		{
-			
+
 			return delete($table, $queryWhere, $limit);
 		}
 
@@ -1174,7 +1171,7 @@ if (isset($_GET["bigquery"])) {
 
 		function convertSearch(string $idf, array $val, array $field): string
 		{
-			
+
 			return $idf;
 		}
 
@@ -1190,7 +1187,7 @@ if (isset($_GET["bigquery"])) {
 			$successCount = 0;
 
 			try {
-				
+
 				$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 				if (empty($database)) {
 					return false;
@@ -1202,14 +1199,14 @@ if (isset($_GET["bigquery"])) {
 					}
 
 					try {
-						
+
 						$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
 						$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
 						$query = "DROP TABLE $fullTableName";
-						
+
 						BigQueryUtils::logQuerySafely($query, "DROP_TABLE");
 						$result = $connection->query($query);
-						
+
 						if ($result !== false) {
 							$successCount++;
 						} else {
@@ -1235,37 +1232,37 @@ if (isset($_GET["bigquery"])) {
 			}
 		}
 
-	function explain($query)
-	{
-		global $connection;
-		if (!$connection || !isset($connection->bigQueryClient)) {
-			return false;
-		}
-		
-		try {
-			
-			$explainQuery = "EXPLAIN " . $query;
-			BigQueryUtils::logQuerySafely($explainQuery, "EXPLAIN");
-			$result = $connection->query($explainQuery);
-			return $result;
-		} catch (Exception $e) {
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'EXPLAIN_ERROR');
-			return false;
-		}
-	}
+		function explain($query)
+		{
+			global $connection;
+			if (!$connection || !isset($connection->bigQueryClient)) {
+				return false;
+			}
 
-	function css()
-	{
-		return "
+			try {
+
+				$explainQuery = "EXPLAIN " . $query;
+				BigQueryUtils::logQuerySafely($explainQuery, "EXPLAIN");
+				$result = $connection->query($explainQuery);
+				return $result;
+			} catch (Exception $e) {
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'EXPLAIN_ERROR');
+				return false;
+			}
+		}
+
+		function css()
+		{
+			return "
 		<style>
 		/* BigQuery非対応機能を非表示 - より強い優先度で適用 */
-		
+
 		/* Database画面のSearch data in tables機能を非表示 */
 		.search-tables {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Analyze機能を非表示 */
 		.analyze,
 		input[value='Analyze'],
@@ -1274,7 +1271,7 @@ if (isset($_GET["bigquery"])) {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Optimize機能を非表示 */
 		.optimize,
 		input[value='Optimize'],
@@ -1283,7 +1280,7 @@ if (isset($_GET["bigquery"])) {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Repair機能を非表示 */
 		.repair,
 		input[value='Repair'],
@@ -1292,7 +1289,7 @@ if (isset($_GET["bigquery"])) {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Check機能を非表示 */
 		.check,
 		input[value='Check'],
@@ -1301,7 +1298,7 @@ if (isset($_GET["bigquery"])) {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Move機能を非表示 */
 		.move,
 		input[value='Move'],
@@ -1310,7 +1307,7 @@ if (isset($_GET["bigquery"])) {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Copy機能を非表示 */
 		.copy,
 		input[value='Copy'],
@@ -1319,7 +1316,7 @@ if (isset($_GET["bigquery"])) {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Import機能を非表示 */
 		.import,
 		input[value='Import'],
@@ -1328,86 +1325,86 @@ if (isset($_GET["bigquery"])) {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Export機能（一部）を非表示 */
 		select[name='format'] option[value='csv+excel'],
 		select[name='format'] option[value='xml'] {
 			display: none !important;
 		}
-		
+
 		/* Index関連機能を非表示 */
 		.indexes,
 		a[href*='indexes'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Foreign key関連機能を非表示 */
 		.foreign-keys,
 		a[href*='foreign'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Trigger関連機能を非表示 */
 		.triggers,
 		a[href*='trigger'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Event関連機能を非表示 */
 		.events,
 		a[href*='event'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Routine関連機能を非表示 */
 		.routines,
 		a[href*='routine'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Sequence関連機能を非表示 */
 		.sequences,
 		a[href*='sequence'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* User types関連機能を非表示 */
 		.user-types,
 		a[href*='type'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Auto increment機能を非表示 */
 		input[name*='auto_increment'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Comment機能を非表示（テーブルレベル） */
 		input[name='Comment'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Collation機能を非表示 */
 		select[name*='collation'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* FullText検索機能を非表示 */
 		input[type='submit'][value*='Fulltext'] {
 			display: none !important;
 			visibility: hidden !important;
 		}
-		
+
 		/* Truncate/Dropボタンの明示的な表示 */
 		input[value='Truncate'],
 		input[type='submit'][value='Truncate'],
@@ -1422,12 +1419,12 @@ if (isset($_GET["bigquery"])) {
 			display: inline-block !important;
 			visibility: visible !important;
 		}
-		
+
 		/* BigQuery対応機能のラベル改善 */
 		body.bigquery .h2 {
 			position: relative;
 		}
-		
+
 		body.bigquery .h2:after {
 			content: ' (BigQuery)';
 			font-size: 0.8em;
@@ -1438,23 +1435,23 @@ if (isset($_GET["bigquery"])) {
 		// *** BigQuery強制表示機能 - 複数タイミングで実行 ***
 		function forceBigQueryButtonsDisplay() {
 			console.log('BigQuery強制表示実行開始');
-			
+
 			// BigQueryドライバー使用時にbody要素にクラス追加
 			if (document.querySelector('title') && document.querySelector('title').textContent.includes('BigQuery')) {
 				document.body.classList.add('bigquery');
 			}
-			
+
 			// 非対応ボタンを非表示（TruncateとDropは除外）
 			var buttonsToHide = [
 				'input[value=\"Analyze\"]',
-				'input[value=\"Optimize\"]', 
+				'input[value=\"Optimize\"]',
 				'input[value=\"Repair\"]',
 				'input[value=\"Check\"]',
 				'input[value=\"Move\"]',
 				'input[value=\"Copy\"]',
 				'input[value=\"Import\"]'
 			];
-			
+
 			buttonsToHide.forEach(function(selector) {
 				var elements = document.querySelectorAll(selector);
 				elements.forEach(function(element) {
@@ -1462,7 +1459,7 @@ if (isset($_GET["bigquery"])) {
 					element.style.visibility = 'hidden';
 				});
 			});
-			
+
 			// *** 重要：Selected フィールドセットの強制表示 ***
 			var selectedFieldsets = document.querySelectorAll('fieldset');
 			selectedFieldsets.forEach(function(fieldset) {
@@ -1510,17 +1507,17 @@ if (isset($_GET["bigquery"])) {
 					}
 				});
 			});
-			
+
 			console.log('BigQuery強制表示実行完了');
 		}
-		
+
 		// 複数のタイミングで確実に実行
 		// 1. DOMContentLoaded（通常のタイミング）
 		document.addEventListener('DOMContentLoaded', forceBigQueryButtonsDisplay);
-		
+
 		// 2. window.load（全リソース読み込み完了後）
 		window.addEventListener('load', forceBigQueryButtonsDisplay);
-		
+
 		// 3. 即座実行（既にDOMが読み込まれている場合）
 		if (document.readyState === 'loading') {
 			// まだ読み込み中
@@ -1528,13 +1525,13 @@ if (isset($_GET["bigquery"])) {
 			// 既に読み込み完了
 			forceBigQueryButtonsDisplay();
 		}
-		
+
 		// 4. 遅延実行（最後の保険）
 		setTimeout(forceBigQueryButtonsDisplay, 500);
 		setTimeout(forceBigQueryButtonsDisplay, 1000);
 		</script>
 		";
-	}
+		}
 	}
 	function support($feature)
 	{
@@ -1545,17 +1542,17 @@ if (isset($_GET["bigquery"])) {
 			'sql',
 			'view',
 			'materializedview',
-			
-			'create_db',      
-			'create_table',   
-			'insert',         
-			'update',         
-			'delete',         
-			'drop_table',     
-			'truncate',       
-			'drop',           
-			'select',         
-			'export',         
+
+			'create_db',
+			'create_table',
+			'insert',
+			'update',
+			'delete',
+			'drop_table',
+			'truncate',
+			'drop',
+			'select',
+			'export',
 		);
 		$unsupportedFeatures = array(
 			'foreignkeys',
@@ -1568,7 +1565,7 @@ if (isset($_GET["bigquery"])) {
 			'dump',
 			'event',
 			'move_col',
-			'move_tables',    
+			'move_tables',
 			'privileges',
 			'procedure',
 			'routine',
@@ -1580,11 +1577,11 @@ if (isset($_GET["bigquery"])) {
 			'descidx',
 			'check',
 			'schema',
-			
-			'analyze',        
-			'optimize',       
-			'repair',         
-			'search_tables',  
+
+			'analyze',
+			'optimize',
+			'repair',
+			'search_tables',
 		);
 		if (in_array($feature, $supportedFeatures)) {
 			return true;
@@ -1812,15 +1809,15 @@ if (isset($_GET["bigquery"])) {
 		}
 
 		$condition = preg_replace_callback('/(`[^`]+`)\\s*=\\s*`([^`]+)`/', function ($matches) {
-			$column = $matches[1];  
-			$value = $matches[2];   
+			$column = $matches[1];
+			$value = $matches[2];
 
 			if (preg_match('/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/', $value)) {
-				
+
 				return $column . ' = ' . $value;
 			} else {
-				
-				$escaped = str_replace("'", "''", $value);  
+
+				$escaped = str_replace("'", "''", $value);
 				return $column . " = '" . $escaped . "'";
 			}
 		}, $condition);
@@ -1860,9 +1857,9 @@ if (isset($_GET["bigquery"])) {
 			$schemaFields = $tableInfo['schema']['fields'];
 			$fieldCount = count($schemaFields);
 
-			$maxFields = 1000; 
+			$maxFields = 1000;
 			if ($fieldCount > $maxFields) {
-				
+
 				$schemaFields = array_slice($schemaFields, 0, $maxFields);
 			}
 
@@ -1971,7 +1968,7 @@ if (isset($_GET["bigquery"])) {
 	if (!function_exists('unconvert_field')) {
 		function unconvert_field(array $field, $value)
 		{
-			
+
 			return $value;
 		}
 	}
@@ -2020,7 +2017,7 @@ if (isset($_GET["bigquery"])) {
 				$fields = array();
 				$values = array();
 				foreach ($set as $field => $value) {
-					
+
 					$cleanFieldName = trim(str_replace('`', '', $field));
 					$cleanField = BigQueryUtils::escapeIdentifier($cleanFieldName);
 					$fields[] = $cleanField;
@@ -2087,7 +2084,7 @@ if (isset($_GET["bigquery"])) {
 
 				$setParts = array();
 				foreach ($set as $field => $value) {
-					
+
 					$cleanFieldName = trim(str_replace('`', '', $field));
 					$cleanField = BigQueryUtils::escapeIdentifier($cleanFieldName);
 
@@ -2162,7 +2159,7 @@ if (isset($_GET["bigquery"])) {
 				if (!empty($queryWhere) && trim($queryWhere) !== '') {
 					$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
 				} else {
-					
+
 					throw new InvalidArgumentException("BigQuery: DELETE without WHERE clause is not allowed. Please specify WHERE conditions to avoid accidental data deletion.");
 				}
 
@@ -2206,7 +2203,7 @@ if (isset($_GET["bigquery"])) {
 
 		function last_id()
 		{
-			
+
 			return null;
 		}
 
@@ -2248,7 +2245,7 @@ if (isset($_GET["bigquery"])) {
 				}
 
 				if ($table == "") {
-					
+
 					$database = $_GET['db'] ?? $connection->datasetId ?? '';
 					if (empty($database)) {
 						return false;
@@ -2259,7 +2256,7 @@ if (isset($_GET["bigquery"])) {
 					$schemaFields = array();
 					foreach ($fields as $field) {
 						if (isset($field[1]) && is_array($field[1])) {
-							
+
 							$fieldName = trim(str_replace('`', '', $field[1][0] ?? ''));
 							$fieldType = trim($field[1][1] ?? 'STRING');
 							$fieldMode = ($field[1][3] ?? false) ? 'REQUIRED' : 'NULLABLE';
@@ -2293,7 +2290,7 @@ if (isset($_GET["bigquery"])) {
 					return true;
 
 				} else {
-					
+
 					return false;
 				}
 
@@ -2313,7 +2310,7 @@ if (isset($_GET["bigquery"])) {
 
 		function move_tables($tables, $views, $target)
 		{
-			
+
 			return false;
 		}
 
@@ -2321,10 +2318,10 @@ if (isset($_GET["bigquery"])) {
 }
 
 if (!function_exists('show_unsupported_feature_message')) {
-	
+
 	function show_unsupported_feature_message($feature, $reason = '')
 	{
-		
+
 		$unsupported_messages = array(
 			'move_tables' => 'BigQuery does not support moving tables between datasets directly. Use CREATE TABLE AS SELECT + DROP TABLE instead.',
 			'schema' => 'BigQuery uses datasets instead of schemas. Please use the dataset view for schema information.',
@@ -2359,7 +2356,7 @@ if (!function_exists('query')) {
 }
 
 if (!function_exists('schema')) {
-	
+
 	function schema()
 	{
 		show_unsupported_feature_message('schema', 'BigQuery uses datasets instead of traditional schemas. Dataset information is available in the main database view.');
@@ -2368,7 +2365,7 @@ if (!function_exists('schema')) {
 }
 
 if (!function_exists('import_sql')) {
-	
+
 	function import_sql($file)
 	{
 		show_unsupported_feature_message('import', 'BigQuery import functionality is not yet implemented. Please use the BigQuery console or API for bulk imports.');
@@ -2384,7 +2381,7 @@ if (!function_exists('import_sql')) {
 		}
 
 		try {
-			
+
 			$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
 			if (empty($database) || empty($table)) {
 				return false;
@@ -2393,7 +2390,7 @@ if (!function_exists('import_sql')) {
 			$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
 			$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
 			$query = "TRUNCATE TABLE $fullTableName";
-			
+
 			BigQueryUtils::logQuerySafely($query, "TRUNCATE");
 			$result = $connection->query($query);
 			return $result !== false;
@@ -2408,7 +2405,7 @@ if (!function_exists('import_sql')) {
 }
 
 if (!function_exists('check_table')) {
-	
+
 	function check_table($table)
 	{
 		show_unsupported_feature_message('check');
@@ -2417,7 +2414,7 @@ if (!function_exists('check_table')) {
 }
 
 if (!function_exists('optimize_table')) {
-	
+
 	function optimize_table($table)
 	{
 		show_unsupported_feature_message('optimize');
@@ -2426,7 +2423,7 @@ if (!function_exists('optimize_table')) {
 }
 
 if (!function_exists('repair_table')) {
-	
+
 	function repair_table($table)
 	{
 		show_unsupported_feature_message('repair');
@@ -2443,7 +2440,7 @@ if (!function_exists('analyze_table')) {
 	}
 }
 
-class AdminerLoginBigQuery extends Adminer\Plugin
+class AdminerLoginBigQuery extends \Adminer\Plugin
 {
 	protected $config;
 
@@ -2540,17 +2537,17 @@ class AdminerLoginBigQuery extends Adminer\Plugin
 
 class AdminerBigQueryCSS extends \Adminer\Plugin
 {
-    function head($dark = null)
-    {
-        if ((defined('DRIVER') && DRIVER === 'bigquery') || (defined('Adminer\\DRIVER') && constant('Adminer\\DRIVER') === 'bigquery')) {
-            
-            if (class_exists('Adminer\\Driver')) {
-                $driver = new \Adminer\Driver();
-                if (method_exists($driver, 'css')) {
-                    
-                    echo $driver->css();
-                }
-            }
-        }
-    }
+	function head($dark = null)
+	{
+		if ((defined('DRIVER') && DRIVER === 'bigquery') || (defined('Adminer\\DRIVER') && constant('Adminer\\DRIVER') === 'bigquery')) {
+
+			if (class_exists('Adminer\\Driver')) {
+				$driver = new \Adminer\Driver();
+				if (method_exists($driver, 'css')) {
+
+					echo $driver->css();
+				}
+			}
+		}
+	}
 }
