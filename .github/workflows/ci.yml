@@ -15,4 +15,5 @@ jobs:
         with:
           path: .
           standard: phpcs.xml
+          memory_limit: 512M
       - uses: php-actions/phpstan@v3
