@@ -24,7 +24,7 @@ docker compose up -d
 
 ### 4. アクセス
 
-ブラウザで `http://localhost:8080` にアクセスしてください。
+ブラウザで `http://localhost:8081` にアクセスしてください。
 
 ## 設定ファイル
 
