@@ -1,27 +1,27 @@
 # PR作成コマンド
 
-以下の手順でPull Request(PR)を作成してください。
+**⚠️重要**: mainブランチで直接コミット禁止
 
-## 1. ブランチ準備
-- 現在のブランチがmainの場合: 新しいfeatureブランチを作成
-- それ以外の場合: 現在のブランチをそのまま使用
+## 手順
+1. **ブランチ確認・切り替え**
+   - `git branch --show-current`で現在ブランチ確認
+   - mainの場合: 新featureブランチ作成→切り替え
 
-## 2. 変更のコミット
-- `git status`で変更ファイルを確認
-- `git add`で全ての変更をステージング
-- `git commit`で変更をコミット（適切な日本語メッセージ）
+2. **変更コミット**
+   - `git status`→`git add`→`git commit`（日本語メッセージ）
+   - 上位階層含むすべての変更をcommit
 
-## 3. リモートプッシュ
-- `git push -u origin <branch-name>`でリモートにプッシュ
+3. **プッシュ**
+   - `git pull origin main`（コンフリクト時は停止しユーザに報告）
+   - `git push -u origin <branch-name>`
 
-## 4. PR作成
-- `mcp__github__create_pull_request`を使用してPRを作成
-- タイトル: 日本語で変更内容を要約
-- body: Summary、Test planを含む定型フォーマット
-    - Summaryの末尾に <!-- I want to review in Japanese. --> を入れる
+4. **PR作成**
+   - `mcp__github__create_pull_request`使用
+   - タイトル・説明: 日本語、body: Summary+Test plan
+      - Summaryの末尾に <!-- I want to review in Japanese. --> を入れる
+   - copilotをreviewerに指定
 
 ## 命名規則
-- ブランチ名: 英語（例: update-config, validation-error）
-  - github flowに従う(feature/などのprefixは不要)
-- コミットメッセージ: 日本語
-- PRタイトル・説明: 日本語
+- ブランチ: 英語（例: update-config）
+- github flow
+- コミット・PR: 日本語
