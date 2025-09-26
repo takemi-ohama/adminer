@@ -869,9 +869,12 @@ if (isset($_GET["bigquery"])) {
 		private $iterator = null;
 		private $isIteratorInitialized = false;
 		public $num_rows = 0;
+		public $job = null; // Phase 1: last_id()機能のためのジョブ参照
+		
 		function __construct($queryResults)
 		{
 			$this->queryResults = $queryResults;
+			$this->job = $queryResults; // BigQueryジョブへの参照を保存
 
 			try {
 				$jobInfo = $queryResults->info();
@@ -2368,7 +2371,15 @@ if (isset($_GET["bigquery"])) {
 
 		function last_id()
 		{
-
+			global $connection;
+			
+			// Phase 1: BigQueryジョブIDを返す機能を追加
+			if ($connection && isset($connection->last_result)) {
+				if ($connection->last_result instanceof Result && isset($connection->last_result->job)) {
+					return $connection->last_result->job->id();
+				}
+			}
+			
 			return null;
 		}
 
@@ -2699,6 +2710,13 @@ class AdminerLoginBigQuery extends \Adminer\Plugin
 		'ja' => array('' => 'サービスアカウント認証情報によるBigQuery認証'),
 	);
 }
+
+// =============================================================================
+// Phase 1 Sprint 1.1: 基本クエリ機能実装
+// Note: これらの関数はAdminerのDriverクラス内で既に実装されている場合があるため、
+// BigQueryドライバー固有の拡張機能としてDriverクラス内のメソッドとして実装済み
+// =============================================================================
+
 
 class AdminerBigQueryCSS extends \Adminer\Plugin
 {
