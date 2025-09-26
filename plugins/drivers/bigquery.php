@@ -363,20 +363,54 @@ if (isset($_GET["bigquery"])) {
 			}
 		}
 		static function generateFieldConversion($field)
-		{
-			$fieldName = self::escapeIdentifier($field['field']);
-			$fieldType = strtolower($field['type'] ?? '');
-			$conversions = array(
-				'geography' => "ST_AsText($fieldName)",
-				'json' => "TO_JSON_STRING($fieldName)"
-			);
-			foreach ($conversions as $typePattern => $conversion) {
-				if (strpos($fieldType, $typePattern) !== false) {
-					return $conversion;
-				}
+	{
+		// Phase 2 Sprint 2.1: フィールド変換機能強化
+		// BigQueryデータ型の適切なSQL関数による変換処理
+		
+		$fieldName = self::escapeIdentifier($field['field']);
+		$fieldType = strtolower($field['type'] ?? '');
+		
+		// BigQuery固有データ型の変換マッピング
+		$conversions = array(
+			// 地理空間データの変換
+			'geography' => "ST_AsText($fieldName)",
+			'geom' => "ST_AsText($fieldName)",
+			
+			// JSON・構造化データの変換
+			'json' => "TO_JSON_STRING($fieldName)",
+			'struct' => "TO_JSON_STRING($fieldName)",
+			'record' => "TO_JSON_STRING($fieldName)",
+			'array' => "TO_JSON_STRING($fieldName)",
+			
+			// 日時データの変換
+			'timestamp' => "TIMESTAMP_TRUNC($fieldName, MICROSECOND)",
+			'datetime' => "DATETIME_TRUNC($fieldName, MICROSECOND)",
+			'time' => "TIME_TRUNC($fieldName, MICROSECOND)",
+			
+			// バイナリデータの変換
+			'bytes' => "TO_BASE64($fieldName)",
+			'blob' => "TO_BASE64($fieldName)",
+			
+			// 数値データの精度制御
+			'numeric' => "CAST($fieldName AS STRING)",
+			'bignumeric' => "CAST($fieldName AS STRING)",
+			'decimal' => "CAST($fieldName AS STRING)",
+			
+			// 論理データの明示化
+			'boolean' => "IF($fieldName, 'true', 'false')",
+			'bool' => "IF($fieldName, 'true', 'false')"
+		);
+		
+		// パターンマッチングで最適な変換を選択
+		foreach ($conversions as $typePattern => $conversion) {
+			if (strpos($fieldType, $typePattern) !== false) {
+				return $conversion;
 			}
-			return null;
 		}
+		
+		// デフォルト: 変換不要
+		return null;
+	}
 
 		static function buildFullTableName($table, $database, $projectId)
 		{
@@ -1615,16 +1649,62 @@ if (isset($_GET["bigquery"])) {
 		);
 	}
 	function collations()
-	{
-		return array();
-	}
+{
+	// Phase 2 Sprint 2.1: BigQuery照合順序一覧機能
+	// BigQueryでサポートされているUnicode照合順序を返す
+	
+	return array(
+		"unicode:cs" => "Unicode (大文字小文字区別)",
+		"unicode:ci" => "Unicode (大文字小文字区別なし)",
+		"" => "(デフォルト)"
+	);
+}
 	function db_collation($db)
-	{
+{
+	// Phase 2 Sprint 2.1: BigQuery照合順序適切処理機能
+	// BigQueryではデータセット固有の照合順序設定は存在しないが、
+	// 照会時にCOLLATE句でUnicode照合順序を指定可能
+	
+	if (!$db) {
 		return "";
 	}
+	
+	// BigQueryのデフォルト照合順序を返す
+	// Unicode照合順序（大文字小文字区別）がデフォルト
+	return "unicode:cs";
+}
 	function information_schema($db)
 	{
-		return "";
+		// Phase 1 Sprint 1.3: BigQuery INFORMATION_SCHEMA判定機能
+		if (!$db) {
+			return false;
+		}
+
+		// BigQueryのINFORMATION_SCHEMAデータセット判定
+		// BigQueryでは各プロジェクトにINFORMATION_SCHEMAという特別なデータセットがある
+		$informationSchemaPatterns = array(
+			'INFORMATION_SCHEMA',
+			'information_schema',
+			// プロジェクト固有のINFORMATION_SCHEMA
+			// 例: project.INFORMATION_SCHEMA
+		);
+
+		foreach ($informationSchemaPatterns as $pattern) {
+			if (strcasecmp($db, $pattern) === 0) {
+				return true;
+			}
+		}
+
+		// プロジェクト名.INFORMATION_SCHEMAパターンの判定
+		if (strpos($db, '.') !== false) {
+			$parts = explode('.', $db);
+			$lastPart = end($parts);
+			if (strcasecmp($lastPart, 'INFORMATION_SCHEMA') === 0) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 	function is_view($table_status)
 	{
@@ -1646,6 +1726,35 @@ if (isset($_GET["bigquery"])) {
 	}
 	function logged_user()
 	{
+		// Phase 1 Sprint 1.3: サービスアカウント情報の詳細表示
+		global $connection;
+		try {
+			if ($connection && isset($connection->projectId)) {
+				// プロジェクトIDとサービスアカウントの基本情報を表示
+				$projectId = $connection->projectId;
+				$credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
+
+				// サービスアカウント情報を構築
+				$userInfo = "BigQuery Service Account";
+				if ($projectId) {
+					$userInfo .= " (Project: {$projectId})";
+				}
+
+				// 認証情報ソースを追加
+				if ($credentialsPath) {
+					$fileName = basename($credentialsPath);
+					$userInfo .= " - Auth: {$fileName}";
+				} elseif (getenv('GOOGLE_CLOUD_PROJECT')) {
+					$userInfo .= " - Auth: Default Credentials";
+				}
+
+				return $userInfo;
+			}
+		} catch (Exception $e) {
+			// エラー時は基本情報を返す
+			error_log("BigQuery logged_user error: " . $e->getMessage());
+		}
+
 		return "BigQuery Service Account";
 	}
 	function get_databases($flush = false)
@@ -1970,10 +2079,66 @@ if (isset($_GET["bigquery"])) {
 	}
 	if (!function_exists('unconvert_field')) {
 		function unconvert_field(array $field, $value)
-		{
-
-			return $value;
+	{
+		// Phase 2 Sprint 2.1: フィールド逆変換機能強化
+		// BigQueryの表示用データをAdminer編集可能な形式に戻す
+		
+		if ($value === null) {
+			return null;
 		}
+		
+		$fieldType = strtolower($field['type'] ?? '');
+		$stringValue = (string) $value;
+		
+		// BigQuery固有データ型の逆変換処理
+		switch (true) {
+			// JSON・構造化データの逆変換
+			case (strpos($fieldType, 'json') !== false):
+			case (strpos($fieldType, 'struct') !== false):
+			case (strpos($fieldType, 'record') !== false):
+			case (strpos($fieldType, 'array') !== false):
+				// JSON形式の文字列をそのまま返す（編集可能な形式）
+				return $stringValue;
+			
+			// 地理空間データの逆変換
+			case (strpos($fieldType, 'geography') !== false):
+				// WKT形式をそのまま返す
+				return $stringValue;
+			
+			// バイナリデータの逆変換
+			case (strpos($fieldType, 'bytes') !== false):
+			case (strpos($fieldType, 'blob') !== false):
+				// Base64デコードは不要、文字列として編集
+				return $stringValue;
+			
+			// 論理データの逆変換
+			case (strpos($fieldType, 'boolean') !== false):
+			case (strpos($fieldType, 'bool') !== false):
+				// 'true'/'false'文字列を論理値に変換
+				if ($stringValue === 'true') return '1';
+				if ($stringValue === 'false') return '0';
+				return $stringValue;
+			
+			// 数値データの逆変換
+			case (strpos($fieldType, 'numeric') !== false):
+			case (strpos($fieldType, 'bignumeric') !== false):
+			case (strpos($fieldType, 'decimal') !== false):
+				// 数値精度を保持して返す
+				return $stringValue;
+			
+			// 日時データの逆変換
+			case (strpos($fieldType, 'timestamp') !== false):
+			case (strpos($fieldType, 'datetime') !== false):
+			case (strpos($fieldType, 'time') !== false):
+			case (strpos($fieldType, 'date') !== false):
+				// ISO形式の日時文字列をそのまま返す
+				return $stringValue;
+			
+			// その他のデータ型
+			default:
+				return $value;
+		}
+	}
 	}
 	if (!function_exists('error')) {
 		function error()

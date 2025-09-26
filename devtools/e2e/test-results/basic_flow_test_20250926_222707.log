@@ -1,0 +1,82 @@
+🚀 基本機能フローテスト実行開始: Fri Sep 26 10:27:07 PM UTC 2025
+ログファイル: ./test-results/basic_flow_test_20250926_222707.log
+📡 Web環境確認中...
+✅ Web環境確認完了
+🏗️  E2Eコンテナビルド中...
+#1 [internal] load local bake definitions
+#1 reading from stdin 541B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 2B done
+#2 DONE 0.0s
+failed to solve: failed to read dockerfile: open Dockerfile: no such file or directory
+
+🚀 基本機能フローテスト実行中...
+🚀 E2E テスト実行開始: Fri Sep 26 22:27:08 UTC 2025
+📦 E2E環境セットアップ中...
+📦 依存関係をインストール中...
+
+up to date, audited 4 packages in 451ms
+
+found 0 vulnerabilities
+環境: test
+ベースURL: http://adminer-bigquery-test
+📁 テスト結果保存先: /app/container/e2e/test-results
+📋 直接コマンド実行: npx playwright test --config=/app/container/e2e/playwright.config.js tests/basic-flow-test.spec.js --reporter=line --output=test-results/basic-flow --project=chromium
+
+Running 3 tests using 1 worker
+
+[1A[2K[1/3] [chromium] › container/e2e/tests/basic-flow-test.spec.js:19:3 › BigQuery Adminer 基本機能フローテスト › 基本フロー: ログイン→データセット選択→テーブル選択
+[1A[2K[chromium] › container/e2e/tests/basic-flow-test.spec.js:19:3 › BigQuery Adminer 基本機能フローテスト › 基本フロー: ログイン→データセット選択→テーブル選択
+🔍 基本機能フローテスト開始
+
+[1A[2K✅ ログインボタン発見: input[type="submit"][value="Login"]
+
+[1A[2K✅ ログイン処理完了
+
+[1A[2K✅ ログイン成功 - データセット選択画面
+
+[1A[2K📊 発見されたデータセット数: 33
+
+[1A[2K🎯 優先データセット発見: test_dataset_fixed_api
+
+[1A[2K✅ データセット選択成功
+
+[1A[2K📊 テーブル数: 4
+
+[1A[2K✅ テーブル選択とテーブル構造表示成功
+
+[1A[2K🎯 基本機能フローテスト完了
+
+[1A[2K[2/3] [chromium] › container/e2e/tests/basic-flow-test.spec.js:105:3 › BigQuery Adminer 基本機能フローテスト › ナビゲーション機能確認
+[1A[2K[chromium] › container/e2e/tests/basic-flow-test.spec.js:105:3 › BigQuery Adminer 基本機能フローテスト › ナビゲーション機能確認
+🔍 ナビゲーション機能確認テスト開始
+
+[1A[2K✅ SQL commandリンク発見: a:has-text("SQL command")
+
+[1A[2K✅ Exportリンク発見: a:has-text("Export")
+
+[1A[2K⚠️ Importリンクが見つかりませんでした
+
+[1A[2K✅ Create databaseリンク発見: a:has-text("Create database")
+
+[1A[2K✅ ナビゲーション機能確認完了
+
+[1A[2K[3/3] [chromium] › container/e2e/tests/basic-flow-test.spec.js:142:3 › BigQuery Adminer 基本機能フローテスト › エラーハンドリング確認
+[1A[2K[chromium] › container/e2e/tests/basic-flow-test.spec.js:142:3 › BigQuery Adminer 基本機能フローテスト › エラーハンドリング確認
+🔍 エラーハンドリング確認テスト開始
+
+[1A[2K📊 エラーテストURL: http://adminer-bigquery-test/?bigquery=adminer-test-472623&username=bigquery-service-account&db=nonexistent_dataset_test&table=nonexistent_table
+
+[1A[2K✅ エラーメッセージ発見: .error - "Invalid database."
+
+[1A[2K📊 エラー状態: メッセージ="Invalid database.", タイトル="Database: nonexistent_dataset_test - adminer-test-472623 - Adminer", ボディエラー=true
+
+[1A[2K📊 総合エラーハンドリング状態: true
+
+[1A[2K✅ エラーハンドリング確認完了
+
+[1A[2K  3 passed (17.6s)
+✅ 基本機能フローテスト成功: Fri Sep 26 10:27:27 PM UTC 2025
+🎯 基本機能フローテスト完了: Fri Sep 26 10:27:27 PM UTC 2025
