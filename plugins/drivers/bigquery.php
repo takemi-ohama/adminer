@@ -2385,28 +2385,291 @@ if (isset($_GET["bigquery"])) {
 
 		function create_database($database, $collation)
 		{
+			// Phase 3 Sprint 3.1: BigQuery Dataset作成機能強化
+			// Dataset API活用・権限チェック・エラーハンドリング強化
+			
 			global $connection;
 			try {
 				if (!$connection || !isset($connection->bigQueryClient)) {
 					return false;
 				}
 
-				$dataset = $connection->bigQueryClient->createDataset($database, [
-					'location' => $connection->config['location'] ?? 'US'
-				]);
+				// データセット名の検証
+				if (!preg_match('/^[a-zA-Z0-9_]{1,1024}$/', $database)) {
+					error_log("BigQuery: Invalid dataset name format: $database");
+					return false;
+				}
 
-				return true;
+				// データセット設定の構築
+				$datasetOptions = [
+					'location' => $connection->config['location'] ?? 'US'
+				];
+
+				// 説明の追加（collationパラメータを説明として活用）
+				if (!empty($collation) && is_string($collation)) {
+					$datasetOptions['description'] = "Dataset created via Adminer BigQuery Plugin - $collation";
+				}
+
+				// BigQuery Dataset API でデータセット作成
+				BigQueryUtils::logQuerySafely("CREATE DATASET $database", "CREATE_DATASET");
+				$dataset = $connection->bigQueryClient->createDataset($database, $datasetOptions);
+
+				// 作成成功の確認
+				if ($dataset && $dataset->exists()) {
+					error_log("BigQuery: Dataset '$database' created successfully in location: " . ($datasetOptions['location']));
+					return true;
+				}
+
+				return false;
 
 			} catch (ServiceException $e) {
 				$message = $e->getMessage();
-				if (strpos($message, 'Already Exists') !== false) {
+				$errorCode = $e->getCode();
+				
+				// 既存チェック
+				if (strpos($message, 'Already Exists') !== false || $errorCode === 409) {
 					error_log("BigQuery: Dataset '$database' already exists");
+					$connection->error = "Dataset '$database' already exists";
 					return false;
 				}
-				error_log("BigQuery: Dataset creation failed - " . $message);
+				
+				// 権限エラー
+				if (strpos($message, 'permission') !== false || $errorCode === 403) {
+					error_log("BigQuery: Permission denied for dataset creation: $database");
+					$connection->error = "Permission denied: Cannot create dataset '$database'";
+					return false;
+				}
+				
+				// その他のServiceException
+				error_log("BigQuery: Dataset creation failed - Code: $errorCode, Message: $message");
+				$connection->error = "Dataset creation failed: $message";
 				return false;
+				
 			} catch (Exception $e) {
 				error_log("BigQuery: Dataset creation error - " . $e->getMessage());
+				$connection->error = "Dataset creation error: " . $e->getMessage();
+				return false;
+			}
+		}
+
+		function drop_databases($databases)
+		{
+			// Phase 3 Sprint 3.1: BigQuery Dataset削除機能実装
+			// 複数データセットの安全な削除処理
+			
+			global $connection;
+			
+			if (!$connection || !isset($connection->bigQueryClient)) {
+				return false;
+			}
+			
+			$errors = array();
+			$successCount = 0;
+			
+			try {
+				foreach ($databases as $database) {
+					if (empty($database)) {
+						continue;
+					}
+					
+					try {
+						// データセット名の検証
+						if (!preg_match('/^[a-zA-Z0-9_]{1,1024}$/', $database)) {
+							$errors[] = "Invalid dataset name format: $database";
+							continue;
+						}
+						
+						// データセット取得と存在確認
+						$dataset = $connection->bigQueryClient->dataset($database);
+						if (!$dataset->exists()) {
+							$errors[] = "Dataset '$database' does not exist";
+							continue;
+						}
+						
+						// 削除前の安全確認（テーブル数チェック）
+						$tableIterator = $dataset->tables(['maxResults' => 1]);
+						if ($tableIterator->current()) {
+							error_log("BigQuery: Warning - Dataset '$database' contains tables, proceeding with deletion");
+						}
+						
+						// BigQuery Dataset削除実行
+						BigQueryUtils::logQuerySafely("DROP DATASET $database", "DROP_DATASET");
+						$dataset->delete(['deleteContents' => true]);
+						
+						error_log("BigQuery: Dataset '$database' deleted successfully");
+						$successCount++;
+						
+					} catch (ServiceException $e) {
+						$message = $e->getMessage();
+						$errorCode = $e->getCode();
+						
+						// 権限エラー
+						if (strpos($message, 'permission') !== false || $errorCode === 403) {
+							$errors[] = "Permission denied: Cannot delete dataset '$database'";
+						}
+						// 存在しないデータセット
+						elseif (strpos($message, 'Not found') !== false || $errorCode === 404) {
+							$errors[] = "Dataset '$database' not found";
+						}
+						// その他のエラー
+						else {
+							$errors[] = "Failed to delete dataset '$database': $message";
+						}
+						
+						BigQueryUtils::logQuerySafely($e->getMessage(), 'DROP_DATASET_ERROR');
+						
+					} catch (Exception $e) {
+						$errors[] = "Delete dataset '$database' failed: " . $e->getMessage();
+						BigQueryUtils::logQuerySafely($e->getMessage(), 'DROP_DATASET_ERROR');
+					}
+				}
+				
+				// エラーハンドリング
+				if (!empty($errors) && $connection) {
+					$connection->error = implode('; ', $errors);
+				}
+				
+				return $successCount > 0;
+				
+			} catch (Exception $e) {
+				if ($connection) {
+					$connection->error = "DROP DATASETS failed: " . $e->getMessage();
+				}
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'DROP_DATASETS_ERROR');
+				return false;
+			}
+		}
+
+		function rename_database($old_name, $new_name)
+		{
+			// Phase 3 Sprint 3.1: BigQuery Dataset名変更機能実装
+			// BigQueryは直接名前変更をサポートしないため、作成→コピー→削除のフローで実現
+			
+			global $connection;
+			
+			if (!$connection || !isset($connection->bigQueryClient)) {
+				return false;
+			}
+			
+			try {
+				// データセット名の検証
+				if (!preg_match('/^[a-zA-Z0-9_]{1,1024}$/', $old_name) || 
+					!preg_match('/^[a-zA-Z0-9_]{1,1024}$/', $new_name)) {
+					error_log("BigQuery: Invalid dataset name format - old: $old_name, new: $new_name");
+					$connection->error = "Invalid dataset name format";
+					return false;
+				}
+				
+				// 元データセットの存在確認
+				$oldDataset = $connection->bigQueryClient->dataset($old_name);
+				if (!$oldDataset->exists()) {
+					error_log("BigQuery: Source dataset '$old_name' does not exist");
+					$connection->error = "Source dataset '$old_name' does not exist";
+					return false;
+				}
+				
+				// 新データセット名の重複確認
+				$newDataset = $connection->bigQueryClient->dataset($new_name);
+				if ($newDataset->exists()) {
+					error_log("BigQuery: Target dataset '$new_name' already exists");
+					$connection->error = "Target dataset '$new_name' already exists";
+					return false;
+				}
+				
+				// 元データセットの情報を取得
+				$oldDatasetInfo = $oldDataset->info();
+				$location = $oldDatasetInfo['location'] ?? 'US';
+				$description = $oldDatasetInfo['description'] ?? '';
+				
+				// 新データセット作成
+				BigQueryUtils::logQuerySafely("CREATE DATASET $new_name (rename from $old_name)", "RENAME_DATASET_CREATE");
+				$newDatasetOptions = [
+					'location' => $location,
+					'description' => $description . " (Renamed from $old_name via Adminer)"
+				];
+				$newDataset = $connection->bigQueryClient->createDataset($new_name, $newDatasetOptions);
+				
+				// テーブル一覧取得（イテレータを直接使用）
+				$tableCount = 0;
+
+				// テーブルコピー処理
+				foreach ($oldDataset->tables() as $table) {
+					$tableCount++;
+					$tableName = $table->id();
+					$oldTableId = BigQueryUtils::buildFullTableName($connection->projectId, $old_name, $tableName);
+					$newTableId = BigQueryUtils::buildFullTableName($connection->projectId, $new_name, $tableName);
+
+					try {
+						// テーブルをコピー（CREATE TABLE AS SELECT）
+						$copyQuery = "CREATE TABLE $newTableId AS SELECT * FROM $oldTableId";
+						BigQueryUtils::logQuerySafely($copyQuery, "RENAME_DATASET_COPY_TABLE");
+
+						$queryJob = $connection->bigQueryClient->query($copyQuery)
+							->useLegacySql(false)
+							->location($location);
+						$job = $connection->bigQueryClient->runQuery($queryJob);
+
+						if (!$job->isComplete()) {
+							$job->waitUntilComplete();
+						}
+
+						// ジョブステータス確認
+						$jobInfo = $job->info();
+						if (isset($jobInfo['status']['errorResult'])) {
+							throw new Exception("Table copy failed: " . ($jobInfo['status']['errorResult']['message'] ?? 'Unknown error'));
+						}
+
+						error_log("BigQuery: Successfully copied table '$tableName' to new dataset");
+
+					} catch (Exception $e) {
+						error_log("BigQuery: Failed to copy table '$tableName': " . $e->getMessage());
+						// テーブルコピー失敗時は新データセットをクリーンアップ
+						try {
+							$newDataset->delete(['deleteContents' => true]);
+						} catch (Exception $cleanupError) {
+							error_log("BigQuery: Cleanup failed: " . $cleanupError->getMessage());
+						}
+						$connection->error = "Failed to copy table '$tableName': " . $e->getMessage();
+						return false;
+					}
+				}
+				if ($tableCount > 0) {
+					error_log("BigQuery: Found $tableCount tables to copy from '$old_name' to '$new_name'");
+				}
+				
+				// 元データセット削除
+				try {
+					BigQueryUtils::logQuerySafely("DROP DATASET $old_name (rename completion)", "RENAME_DATASET_DROP");
+					$oldDataset->delete(['deleteContents' => true]);
+					error_log("BigQuery: Successfully deleted old dataset '$old_name'");
+				} catch (Exception $e) {
+					error_log("BigQuery: Warning - Failed to delete old dataset '$old_name': " . $e->getMessage());
+					// 新データセットは作成済みなので、警告として記録のみ
+					$connection->error = "Dataset renamed but old dataset deletion failed: " . $e->getMessage();
+				}
+				
+				error_log("BigQuery: Dataset rename completed - '$old_name' -> '$new_name' ($tableCount tables)");
+				return true;
+				
+			} catch (ServiceException $e) {
+				$message = $e->getMessage();
+				$errorCode = $e->getCode();
+				
+				// 権限エラー
+				if (strpos($message, 'permission') !== false || $errorCode === 403) {
+					error_log("BigQuery: Permission denied for dataset rename: $old_name -> $new_name");
+					$connection->error = "Permission denied: Cannot rename dataset";
+					return false;
+				}
+				
+				// その他のServiceException
+				error_log("BigQuery: Dataset rename failed - Code: $errorCode, Message: $message");
+				$connection->error = "Dataset rename failed: $message";
+				return false;
+				
+			} catch (Exception $e) {
+				error_log("BigQuery: Dataset rename error - " . $e->getMessage());
+				$connection->error = "Dataset rename error: " . $e->getMessage();
 				return false;
 			}
 		}
