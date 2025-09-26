@@ -26,19 +26,21 @@
 
 ## 完了した機能
 
-### Phase 1 Sprint 1.1 (PR #38) ✅
-- `limit()` - クエリ制限機能
-- `limit1()` - 単一結果制限機能
-- `found_rows()` - 結果行数取得機能
-- `last_id()` - 最終ID取得機能（BigQueryジョブID対応）
+### Phase 1 Sprint 1.1: クエリ制限・結果処理 (2025-09-26完了)
+1. ✅ **limit()機能**: LIMIT/OFFSET句処理（条件付き実装）
+2. ✅ **limit1()機能**: LIMIT 1処理（条件付き実装）
+3. ✅ **last_id()機能**: BigQueryジョブID取得機能（強化版）
+4. ✅ **Resultクラス強化**: num_rowsプロパティとjob参照追加
 
-### Phase 1 Sprint 1.2 (進行中) ✅
-- `explain()` - BigQuery dry run APIを活用したクエリ実行計画機能
-- `error()` - BigQuery特化エラーメッセージ強化機能
-- `ExplainResult`クラス - Adminer互換EXPLAIN結果表示
-- `calculateQueryCost()` - BigQuery クエリコスト計算機能
+### 解決した技術課題
+- ✅ **関数重複宣言エラー**: MySQLドライバーとの関数名競合を回避
+- ✅ **Webサーバー起動**: Fatal errorを解消し、正常なAdminer画面表示を確認
+- ✅ **BigQueryドライバー統合**: 既存機能を破壊せずに新機能を追加
 
 ## 次のタスク
 
-1. Phase 1 Sprint 1.2 PR作成・マージ
-2. Phase 1 Sprint 1.3開始: logged_user/get_databases/information_schema機能実装
+1. ✅ ~~Phase 1 Sprint 1.1完了~~
+2. **Phase 1 Sprint 1.2開始**: explain/error機能実装
+   - BigQuery dry run API活用のexplain()関数
+   - 詳細なエラー分類・メッセージ改善
+   - デバッグ情報充実
