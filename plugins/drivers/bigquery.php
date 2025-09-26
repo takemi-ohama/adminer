@@ -2487,8 +2487,8 @@ if (isset($_GET["bigquery"])) {
 						}
 						
 						// 削除前の安全確認（テーブル数チェック）
-						$tables = iterator_to_array($dataset->tables(['maxResults' => 1]));
-						if (!empty($tables)) {
+						$tableIterator = $dataset->tables(['maxResults' => 1]);
+						if ($tableIterator->current()) {
 							error_log("BigQuery: Warning - Dataset '$database' contains tables, proceeding with deletion");
 						}
 						
@@ -2589,53 +2589,52 @@ if (isset($_GET["bigquery"])) {
 				];
 				$newDataset = $connection->bigQueryClient->createDataset($new_name, $newDatasetOptions);
 				
-				// テーブル一覧取得
-				$tables = iterator_to_array($oldDataset->tables());
-				$tableCount = count($tables);
-				
+				// テーブル一覧取得（イテレータを直接使用）
+				$tableCount = 0;
+
+				// テーブルコピー処理
+				foreach ($oldDataset->tables() as $table) {
+					$tableCount++;
+					$tableName = $table->id();
+					$oldTableId = BigQueryUtils::buildFullTableName($connection->projectId, $old_name, $tableName);
+					$newTableId = BigQueryUtils::buildFullTableName($connection->projectId, $new_name, $tableName);
+
+					try {
+						// テーブルをコピー（CREATE TABLE AS SELECT）
+						$copyQuery = "CREATE TABLE $newTableId AS SELECT * FROM $oldTableId";
+						BigQueryUtils::logQuerySafely($copyQuery, "RENAME_DATASET_COPY_TABLE");
+
+						$queryJob = $connection->bigQueryClient->query($copyQuery)
+							->useLegacySql(false)
+							->location($location);
+						$job = $connection->bigQueryClient->runQuery($queryJob);
+
+						if (!$job->isComplete()) {
+							$job->waitUntilComplete();
+						}
+
+						// ジョブステータス確認
+						$jobInfo = $job->info();
+						if (isset($jobInfo['status']['errorResult'])) {
+							throw new Exception("Table copy failed: " . ($jobInfo['status']['errorResult']['message'] ?? 'Unknown error'));
+						}
+
+						error_log("BigQuery: Successfully copied table '$tableName' to new dataset");
+
+					} catch (Exception $e) {
+						error_log("BigQuery: Failed to copy table '$tableName': " . $e->getMessage());
+						// テーブルコピー失敗時は新データセットをクリーンアップ
+						try {
+							$newDataset->delete(['deleteContents' => true]);
+						} catch (Exception $cleanupError) {
+							error_log("BigQuery: Cleanup failed: " . $cleanupError->getMessage());
+						}
+						$connection->error = "Failed to copy table '$tableName': " . $e->getMessage();
+						return false;
+					}
+				}
 				if ($tableCount > 0) {
 					error_log("BigQuery: Found $tableCount tables to copy from '$old_name' to '$new_name'");
-					
-					// テーブルコピー処理
-					foreach ($tables as $table) {
-						$tableName = $table->id();
-						$oldTableId = "`{$connection->projectId}`.`$old_name`.`$tableName`";
-						$newTableId = "`{$connection->projectId}`.`$new_name`.`$tableName`";
-						
-						try {
-							// テーブルをコピー（CREATE TABLE AS SELECT）
-							$copyQuery = "CREATE TABLE $newTableId AS SELECT * FROM $oldTableId";
-							BigQueryUtils::logQuerySafely($copyQuery, "RENAME_DATASET_COPY_TABLE");
-							
-							$queryJob = $connection->bigQueryClient->query($copyQuery)
-								->useLegacySql(false)
-								->location($location);
-							$job = $connection->bigQueryClient->runQuery($queryJob);
-							
-							if (!$job->isComplete()) {
-								$job->waitUntilComplete();
-							}
-							
-							// ジョブステータス確認
-							$jobInfo = $job->info();
-							if (isset($jobInfo['status']['errorResult'])) {
-								throw new Exception("Table copy failed: " . ($jobInfo['status']['errorResult']['message'] ?? 'Unknown error'));
-							}
-							
-							error_log("BigQuery: Successfully copied table '$tableName' to new dataset");
-							
-						} catch (Exception $e) {
-							error_log("BigQuery: Failed to copy table '$tableName': " . $e->getMessage());
-							// テーブルコピー失敗時は新データセットをクリーンアップ
-							try {
-								$newDataset->delete(['deleteContents' => true]);
-							} catch (Exception $cleanupError) {
-								error_log("BigQuery: Cleanup failed: " . $cleanupError->getMessage());
-							}
-							$connection->error = "Failed to copy table '$tableName': " . $e->getMessage();
-							return false;
-						}
-					}
 				}
 				
 				// 元データセット削除
