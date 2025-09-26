@@ -800,12 +800,64 @@ if (isset($_GET["bigquery"])) {
 		}
 		function error()
 		{
-
+			// Phase 1 Sprint 1.2: エラーハンドリング強化
 			if (!empty($this->error)) {
-				return $this->error;
+				return $this->enhanceErrorMessage($this->error);
 			}
 
 			return "Check server logs for detailed error information";
+		}
+		
+		/**
+		 * Phase 1 Sprint 1.2: BigQuery特化エラーメッセージ強化
+		 * @param string $originalError 元のエラーメッセージ
+		 * @return string 強化されたエラーメッセージ
+		 */
+		private function enhanceErrorMessage($originalError)
+		{
+			// BigQuery固有エラーパターンの分類と改善
+			$patterns = array(
+				// 認証エラー
+				'/Authentication failed|Unauthenticated|401/' => 
+					'BigQuery認証エラー: サービスアカウント認証情報を確認してください。GOOGLE_APPLICATION_CREDENTIALSが正しく設定されているか確認してください。',
+				
+				// 権限エラー  
+				'/Permission denied|Forbidden|403/' => 
+					'BigQuery権限エラー: サービスアカウントにBigQueryの適切な権限が付与されているか確認してください。必要な権限: bigquery.jobs.create, bigquery.datasets.get',
+				
+				// プロジェクトエラー
+				'/Invalid project|Project not found|404/' => 
+					'BigQueryプロジェクトエラー: 指定されたプロジェクトIDが存在しないか、アクセス権限がありません。',
+				
+				// データセットエラー
+				'/Dataset.*not found|Not found: Dataset/' => 
+					'BigQueryデータセットエラー: 指定されたデータセットが存在しません。データセット名とプロジェクトIDを確認してください。',
+				
+				// テーブルエラー
+				'/Table.*not found|Not found: Table/' => 
+					'BigQueryテーブルエラー: 指定されたテーブルが存在しません。テーブル名とデータセット名を確認してください。',
+				
+				// クエリエラー
+				'/Syntax error|Invalid query|Bad request/' => 
+					'BigQuery SQLエラー: クエリの構文に問題があります。BigQuery標準SQLの構文を確認してください。',
+				
+				// リソース制限エラー
+				'/Exceeded rate limits|Quota exceeded/' => 
+					'BigQueryリソース制限エラー: API制限またはクォータを超過しました。しばらく待ってから再試行してください。',
+				
+				// 接続エラー
+				'/Connection.*failed|Network.*error/' => 
+					'BigQuery接続エラー: ネットワーク接続を確認してください。Google Cloud APIへの接続が必要です。'
+			);
+			
+			foreach ($patterns as $pattern => $enhancement) {
+				if (preg_match($pattern, $originalError)) {
+					return $enhancement . "\n\n元のエラー: " . $originalError;
+				}
+			}
+			
+			// パターンにマッチしない場合は元のエラーメッセージを返す
+			return $originalError;
 		}
 
 		function multi_query($query)
@@ -1240,15 +1292,57 @@ if (isset($_GET["bigquery"])) {
 			}
 
 			try {
+				// Phase 1 Sprint 1.2: BigQuery dry run APIを活用したexplain機能強化
+				$queryJob = $connection->bigQueryClient->query($query)
+					->dryRun(true)  // BigQuery dry run実行
+					->useLegacySql(false)
+					->location($connection->determineQueryLocation());
 
-				$explainQuery = "EXPLAIN " . $query;
-				BigQueryUtils::logQuerySafely($explainQuery, "EXPLAIN");
-				$result = $connection->query($explainQuery);
-				return $result;
+				$queryResults = $connection->bigQueryClient->runQuery($queryJob);
+				$jobInfo = $queryResults->info();
+
+				// BigQuery固有の実行計画情報を取得
+				$explainInfo = array(
+					'totalBytesProcessed' => $jobInfo['totalBytesProcessed'] ?? 0,
+					'estimatedCost' => $this->calculateQueryCost($jobInfo['totalBytesProcessed'] ?? 0),
+					'cacheHit' => $jobInfo['cacheHit'] ?? false,
+					'queryPlan' => $jobInfo['queryPlan'] ?? array(),
+					'schema' => $jobInfo['schema'] ?? array(),
+					'referencedTables' => $jobInfo['referencedTables'] ?? array(),
+					'dryRun' => true
+				);
+
+				BigQueryUtils::logQuerySafely("Dry run completed: " . ($jobInfo['totalBytesProcessed'] ?? 0) . " bytes", "EXPLAIN");
+				
+				// Adminer互換のResult形式で返す
+				return new ExplainResult($explainInfo);
+				
 			} catch (Exception $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'EXPLAIN_ERROR');
-				return false;
+				// フォールバック: 通常のEXPLAIN文実行
+				try {
+					$explainQuery = "EXPLAIN " . $query;
+					BigQueryUtils::logQuerySafely($explainQuery, "EXPLAIN_FALLBACK");
+					$result = $connection->query($explainQuery);
+					return $result;
+				} catch (Exception $fallbackError) {
+					BigQueryUtils::logQuerySafely($e->getMessage(), 'EXPLAIN_ERROR');
+					return false;
+				}
 			}
+		}
+
+		/**
+		 * Phase 1 Sprint 1.2: BigQueryクエリコスト計算
+		 * @param int $totalBytesProcessed 処理されるバイト数
+		 * @return float 推定コスト (USD)
+		 */
+		private function calculateQueryCost($totalBytesProcessed)
+		{
+			// BigQuery価格 (2024年現在): $6.25 per TB processed
+			$pricePerTB = 6.25;
+			$bytesInTB = 1024 * 1024 * 1024 * 1024; // 1TB in bytes
+			
+			return ($totalBytesProcessed / $bytesInTB) * $pricePerTB;
 		}
 
 		function css()
@@ -2533,6 +2627,81 @@ class AdminerLoginBigQuery extends \Adminer\Plugin
 		'en' => array('' => 'BigQuery authentication with service account credentials'),
 		'ja' => array('' => 'サービスアカウント認証情報によるBigQuery認証'),
 	);
+}
+
+// =============================================================================
+// Phase 1 Sprint 1.2: explain機能とエラー処理強化
+// =============================================================================
+
+/**
+ * BigQuery EXPLAIN結果用の特殊Resultクラス
+ */
+class ExplainResult
+{
+	private $explainInfo;
+	
+	public function __construct($explainInfo)
+	{
+		$this->explainInfo = $explainInfo;
+	}
+	
+	public function fetch_assoc()
+	{
+		static $returned = false;
+		if ($returned) {
+			return false;
+		}
+		$returned = true;
+		
+		// Adminer EXPLAIN表示用のフォーマット
+		return array(
+			'id' => 1,
+			'select_type' => 'SIMPLE',
+			'table' => 'BigQuery',
+			'type' => 'ALL', 
+			'possible_keys' => null,
+			'key' => null,
+			'key_len' => null,
+			'ref' => null,
+			'rows' => $this->formatBytes($this->explainInfo['totalBytesProcessed']),
+			'Extra' => $this->formatExtraInfo()
+		);
+	}
+	
+	public function fetch_row()
+	{
+		$assoc = $this->fetch_assoc();
+		return $assoc ? array_values($assoc) : false;
+	}
+	
+	public function num_fields()
+	{
+		return 10; // EXPLAIN結果の標準カラム数
+	}
+	
+	private function formatBytes($bytes)
+	{
+		if ($bytes == 0) return '0 B';
+		$k = 1024;
+		$sizes = array('B', 'KB', 'MB', 'GB', 'TB');
+		$i = floor(log($bytes) / log($k));
+		return round($bytes / pow($k, $i), 2) . ' ' . $sizes[$i];
+	}
+	
+	private function formatExtraInfo()
+	{
+		$info = array();
+		if ($this->explainInfo['dryRun']) {
+			$info[] = 'Dry run';
+		}
+		if ($this->explainInfo['cacheHit']) {
+			$info[] = 'Cache hit';
+		}
+		if ($this->explainInfo['estimatedCost'] > 0) {
+			$info[] = 'Est. cost: $' . number_format($this->explainInfo['estimatedCost'], 4);
+		}
+		return implode('; ', $info);
+	}
 }
 
 class AdminerBigQueryCSS extends \Adminer\Plugin
