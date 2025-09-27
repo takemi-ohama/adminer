@@ -2596,8 +2596,8 @@ if (isset($_GET["bigquery"])) {
 				foreach ($oldDataset->tables() as $table) {
 					$tableCount++;
 					$tableName = $table->id();
-					$oldTableId = BigQueryUtils::buildFullTableName($connection->projectId, $old_name, $tableName);
-					$newTableId = BigQueryUtils::buildFullTableName($connection->projectId, $new_name, $tableName);
+					$oldTableId = BigQueryUtils::buildFullTableName($tableName, $old_name, $connection->projectId);
+					$newTableId = BigQueryUtils::buildFullTableName($tableName, $new_name, $connection->projectId);
 
 					try {
 						// テーブルをコピー（CREATE TABLE AS SELECT）
@@ -2802,16 +2802,16 @@ if (isset($_GET["bigquery"])) {
 					}
 					
 					// ソーステーブルの存在確認
-					$sourceTableId = BigQueryUtils::buildFullTableName($connection->projectId, $currentDb, $table);
+					$sourceTableId = BigQueryUtils::buildFullTableName($table, $currentDb, $connection->projectId);
 					$sourceTable = $connection->bigQueryClient->dataset($currentDb)->table($table);
 					if (!$sourceTable->exists()) {
 						$errors[] = "Source table '$table' does not exist in dataset '$currentDb'";
 						continue;
 					}
-					
+
 					// ターゲットテーブル名の設定
 					$targetTableName = $table;
-					$targetTableId = BigQueryUtils::buildFullTableName($connection->projectId, $targetDb, $targetTableName);
+					$targetTableId = BigQueryUtils::buildFullTableName($targetTableName, $targetDb, $connection->projectId);
 					
 					// 既存テーブルの確認と上書き処理
 					$targetTable = $targetDataset->table($targetTableName);
@@ -2881,7 +2881,7 @@ if (isset($_GET["bigquery"])) {
 			
 			// 成功ログ
 			if ($successCount > 0) {
-				error_log("BigQuery: copy_tables completed - $successCount/$" . count($tables) . " tables copied to '$targetDb'");
+				error_log(sprintf("BigQuery: copy_tables completed - %d/%d tables copied to '%s'", $successCount, count($tables), $targetDb));
 			}
 			
 			return $successCount > 0;
@@ -2958,23 +2958,23 @@ if (isset($_GET["bigquery"])) {
 					}
 					
 					// ソーステーブルの存在確認
-					$sourceTableId = BigQueryUtils::buildFullTableName($connection->projectId, $currentDb, $table);
+					$sourceTableId = BigQueryUtils::buildFullTableName($table, $currentDb, $connection->projectId);
 					$sourceTable = $connection->bigQueryClient->dataset($currentDb)->table($table);
 					if (!$sourceTable->exists()) {
 						$errors[] = "Source table '$table' does not exist in dataset '$currentDb'";
 						continue;
 					}
-					
+
 					// 移動前情報の保存
 					$originalTables[] = array(
 						'name' => $table,
 						'sourceDataset' => $currentDb,
 						'sourceTable' => $sourceTable
 					);
-					
+
 					// ターゲットテーブル名の設定
 					$targetTableName = $table;
-					$targetTableId = BigQueryUtils::buildFullTableName($connection->projectId, $targetDb, $targetTableName);
+					$targetTableId = BigQueryUtils::buildFullTableName($targetTableName, $targetDb, $connection->projectId);
 					
 					// ターゲットでの名前衝突チェック
 					$targetTable = $targetDataset->table($targetTableName);
@@ -3039,7 +3039,7 @@ if (isset($_GET["bigquery"])) {
 						$sourceTable = $tableInfo['sourceTable'];
 						
 						// 元テーブル削除
-						BigQueryUtils::logQuerySafely("DROP TABLE " . BigQueryUtils::buildFullTableName($connection->projectId, $currentDb, $tableName), "MOVE_TABLES_DELETE");
+						BigQueryUtils::logQuerySafely("DROP TABLE " . BigQueryUtils::buildFullTableName($tableName, $currentDb, $connection->projectId), "MOVE_TABLES_DELETE");
 						$sourceTable->delete();
 						
 						error_log("BigQuery: Successfully deleted source table '$tableName' after move to '$targetDb'");
