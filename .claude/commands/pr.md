@@ -19,7 +19,7 @@
    - `mcp__github__create_pull_request`使用
    - タイトル・説明: 日本語、body: Summary+Test plan
       - Summaryの末尾に <!-- I want to review in Japanese. --> を入れる
-   - github mcpまたはghでcopilotをreviewerに指定
+   - PR作成後、github mcpまたはghでcopilotをreviewerに指定
 
 ## 命名規則
 - ブランチ: 英語（例: update-config）
