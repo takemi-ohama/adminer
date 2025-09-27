@@ -2747,11 +2747,331 @@ if (isset($_GET["bigquery"])) {
 			}
 		}
 
-		function move_tables($tables, $views, $target)
-		{
-
+	// Phase 3 Sprint 3.2: BigQueryテーブルコピー機能実装
+	// 同一データセット内・データセット間でのテーブルコピーをサポート
+	function copy_tables($tables, $target_db, $overwrite)
+	{
+		global $connection;
+		
+		if (!$connection || !isset($connection->bigQueryClient)) {
 			return false;
 		}
+		
+		if (empty($tables) || !is_array($tables)) {
+			return false;
+		}
+		
+		$errors = array();
+		$successCount = 0;
+		
+		try {
+			// 現在のデータセット名を取得
+			$currentDb = $_GET['db'] ?? $connection->datasetId ?? '';
+			if (empty($currentDb)) {
+				$connection->error = "Current dataset not specified";
+				return false;
+			}
+			
+			// ターゲットデータセット名の設定（空の場合は現在のデータセット）
+			$targetDb = !empty($target_db) ? $target_db : $currentDb;
+			
+			// データセット名の検証
+			if (!preg_match('/^[a-zA-Z0-9_]{1,1024}$/', $targetDb)) {
+				$connection->error = "Invalid target dataset name format: $targetDb";
+				return false;
+			}
+			
+			// ターゲットデータセットの存在確認
+			$targetDataset = $connection->bigQueryClient->dataset($targetDb);
+			if (!$targetDataset->exists()) {
+				$connection->error = "Target dataset '$targetDb' does not exist";
+				return false;
+			}
+			
+			// 各テーブルのコピー処理
+			foreach ($tables as $table) {
+				if (empty($table)) {
+					continue;
+				}
+				
+				try {
+					// テーブル名の検証
+					if (!preg_match('/^[a-zA-Z0-9_]{1,1024}$/', $table)) {
+						$errors[] = "Invalid table name format: $table";
+						continue;
+					}
+					
+					// ソーステーブルの存在確認
+					$sourceTableId = BigQueryUtils::buildFullTableName($connection->projectId, $currentDb, $table);
+					$sourceTable = $connection->bigQueryClient->dataset($currentDb)->table($table);
+					if (!$sourceTable->exists()) {
+						$errors[] = "Source table '$table' does not exist in dataset '$currentDb'";
+						continue;
+					}
+					
+					// ターゲットテーブル名の設定
+					$targetTableName = $table;
+					$targetTableId = BigQueryUtils::buildFullTableName($connection->projectId, $targetDb, $targetTableName);
+					
+					// 既存テーブルの確認と上書き処理
+					$targetTable = $targetDataset->table($targetTableName);
+					if ($targetTable->exists()) {
+						if (!$overwrite) {
+							$errors[] = "Target table '$targetTableName' already exists in dataset '$targetDb' (overwrite disabled)";
+							continue;
+						} else {
+							// 既存テーブルを削除
+							BigQueryUtils::logQuerySafely("DROP TABLE $targetTableId (overwrite)", "COPY_TABLES_OVERWRITE");
+							$targetTable->delete();
+							error_log("BigQuery: Deleted existing target table '$targetTableName' for overwrite");
+						}
+					}
+					
+					// テーブルコピー実行（CREATE TABLE AS SELECT）
+					$copyQuery = "CREATE TABLE $targetTableId AS SELECT * FROM $sourceTableId";
+					BigQueryUtils::logQuerySafely($copyQuery, "COPY_TABLES");
+					
+					// ソーステーブルの場所情報を取得
+					$sourceTableInfo = $sourceTable->info();
+					$location = $sourceTableInfo['location'] ?? 'US';
+					
+					$queryJob = $connection->bigQueryClient->query($copyQuery)
+						->useLegacySql(false)
+						->location($location);
+					$job = $connection->bigQueryClient->runQuery($queryJob);
+					
+					if (!$job->isComplete()) {
+						$job->waitUntilComplete();
+					}
+					
+					// ジョブステータス確認
+					$jobInfo = $job->info();
+					if (isset($jobInfo['status']['errorResult'])) {
+						throw new Exception("Table copy failed: " . ($jobInfo['status']['errorResult']['message'] ?? 'Unknown error'));
+					}
+					
+					error_log("BigQuery: Successfully copied table '$table' from '$currentDb' to '$targetDb'");
+					$successCount++;
+					
+				} catch (ServiceException $e) {
+					$message = $e->getMessage();
+					$errorCode = $e->getCode();
+					
+					// 権限エラー
+					if (strpos($message, 'permission') !== false || $errorCode === 403) {
+						$errors[] = "Permission denied: Cannot copy table '$table'";
+					}
+					// その他のServiceException
+					else {
+						$errors[] = "Failed to copy table '$table': $message";
+					}
+					
+					BigQueryUtils::logQuerySafely($e->getMessage(), 'COPY_TABLES_ERROR');
+					
+				} catch (Exception $e) {
+					$errors[] = "Copy table '$table' failed: " . $e->getMessage();
+					BigQueryUtils::logQuerySafely($e->getMessage(), 'COPY_TABLES_ERROR');
+				}
+			}
+			
+			// エラーハンドリング
+			if (!empty($errors) && $connection) {
+				$connection->error = implode('; ', $errors);
+			}
+			
+			// 成功ログ
+			if ($successCount > 0) {
+				error_log("BigQuery: copy_tables completed - $successCount/$" . count($tables) . " tables copied to '$targetDb'");
+			}
+			
+			return $successCount > 0;
+			
+		} catch (Exception $e) {
+			if ($connection) {
+				$connection->error = "COPY TABLES failed: " . $e->getMessage();
+			}
+			BigQueryUtils::logQuerySafely($e->getMessage(), 'COPY_TABLES_ERROR');
+			return false;
+		}
+	}
+
+		function move_tables($tables, $views, $target)
+	{
+		// Phase 3 Sprint 3.2: BigQueryテーブル移動機能強化実装
+		// テーブル移動はコピー→削除のフローで実現（BigQuery制限対応）
+		
+		global $connection;
+		
+		if (!$connection || !isset($connection->bigQueryClient)) {
+			return false;
+		}
+		
+		if (empty($tables) || !is_array($tables)) {
+			return false;
+		}
+		
+		$errors = array();
+		$successCount = 0;
+		$originalTables = array(); // 復元用のテーブル情報保存
+		
+		try {
+			// 現在のデータセット名を取得
+			$currentDb = $_GET['db'] ?? $connection->datasetId ?? '';
+			if (empty($currentDb)) {
+				$connection->error = "Current dataset not specified";
+				return false;
+			}
+			
+			// ターゲットデータセット名の設定
+			$targetDb = !empty($target) ? $target : $currentDb;
+			
+			// データセット名の検証
+			if (!preg_match('/^[a-zA-Z0-9_]{1,1024}$/', $targetDb)) {
+				$connection->error = "Invalid target dataset name format: $targetDb";
+				return false;
+			}
+			
+			// 同一データセット内の移動は無効
+			if ($currentDb === $targetDb) {
+				$connection->error = "Cannot move tables within the same dataset";
+				return false;
+			}
+			
+			// ターゲットデータセットの存在確認
+			$targetDataset = $connection->bigQueryClient->dataset($targetDb);
+			if (!$targetDataset->exists()) {
+				$connection->error = "Target dataset '$targetDb' does not exist";
+				return false;
+			}
+			
+			// Phase 1: 各テーブルをターゲットにコピー
+			foreach ($tables as $table) {
+				if (empty($table)) {
+					continue;
+				}
+				
+				try {
+					// テーブル名の検証
+					if (!preg_match('/^[a-zA-Z0-9_]{1,1024}$/', $table)) {
+						$errors[] = "Invalid table name format: $table";
+						continue;
+					}
+					
+					// ソーステーブルの存在確認
+					$sourceTableId = BigQueryUtils::buildFullTableName($connection->projectId, $currentDb, $table);
+					$sourceTable = $connection->bigQueryClient->dataset($currentDb)->table($table);
+					if (!$sourceTable->exists()) {
+						$errors[] = "Source table '$table' does not exist in dataset '$currentDb'";
+						continue;
+					}
+					
+					// 移動前情報の保存
+					$originalTables[] = array(
+						'name' => $table,
+						'sourceDataset' => $currentDb,
+						'sourceTable' => $sourceTable
+					);
+					
+					// ターゲットテーブル名の設定
+					$targetTableName = $table;
+					$targetTableId = BigQueryUtils::buildFullTableName($connection->projectId, $targetDb, $targetTableName);
+					
+					// ターゲットでの名前衝突チェック
+					$targetTable = $targetDataset->table($targetTableName);
+					if ($targetTable->exists()) {
+						$errors[] = "Target table '$targetTableName' already exists in dataset '$targetDb'";
+						continue;
+					}
+					
+					// テーブルコピー実行（CREATE TABLE AS SELECT）
+					$copyQuery = "CREATE TABLE $targetTableId AS SELECT * FROM $sourceTableId";
+					BigQueryUtils::logQuerySafely($copyQuery, "MOVE_TABLES_COPY");
+					
+					// ソーステーブルの場所情報を取得
+					$sourceTableInfo = $sourceTable->info();
+					$location = $sourceTableInfo['location'] ?? 'US';
+					
+					$queryJob = $connection->bigQueryClient->query($copyQuery)
+						->useLegacySql(false)
+						->location($location);
+					$job = $connection->bigQueryClient->runQuery($queryJob);
+					
+					if (!$job->isComplete()) {
+						$job->waitUntilComplete();
+					}
+					
+					// ジョブステータス確認
+					$jobInfo = $job->info();
+					if (isset($jobInfo['status']['errorResult'])) {
+						throw new Exception("Table copy failed: " . ($jobInfo['status']['errorResult']['message'] ?? 'Unknown error'));
+					}
+					
+					error_log("BigQuery: Successfully copied table '$table' from '$currentDb' to '$targetDb' for move operation");
+					$successCount++;
+					
+				} catch (ServiceException $e) {
+					$message = $e->getMessage();
+					$errorCode = $e->getCode();
+					
+					// 権限エラー
+					if (strpos($message, 'permission') !== false || $errorCode === 403) {
+						$errors[] = "Permission denied: Cannot move table '$table'";
+					}
+					// その他のServiceException
+					else {
+						$errors[] = "Failed to move table '$table': $message";
+					}
+					
+					BigQueryUtils::logQuerySafely($e->getMessage(), 'MOVE_TABLES_ERROR');
+					
+				} catch (Exception $e) {
+					$errors[] = "Move table '$table' failed: " . $e->getMessage();
+					BigQueryUtils::logQuerySafely($e->getMessage(), 'MOVE_TABLES_ERROR');
+				}
+			}
+			
+			// Phase 2: コピー成功したテーブルの元テーブルを削除
+			$deletedCount = 0;
+			foreach ($originalTables as $tableInfo) {
+				if ($deletedCount < $successCount) {
+					try {
+						$tableName = $tableInfo['name'];
+						$sourceTable = $tableInfo['sourceTable'];
+						
+						// 元テーブル削除
+						BigQueryUtils::logQuerySafely("DROP TABLE " . BigQueryUtils::buildFullTableName($connection->projectId, $currentDb, $tableName), "MOVE_TABLES_DELETE");
+						$sourceTable->delete();
+						
+						error_log("BigQuery: Successfully deleted source table '$tableName' after move to '$targetDb'");
+						$deletedCount++;
+						
+					} catch (Exception $e) {
+						error_log("BigQuery: Warning - Failed to delete source table '{$tableInfo['name']}' after move: " . $e->getMessage());
+						$errors[] = "Move completed but failed to delete source table '{$tableInfo['name']}': " . $e->getMessage();
+					}
+				}
+			}
+			
+			// エラーハンドリング
+			if (!empty($errors) && $connection) {
+				$connection->error = implode('; ', $errors);
+			}
+			
+			// 成功ログ
+			if ($successCount > 0) {
+				error_log("BigQuery: move_tables completed - $successCount/" . count($tables) . " tables moved from '$currentDb' to '$targetDb'");
+			}
+			
+			return $successCount > 0;
+			
+		} catch (Exception $e) {
+			if ($connection) {
+				$connection->error = "MOVE TABLES failed: " . $e->getMessage();
+			}
+			BigQueryUtils::logQuerySafely($e->getMessage(), 'MOVE_TABLES_ERROR');
+			return false;
+		}
+	}
 
 	}
 }
