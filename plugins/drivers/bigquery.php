@@ -3242,7 +3242,7 @@ if (!function_exists('import_sql')) {
 			}
 			
 			// BigQuery対応のSQL文分割処理
-			$statements = $this->parseBigQueryStatements($sqlContent);
+			$statements = parseBigQueryStatements($sqlContent);
 			if (empty($statements)) {
 				error_log("BigQuery: No valid SQL statements found in file");
 				return false;
@@ -3258,7 +3258,7 @@ if (!function_exists('import_sql')) {
 			// SQLステートメントを順次実行
 			foreach ($statements as $index => $statement) {
 				$trimmedStatement = trim($statement);
-				if (empty($trimmedStatement) || $this->isCommentOnly($trimmedStatement)) {
+				if (empty($trimmedStatement) || isCommentOnly($trimmedStatement)) {
 					continue;
 				}
 				
@@ -3327,11 +3327,14 @@ if (!function_exists('import_sql')) {
 		}
 	}
 	
-	private function parseBigQueryStatements($sqlContent)
+}
+
+if (!function_exists('parseBigQueryStatements')) {
+	function parseBigQueryStatements($sqlContent)
 	{
 		// BigQuery用SQL文分割処理
 		// セミコロン区切りだが、文字列内・コメント内のセミコロンは無視
-		
+
 		$statements = array();
 		$currentStatement = '';
 		$inSingleQuote = false;
@@ -3339,12 +3342,12 @@ if (!function_exists('import_sql')) {
 		$inBacktick = false;
 		$inLineComment = false;
 		$inBlockComment = false;
-		
+
 		$length = strlen($sqlContent);
 		for ($i = 0; $i < $length; $i++) {
 			$char = $sqlContent[$i];
 			$nextChar = ($i + 1 < $length) ? $sqlContent[$i + 1] : '';
-			
+
 			// コメント処理
 			if (!$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
 				// 行コメント開始
@@ -3360,14 +3363,14 @@ if (!function_exists('import_sql')) {
 					continue;
 				}
 			}
-			
+
 			// 行コメント終了
 			if ($inLineComment && ($char === "\n" || $char === "\r")) {
 				$inLineComment = false;
 				$currentStatement .= $char;
 				continue;
 			}
-			
+
 			// ブロックコメント終了
 			if ($inBlockComment && $char === '*' && $nextChar === '/') {
 				$inBlockComment = false;
@@ -3375,13 +3378,13 @@ if (!function_exists('import_sql')) {
 				$i++; // Skip next character
 				continue;
 			}
-			
+
 			// コメント内の場合はそのまま追加
 			if ($inLineComment || $inBlockComment) {
 				$currentStatement .= $char;
 				continue;
 			}
-			
+
 			// クォート処理
 			if ($char === "'" && !$inDoubleQuote && !$inBacktick) {
 				$inSingleQuote = !$inSingleQuote;
@@ -3390,7 +3393,7 @@ if (!function_exists('import_sql')) {
 			} elseif ($char === '`' && !$inSingleQuote && !$inDoubleQuote) {
 				$inBacktick = !$inBacktick;
 			}
-			
+
 			// セミコロン分割（クォート外の場合のみ）
 			if ($char === ';' && !$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
 				$trimmedStatement = trim($currentStatement);
@@ -3400,27 +3403,30 @@ if (!function_exists('import_sql')) {
 				$currentStatement = '';
 				continue;
 			}
-			
+
 			$currentStatement .= $char;
 		}
-		
+
 		// 最後のステートメント処理
 		$trimmedStatement = trim($currentStatement);
 		if (!empty($trimmedStatement)) {
 			$statements[] = $trimmedStatement;
 		}
-		
+
 		return $statements;
 	}
-	
-	private function isCommentOnly($statement)
+}
+
+if (!function_exists('isCommentOnly')) {
+	function isCommentOnly($statement)
 	{
 		// コメントのみの行判定
 		$trimmed = trim($statement);
-		return empty($trimmed) || 
+		return empty($trimmed) ||
 			   strpos($trimmed, '--') === 0 ||
 			   (strpos($trimmed, '/*') === 0 && strpos($trimmed, '*/') !== false);
 	}
+}
 
 	function truncate_table($table)
 	{
