@@ -3193,17 +3193,25 @@ if (!function_exists('import_sql')) {
 				$viewInfo['refresh_interval'] = $tableInfo['materializedView']['refreshIntervalMs'] / 1000 . ' seconds';
 			}
 			
-			BigQueryUtils::logQuerySafely("VIEW INFO: $name", "VIEW_INFO");
+			// ビュー名をサニタイズしてログ出力（ログインジェクション防止）
+			$sanitizedName = preg_replace('/[^\w\-\.]/', '_', $name);
+			BigQueryUtils::logQuerySafely("VIEW INFO: $sanitizedName", "VIEW_INFO");
 			return $viewInfo;
 			
 		} catch (ServiceException $e) {
 			$message = $e->getMessage();
 			if (strpos($message, '404') === false && strpos($message, 'Not found') === false) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'VIEW_ERROR');
+				// エラーメッセージをサニタイズしてログ出力（機密情報漏洩防止）
+				$sanitizedError = preg_replace('/([\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]+)/', '[EMAIL_REDACTED]', $message);
+				$sanitizedError = preg_replace('/(project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+)/i', '[PROJECT_REDACTED]', $sanitizedError);
+				BigQueryUtils::logQuerySafely($sanitizedError, 'VIEW_ERROR');
 			}
 			return array();
 		} catch (Exception $e) {
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'VIEW_ERROR');
+			// エラーメッセージをサニタイズしてログ出力（機密情報漏洩防止）
+			$sanitizedError = preg_replace('/([\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]+)/', '[EMAIL_REDACTED]', $e->getMessage());
+			$sanitizedError = preg_replace('/(project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+)/i', '[PROJECT_REDACTED]', $sanitizedError);
+			BigQueryUtils::logQuerySafely($sanitizedError, 'VIEW_ERROR');
 			return array();
 		}
 	}
@@ -3263,10 +3271,12 @@ if (!function_exists('import_sql')) {
 				}
 				
 				try {
-					// BigQuery危険パターンチェック
-					if (BigQueryConfig::isDangerousQuery($trimmedStatement)) {
-						$errors[] = "Statement " . ($index + 1) . ": Dangerous SQL pattern detected";
-						continue;
+					// BigQuery危険パターンチェック（メソッド存在確認付き）
+					if (class_exists('BigQueryConfig') && method_exists('BigQueryConfig', 'isDangerousQuery')) {
+						if (BigQueryConfig::isDangerousQuery($trimmedStatement)) {
+							$errors[] = "Statement " . ($index + 1) . ": Dangerous SQL pattern detected";
+							continue;
+						}
 					}
 					
 					// BigQueryクエリ実行
@@ -3291,10 +3301,16 @@ if (!function_exists('import_sql')) {
 					
 				} catch (ServiceException $e) {
 					$errors[] = "Statement " . ($index + 1) . ": " . $e->getMessage();
-					BigQueryUtils::logQuerySafely($e->getMessage(), 'SQL_IMPORT_ERROR');
+					// エラーメッセージをサニタイズしてログ出力（機密情報漏洩防止）
+					$sanitizedError = preg_replace('/([\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]+)/', '[EMAIL_REDACTED]', $e->getMessage());
+					$sanitizedError = preg_replace('/(project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+)/i', '[PROJECT_REDACTED]', $sanitizedError);
+					BigQueryUtils::logQuerySafely($sanitizedError, 'SQL_IMPORT_ERROR');
 				} catch (Exception $e) {
 					$errors[] = "Statement " . ($index + 1) . ": " . $e->getMessage();
-					BigQueryUtils::logQuerySafely($e->getMessage(), 'SQL_IMPORT_ERROR');
+					// エラーメッセージをサニタイズしてログ出力（機密情報漏洩防止）
+					$sanitizedError = preg_replace('/([\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]+)/', '[EMAIL_REDACTED]', $e->getMessage());
+					$sanitizedError = preg_replace('/(project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+)/i', '[PROJECT_REDACTED]', $sanitizedError);
+					BigQueryUtils::logQuerySafely($sanitizedError, 'SQL_IMPORT_ERROR');
 				}
 			}
 			
@@ -3322,7 +3338,10 @@ if (!function_exists('import_sql')) {
 			
 		} catch (Exception $e) {
 			error_log("BigQuery: SQL import failed - " . $e->getMessage());
-			BigQueryUtils::logQuerySafely($e->getMessage(), 'SQL_IMPORT_FAILED');
+			// エラーメッセージをサニタイズしてログ出力（機密情報漏洩防止）
+			$sanitizedError = preg_replace('/([\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]+)/', '[EMAIL_REDACTED]', $e->getMessage());
+			$sanitizedError = preg_replace('/(project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+)/i', '[PROJECT_REDACTED]', $sanitizedError);
+			BigQueryUtils::logQuerySafely($sanitizedError, 'SQL_IMPORT_FAILED');
 			return false;
 		}
 	}
