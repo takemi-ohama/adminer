@@ -7,7 +7,7 @@
 2. review commentがある場合、内容を読み取り
 3. 指摘された問題点を修正
 4. 修正結果をコミット・プッシュ
-5. copilotにreviewを再依頼
+5. github mcpまたはghでcopilotにreviewを再依頼
 
 
 ## 修正方針
