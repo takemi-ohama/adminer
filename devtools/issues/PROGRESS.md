@@ -4,9 +4,9 @@
 **計画書**: plan04.md
 
 ## 現在の状況
-- **Phase**: Phase 3 Sprint 3.1 完了
-- **進捗**: 81% (17/21機能)
-- **作業ブランチ**: phase3-sprint3.1-dataset-operations
+- **Phase**: Phase 4 Sprint 4.1 完了
+- **進捗**: 100% (21/21機能)
+- **作業ブランチ**: phase4-sprint4.1-view-import
 
 ## Phase 1: 基本機能完成（優先度1-4）- 3日間 ✅
 - [x] Sprint 1.1: クエリ制限・結果処理（1日）- ✅ 完了 (PR #38)
@@ -21,7 +21,7 @@
 - [ ] Sprint 3.2: テーブル管理（1日）
 
 ## Phase 4: 高度機能・最適化（優先度12-14）- 2日間
-- [ ] Sprint 4.1: ビュー・インポート機能（1日）
+- [x] Sprint 4.1: ビュー・インポート機能（1日）- ✅ 完了 (PR #45)
 - [ ] Sprint 4.2: 最適化・ポリッシュ（1日）
 
 ## 完了した機能
@@ -53,7 +53,25 @@
 - `drop_databases()` - データセット削除機能（複数データセット安全削除・テーブル存在警告）
 - `rename_database()` - データセット名変更機能（作成→コピー→削除フロー・全テーブル自動コピー）
 
-## 次のタスク
+### Phase 3 Sprint 3.2 ✅
+- `alter_table()` - テーブル作成機能（BigQuery固有スキーマ設定）
+- `copy_tables()` - テーブルコピー機能（データセット間・同一データセット内対応）
+- `move_tables()` - テーブル移動機能（コピー→削除フロー）
 
-1. Phase 3 Sprint 3.1 PR作成・マージ（データセット操作機能完了）
-2. Phase 3 Sprint 3.2開始: alter_table/copy_tables/move_tables機能実装（※copy_tables/move_tables既に実装済み）
+### Phase 4 Sprint 4.1 (PR #45) ✅
+- `view()` - ビュー情報取得機能（BigQuery INFORMATION_SCHEMAクエリ活用）
+- `import_sql()` - SQLインポート機能（複数文対応・セキュリティ強化）
+
+## 残りのタスク
+
+### Phase 4 Sprint 4.2: 最適化・ポリッシュ（1日）
+- [ ] パフォーマンス最適化（BigQuery API呼び出し効率化）
+- [ ] UI/UX改善（Adminer UI要素の最適化）
+- [ ] エラーハンドリング強化
+- [ ] 包括的テスト実行とバグ修正
+
+### 実装完了判定
+- **Phase 1-3**: 17機能 ✅ 完了
+- **Phase 4.1**: 2機能 ✅ 完了
+- **Phase 4.2**: 最適化作業 ⏳ 残り
+- **総合進捗**: 19/21機能完了 (90%)
