@@ -3084,10 +3084,7 @@ if (isset($_GET["bigquery"])) {
 		}
 		
 		try {
-			// BigQueryではAUTO_INCREMENTが存在しないため、代替手法を提案
-			// 1. GENERATE_UUID() を使った一意ID
-			// 2. CURRENT_TIMESTAMP() を使ったタイムスタンプベースID
-			// 3. ROW_NUMBER() を使った連番生成
+			// BigQueryではAUTO_INCREMENTが存在しないため、最大値+1を返すアプローチを実装
 			
 			if ($table) {
 				$database = $_GET['db'] ?? $connection->datasetId ?? '';
@@ -3106,16 +3103,31 @@ if (isset($_GET["bigquery"])) {
 				$projectId = $connection->projectId ?? 'default';
 				$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
 				
-				// 数値型の最初のカラムを探してその最大値を取得
+				// BigQuery数値型の包括的検出（BigQueryConfig::TYPE_MAPPINGを活用）
 				$fields = fields($table);
 				$numericFields = array_filter($fields, function($field) {
 					$type = strtolower($field['type'] ?? '');
-					return strpos($type, 'int') !== false || strpos($type, 'numeric') !== false;
+					// BigQuery数値型の包括的チェック
+					$numericTypes = ['int64', 'integer', 'float64', 'float', 'numeric', 'bignumeric', 'decimal'];
+					foreach ($numericTypes as $numType) {
+						if (strpos($type, $numType) !== false) {
+							return true;
+						}
+					}
+					return false;
 				});
-				
+
 				if (!empty($numericFields)) {
 					$firstNumericField = array_keys($numericFields)[0];
-					$escapedField = BigQueryUtils::escapeIdentifier($firstNumericField);
+
+					// BigQueryUtils::escapeIdentifier()の存在確認（防御的プログラミング）
+					if (method_exists('BigQueryUtils', 'escapeIdentifier')) {
+						$escapedField = BigQueryUtils::escapeIdentifier($firstNumericField);
+					} else {
+						// フォールバック: 手動でエスケープ
+						$escapedField = "`" . str_replace("`", "``", $firstNumericField) . "`";
+					}
+
 					$query = "SELECT MAX($escapedField) as max_id FROM $fullTableName";
 					
 					BigQueryUtils::logQuerySafely($query, "AUTO_INCREMENT_CHECK");
