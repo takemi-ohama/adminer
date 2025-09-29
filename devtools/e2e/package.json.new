@@ -1,0 +1,30 @@
+{
+  "name": "adminer-bigquery-e2e-tests",
+  "version": "1.0.0",
+  "description": "E2E tests for Adminer BigQuery driver",
+  "main": "index.js",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:report": "playwright show-report",
+    "test:chromium": "playwright test --project=chromium",
+    "test:firefox": "playwright test --project=firefox",
+    "test:webkit": "playwright test --project=webkit"
+  },
+  "keywords": [
+    "playwright",
+    "e2e",
+    "testing",
+    "adminer",
+    "bigquery"
+  ],
+  "author": "Development Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.48.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
