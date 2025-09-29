@@ -3073,6 +3073,79 @@ if (isset($_GET["bigquery"])) {
 		}
 	}
 
+	// Phase 4 Sprint 4.2: BigQuery適応版auto_increment機能実装
+	// BigQueryには自動増分カラムが存在しないため、代替手法を提供
+	function auto_increment($table = null)
+	{
+		global $connection;
+		
+		if (!$connection || !isset($connection->bigQueryClient)) {
+			return null;
+		}
+		
+		try {
+			// BigQueryではAUTO_INCREMENTが存在しないため、代替手法を提案
+			// 1. GENERATE_UUID() を使った一意ID
+			// 2. CURRENT_TIMESTAMP() を使ったタイムスタンプベースID
+			// 3. ROW_NUMBER() を使った連番生成
+			
+			if ($table) {
+				$database = $_GET['db'] ?? $connection->datasetId ?? '';
+				if (empty($database)) {
+					return null;
+				}
+				
+				// テーブルが存在するか確認
+				$tableObj = $connection->bigQueryClient->dataset($database)->table($table);
+				if (!$tableObj->exists()) {
+					return null;
+				}
+				
+				// BigQuery代替案としての最大値+1を返す（参考値として）
+				// 実際のAUTO_INCREMENT相当機能はアプリケーション側で実装する必要がある
+				$projectId = $connection->projectId ?? 'default';
+				$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
+				
+				// 数値型の最初のカラムを探してその最大値を取得
+				$fields = fields($table);
+				$numericFields = array_filter($fields, function($field) {
+					$type = strtolower($field['type'] ?? '');
+					return strpos($type, 'int') !== false || strpos($type, 'numeric') !== false;
+				});
+				
+				if (!empty($numericFields)) {
+					$firstNumericField = array_keys($numericFields)[0];
+					$escapedField = BigQueryUtils::escapeIdentifier($firstNumericField);
+					$query = "SELECT MAX($escapedField) as max_id FROM $fullTableName";
+					
+					BigQueryUtils::logQuerySafely($query, "AUTO_INCREMENT_CHECK");
+					$result = $connection->query($query);
+					
+					if ($result && $result instanceof Result) {
+						$row = $result->fetch_assoc();
+						if ($row && isset($row['max_id'])) {
+							return (int)$row['max_id'] + 1;
+						}
+					}
+				}
+				
+				// フォールバック: 1を返す
+				return 1;
+			}
+			
+			// テーブル指定なしの場合はnullを返す
+			return null;
+			
+		} catch (ServiceException $e) {
+			$message = $e->getMessage();
+			error_log("BigQuery: auto_increment ServiceException - " . $message);
+			return null;
+		} catch (Exception $e) {
+			error_log("BigQuery: auto_increment error - " . $e->getMessage());
+			return null;
+		}
+	}
+
 	}
 }
 
