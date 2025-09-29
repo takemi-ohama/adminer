@@ -164,13 +164,15 @@ test('BigQuery Adminer UI Structure Investigation', async ({ page }) => {
 
   console.log('\n=== 7. 実際のHTML構造の出力 ===');
 
-  // bodyタグ内の主要構造を取得
+  // bodyタグ内の主要構造を取得（デバッグ時のみ詳細出力）
   const bodyElement = await page.locator('body').first();
-  if (await bodyElement.count() > 0) {
+  if (await bodyElement.count() > 0 && process.env.DEBUG_HTML) {
     const bodyHtml = await bodyElement.innerHTML();
-    console.log('\n--- Body内のHTML構造 (最初の1000文字) ---');
-    console.log(bodyHtml.substring(0, 1000));
+    console.log('\n--- Body内のHTML構造 (最初の500文字) ---');
+    console.log(bodyHtml.substring(0, 500));
     console.log('--- End of HTML structure ---\n');
+  } else {
+    console.log('HTML構造の詳細確認はDEBUG_HTML環境変数で有効化できます');
   }
 
   console.log('\n=== UI構造調査完了 ===');

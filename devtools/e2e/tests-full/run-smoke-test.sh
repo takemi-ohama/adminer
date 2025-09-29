@@ -48,7 +48,7 @@ else
     echo "❌ Webコンテナ未起動" | tee -a "$REPORT_FILE"
     echo "" | tee -a "$REPORT_FILE"
     echo "🚨 Webコンテナを起動してください：" | tee -a "$REPORT_FILE"
-    echo "cd ../../devtools/web && docker compose up -d" | tee -a "$REPORT_FILE"
+    echo "cd ../../container/web && docker compose up -d" | tee -a "$REPORT_FILE"
     exit 1
 fi
 
