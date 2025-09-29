@@ -36,7 +36,7 @@ docker network create adminer-net
 
 ```bash
 # Webアプリケーション起動
-cd container/web
+cd devtools/web
 docker compose up --build -d
 
 # ブラウザでアクセス
@@ -50,7 +50,7 @@ open http://localhost:8080
 ```bash
 # 1. コード修正
 # 2. Webコンテナ再ビルド・起動
-cd container/web
+cd devtools/web
 docker compose down
 docker compose up --build -d
 
@@ -71,7 +71,7 @@ cd ../e2e
 
 ```bash
 # Docker Container テスト（高速）
-cd container/web
+cd devtools/web
 docker exec adminer-bigquery-test curl -I "http://localhost/"
 ```
 
@@ -97,7 +97,7 @@ cd container/e2e
 
 ```bash
 # Webアプリケーション
-cd container/web
+cd devtools/web
 docker compose build --no-cache
 ```
 
@@ -131,7 +131,7 @@ jobs:
 
       - name: Build and Start Web Application
         run: |
-          cd container/web
+          cd devtools/web
           docker compose up --build -d
 
       - name: Run E2E Tests
@@ -147,7 +147,7 @@ jobs:
 
 ## 📁 ディレクトリ別詳細
 
-### container/web/
+### devtools/web/
 **役割**: Adminer Webアプリケーション関連
 - `compose.yml`: Adminerサービス定義
 - `Dockerfile`: Webコンテナ設定
@@ -156,7 +156,7 @@ jobs:
 
 **主な操作**:
 ```bash
-cd container/web
+cd devtools/web
 docker compose up -d      # 起動
 docker compose down       # 停止
 docker compose logs       # ログ確認
@@ -187,7 +187,7 @@ cd container/e2e
 #### 1. Adminerコンテナが起動しない
 ```bash
 # ログ確認
-cd container/web
+cd devtools/web
 docker compose logs adminer-bigquery-test
 
 # 強制再ビルド
@@ -252,7 +252,7 @@ cd container/e2e/tests
 ```bash
 cd plugins
 # 新しいプラグイン実装
-cd ../container/web
+cd ../devtools/web
 # compose.yml の volume設定確認・更新
 ```
 

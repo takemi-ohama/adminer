@@ -35,7 +35,7 @@ container/
 ### 前提条件
 1. Web環境が起動している必要があります
 ```bash
-cd container/web
+cd devtools/web
 docker compose up -d
 ```
 
@@ -119,7 +119,7 @@ docker compose run --rm playwright-e2e npx playwright test tests/bigquery-crud-t
 
 #### 1. "Web環境が起動していません"
 ```bash
-cd container/web
+cd devtools/web
 docker compose up -d
 # 起動確認
 docker compose ps
@@ -131,14 +131,14 @@ docker compose ps
 docker network ls | grep adminer_net
 
 # コンテナ間通信確認
-docker compose -f container/web/compose.yml exec adminer-bigquery-test curl -I http://localhost
+docker compose -f devtools/web/compose.yml exec adminer-bigquery-test curl -I http://localhost
 ```
 
 #### 3. "認証エラー"
 環境変数を確認してください:
 ```bash
 # Web環境の環境変数確認
-docker compose -f container/web/compose.yml exec adminer-bigquery-test printenv | grep GOOGLE
+docker compose -f devtools/web/compose.yml exec adminer-bigquery-test printenv | grep GOOGLE
 ```
 
 #### 4. "テストファイルが見つからない"
@@ -197,7 +197,7 @@ docker compose run --rm playwright-e2e npx playwright test --debug
 ```yaml
 - name: E2E Test
   run: |
-    cd container/web
+    cd devtools/web
     docker compose up -d
     cd ../e2e
     ./run-all-tests.sh

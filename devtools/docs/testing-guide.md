@@ -40,7 +40,7 @@ curl を使用したコンテナ内部からのテスト実行
 
 ```bash
 # コンテナ起動
-cd container/web
+cd devtools/web
 docker compose up --build -d
 
 # 基本接続テスト
@@ -117,7 +117,7 @@ cd container/e2e
 
 ```bash
 # 1. Adminerコンテナ起動（webディレクトリから）
-cd container/web
+cd devtools/web
 docker compose up -d adminer-bigquery-test
 
 # 2. E2Eテスト実行（e2eディレクトリから）
@@ -249,7 +249,7 @@ docker exec playwright-e2e ping adminer-bigquery-test
 
 ```bash
 # 1. コード修正後の基本確認
-cd container/web
+cd devtools/web
 docker compose up --build -d
 
 # 2. 快速テスト（curlベース）
@@ -268,7 +268,7 @@ docker exec adminer-bigquery-test bash -c '
 # GitHub Actions 例
 - name: Build and Test Adminer BigQuery
   run: |
-    cd container/web
+    cd devtools/web
     docker compose up --build -d adminer-bigquery-test
     cd ../e2e
     ./run-e2e-tests.sh
