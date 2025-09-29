@@ -7,7 +7,7 @@ echo "🚀 「テーブルを作成」エラー検出テスト実行開始"
 echo "📡 Web環境確認中..."
 if ! docker ps | grep -q "adminer-bigquery-test"; then
   echo "❌ Webコンテナが起動していません。先にWebコンテナを起動してください:"
-  echo "   cd container/web && docker compose up -d"
+  echo "   cd devtools/web && docker compose up -d"
   exit 1
 fi
 echo "✅ Web環境確認完了"

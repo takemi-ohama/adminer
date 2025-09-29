@@ -121,7 +121,7 @@ echo "🔍 事前環境チェック..." | tee -a "$REPORT_FILE"
 if ! docker ps | grep -q "adminer-bigquery-test"; then
     echo "⚠️ Adminer Web コンテナが実行されていません。" | tee -a "$REPORT_FILE"
     echo "以下のコマンドで起動してください：" | tee -a "$REPORT_FILE"
-    echo "cd ../../container/web && docker compose up -d" | tee -a "$REPORT_FILE"
+    echo "cd ../../devtools/web && docker compose up -d" | tee -a "$REPORT_FILE"
 fi
 
 # HTTP接続チェック

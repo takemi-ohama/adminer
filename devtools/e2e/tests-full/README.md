@@ -30,7 +30,7 @@
 ### 🔥 クイックスタート
 ```bash
 # 1. Webサーバー起動（前提条件）
-cd ../../container/web
+cd ../../devtools/web
 docker compose up -d
 
 # 2. テストディレクトリに移動
@@ -78,11 +78,11 @@ cd ../e2e/tests-full
 ### 🐳 Docker環境
 - **Webサーバー**: `adminer-bigquery-web` コンテナが起動していること
 - **確認方法**: `docker ps | grep adminer-bigquery-web`
-- **起動方法**: `cd ../../container/web && docker compose up -d`
+- **起動方法**: `cd ../../devtools/web && docker compose up -d`
 
 ### 🔑 BigQuery認証
 - **環境変数**: `GOOGLE_CLOUD_PROJECT`, `GOOGLE_APPLICATION_CREDENTIALS`
-- **設定ファイル**: `../../container/web/.env`
+- **設定ファイル**: `../../devtools/web/.env`
 - **認証ファイル**: サービスアカウントJSONキーが配置されていること
 
 ### 🎭 Playwright環境
@@ -118,7 +118,7 @@ npx playwright show-report
 ```bash
 # 症状: "❌ Adminer Web サーバーに接続できません"
 # 解決:
-cd ../../container/web
+cd ../../devtools/web
 docker compose restart
 curl -I http://localhost:8080
 ```

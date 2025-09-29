@@ -219,7 +219,7 @@ docker ps | grep adminer-bigquery-test
 ### 基本開発フロー
 ```bash
 # 1. Webアプリケーション起動
-cd container/web
+cd devtools/web
 docker compose up --build -d
 
 # 2. 開発・コード修正
@@ -329,7 +329,7 @@ i03.md #4で確立された安定したE2Eテスト手法。常駐型ではな�
 #### 基本テスト実行方法
 ```bash
 # 1. Web環境起動（必須前提条件）
-cd container/web
+cd devtools/web
 docker compose up -d
 
 # 2. 参照系テスト実行（推奨：最初に実行）
