@@ -3210,11 +3210,327 @@ if (!function_exists('schema')) {
 
 if (!function_exists('import_sql')) {
 
+	function view($name)
+	{
+		// Phase 4 Sprint 4.1: BigQuery ビュー定義取得機能
+		// BigQuery ビューの詳細情報とクエリ定義を返す
+		
+		global $connection;
+		
+		if (!$connection || !isset($connection->bigQueryClient)) {
+			return array();
+		}
+		
+		try {
+			$database = $_GET['db'] ?? $connection->datasetId ?? '';
+			if (empty($database) || empty($name)) {
+				return array();
+			}
+			
+			// BigQuery ビューオブジェクトを取得
+			$dataset = $connection->bigQueryClient->dataset($database);
+			$table = $dataset->table($name);
+			
+			if (!$table->exists()) {
+				return array();
+			}
+			
+			$tableInfo = $table->info();
+			
+			// ビューかどうかを確認
+			$tableType = strtolower($tableInfo['type'] ?? 'TABLE');
+			if (!in_array($tableType, ['view', 'materialized_view'])) {
+				return array();
+			}
+			
+			// ビュー定義クエリを取得
+			$viewQuery = $tableInfo['view']['query'] ?? '';
+			if (empty($viewQuery)) {
+				// マテリアライズドビューの場合
+				$viewQuery = $tableInfo['materializedView']['query'] ?? '';
+			}
+			
+			// Adminer互換のビュー情報配列を構築
+			$viewInfo = array(
+				'select' => $viewQuery,
+				'materialized' => ($tableType === 'materialized_view')
+			);
+			
+			// 追加情報
+			if (!empty($tableInfo['description'])) {
+				$viewInfo['comment'] = $tableInfo['description'];
+			}
+			
+			if (isset($tableInfo['creationTime'])) {
+				$viewInfo['created'] = date('Y-m-d H:i:s', $tableInfo['creationTime'] / 1000);
+			}
+			
+			if (isset($tableInfo['lastModifiedTime'])) {
+				$viewInfo['modified'] = date('Y-m-d H:i:s', $tableInfo['lastModifiedTime'] / 1000);
+			}
+			
+			// BigQuery固有情報
+			if (isset($tableInfo['location'])) {
+				$viewInfo['location'] = $tableInfo['location'];
+			}
+			
+			if ($tableType === 'materialized_view' && isset($tableInfo['materializedView']['refreshIntervalMs'])) {
+				$viewInfo['refresh_interval'] = $tableInfo['materializedView']['refreshIntervalMs'] / 1000 . ' seconds';
+			}
+			
+			// ビュー名をサニタイズしてログ出力（ログインジェクション防止）
+			$sanitizedName = preg_replace('/[^\w\-\.]/', '_', $name);
+			BigQueryUtils::logQuerySafely("VIEW INFO: $sanitizedName", "VIEW_INFO");
+			return $viewInfo;
+			
+		} catch (ServiceException $e) {
+			$message = $e->getMessage();
+			if (strpos($message, '404') === false && strpos($message, 'Not found') === false) {
+				// エラーメッセージをサニタイズしてログ出力（機密情報漏洩防止）
+				$sanitizedError = preg_replace('/([\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]+)/', '[EMAIL_REDACTED]', $message);
+				$sanitizedError = preg_replace('/(project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+)/i', '[PROJECT_REDACTED]', $sanitizedError);
+				BigQueryUtils::logQuerySafely($sanitizedError, 'VIEW_ERROR');
+			}
+			return array();
+		} catch (Exception $e) {
+			// エラーメッセージをサニタイズしてログ出力（機密情報漏洩防止）
+			$sanitizedError = preg_replace('/([\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]+)/', '[EMAIL_REDACTED]', $e->getMessage());
+			$sanitizedError = preg_replace('/(project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+)/i', '[PROJECT_REDACTED]', $sanitizedError);
+			BigQueryUtils::logQuerySafely($sanitizedError, 'VIEW_ERROR');
+			return array();
+		}
+	}
+
 	function import_sql($file)
 	{
-		show_unsupported_feature_message('import', 'BigQuery import functionality is not yet implemented. Please use the BigQuery console or API for bulk imports.');
-		return false;
+		// Phase 4 Sprint 4.1: BigQuery SQLインポート機能強化
+		// BigQueryに適したSQLファイル処理とバッチ実行機能
+		
+		global $connection;
+		
+		if (!$connection || !isset($connection->bigQueryClient)) {
+			return false;
+		}
+		
+		try {
+			// ファイル存在確認
+			if (!file_exists($file) || !is_readable($file)) {
+				error_log("BigQuery: Import file not found or not readable: $file");
+				return false;
+			}
+			
+			// ファイルサイズ制限（10MB）
+			$maxFileSize = 10 * 1024 * 1024; // 10MB
+			$fileSize = filesize($file);
+			if ($fileSize > $maxFileSize) {
+				error_log("BigQuery: Import file too large: " . ($fileSize / 1024 / 1024) . "MB > 10MB");
+				return false;
+			}
+			
+			// SQLファイル読み込み
+			$sqlContent = file_get_contents($file);
+			if ($sqlContent === false) {
+				error_log("BigQuery: Failed to read import file: $file");
+				return false;
+			}
+			
+			// BigQuery対応のSQL文分割処理
+			$statements = parseBigQueryStatements($sqlContent);
+			if (empty($statements)) {
+				error_log("BigQuery: No valid SQL statements found in file");
+				return false;
+			}
+			
+			// 統計情報
+			$totalStatements = count($statements);
+			$successCount = 0;
+			$errors = array();
+			
+			BigQueryUtils::logQuerySafely("Starting SQL import: $totalStatements statements from $file", "SQL_IMPORT");
+			
+			// SQLステートメントを順次実行
+			foreach ($statements as $index => $statement) {
+				$trimmedStatement = trim($statement);
+				if (empty($trimmedStatement) || isCommentOnly($trimmedStatement)) {
+					continue;
+				}
+				
+				try {
+					// BigQuery危険パターンチェック（メソッド存在確認付き）
+					if (class_exists('BigQueryConfig') && method_exists('BigQueryConfig', 'isDangerousQuery')) {
+						if (BigQueryConfig::isDangerousQuery($trimmedStatement)) {
+							$errors[] = "Statement " . ($index + 1) . ": Dangerous SQL pattern detected";
+							continue;
+						}
+					}
+					
+					// BigQueryクエリ実行
+					$queryLocation = $connection->config['location'] ?? 'US';
+					$queryJob = $connection->bigQueryClient->query($trimmedStatement)
+						->useLegacySql(false)
+						->location($queryLocation);
+					$job = $connection->bigQueryClient->runQuery($queryJob);
+					
+					if (!$job->isComplete()) {
+						$job->waitUntilComplete();
+					}
+					
+					// ジョブステータス確認
+					$jobInfo = $job->info();
+					if (isset($jobInfo['status']['errorResult'])) {
+						$errorMessage = $jobInfo['status']['errorResult']['message'] ?? 'Unknown error';
+						$errors[] = "Statement " . ($index + 1) . ": " . $errorMessage;
+					} else {
+						$successCount++;
+					}
+					
+				} catch (ServiceException $e) {
+					$errors[] = "Statement " . ($index + 1) . ": " . $e->getMessage();
+					// エラーメッセージをサニタイズしてログ出力（機密情報漏洩防止）
+					$sanitizedError = preg_replace('/([\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]+)/', '[EMAIL_REDACTED]', $e->getMessage());
+					$sanitizedError = preg_replace('/(project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+)/i', '[PROJECT_REDACTED]', $sanitizedError);
+					BigQueryUtils::logQuerySafely($sanitizedError, 'SQL_IMPORT_ERROR');
+				} catch (Exception $e) {
+					$errors[] = "Statement " . ($index + 1) . ": " . $e->getMessage();
+					// エラーメッセージをサニタイズしてログ出力（機密情報漏洩防止）
+					$sanitizedError = preg_replace('/([\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]+)/', '[EMAIL_REDACTED]', $e->getMessage());
+					$sanitizedError = preg_replace('/(project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+)/i', '[PROJECT_REDACTED]', $sanitizedError);
+					BigQueryUtils::logQuerySafely($sanitizedError, 'SQL_IMPORT_ERROR');
+				}
+			}
+			
+			// 結果ログ出力
+			$errorCount = count($errors);
+			$resultMessage = "SQL import completed: $successCount/$totalStatements statements executed successfully";
+			if ($errorCount > 0) {
+				$resultMessage .= ", $errorCount errors";
+			}
+			
+			BigQueryUtils::logQuerySafely($resultMessage, "SQL_IMPORT_RESULT");
+			
+			// エラーログ詳細出力
+			if (!empty($errors)) {
+				foreach (array_slice($errors, 0, 5) as $error) { // 最初の5個のエラーのみログ
+					error_log("BigQuery SQL Import Error: $error");
+				}
+				if (count($errors) > 5) {
+					error_log("BigQuery SQL Import: ... and " . (count($errors) - 5) . " more errors");
+				}
+			}
+			
+			// 成功判定：少なくとも1つのステートメントが成功
+			return $successCount > 0;
+			
+		} catch (Exception $e) {
+			error_log("BigQuery: SQL import failed - " . $e->getMessage());
+			// エラーメッセージをサニタイズしてログ出力（機密情報漏洩防止）
+			$sanitizedError = preg_replace('/([\\w\\-\\.]+@[\\w\\-\\.]+\\.[a-zA-Z]+)/', '[EMAIL_REDACTED]', $e->getMessage());
+			$sanitizedError = preg_replace('/(project[s]?\\s*[:\\-]\\s*[a-z0-9\\-]+)/i', '[PROJECT_REDACTED]', $sanitizedError);
+			BigQueryUtils::logQuerySafely($sanitizedError, 'SQL_IMPORT_FAILED');
+			return false;
+		}
 	}
+	
+}
+
+if (!function_exists('parseBigQueryStatements')) {
+	function parseBigQueryStatements($sqlContent)
+	{
+		// BigQuery用SQL文分割処理
+		// セミコロン区切りだが、文字列内・コメント内のセミコロンは無視
+
+		$statements = array();
+		$currentStatement = '';
+		$inSingleQuote = false;
+		$inDoubleQuote = false;
+		$inBacktick = false;
+		$inLineComment = false;
+		$inBlockComment = false;
+
+		$length = strlen($sqlContent);
+		for ($i = 0; $i < $length; $i++) {
+			$char = $sqlContent[$i];
+			$nextChar = ($i + 1 < $length) ? $sqlContent[$i + 1] : '';
+
+			// コメント処理
+			if (!$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
+				// 行コメント開始
+				if ($char === '-' && $nextChar === '-') {
+					$inLineComment = true;
+					$currentStatement .= $char;
+					continue;
+				}
+				// ブロックコメント開始
+				if ($char === '/' && $nextChar === '*') {
+					$inBlockComment = true;
+					$currentStatement .= $char;
+					continue;
+				}
+			}
+
+			// 行コメント終了
+			if ($inLineComment && ($char === "\n" || $char === "\r")) {
+				$inLineComment = false;
+				$currentStatement .= $char;
+				continue;
+			}
+
+			// ブロックコメント終了
+			if ($inBlockComment && $char === '*' && $nextChar === '/') {
+				$inBlockComment = false;
+				$currentStatement .= $char . $nextChar;
+				$i++; // Skip next character
+				continue;
+			}
+
+			// コメント内の場合はそのまま追加
+			if ($inLineComment || $inBlockComment) {
+				$currentStatement .= $char;
+				continue;
+			}
+
+			// クォート処理
+			if ($char === "'" && !$inDoubleQuote && !$inBacktick) {
+				$inSingleQuote = !$inSingleQuote;
+			} elseif ($char === '"' && !$inSingleQuote && !$inBacktick) {
+				$inDoubleQuote = !$inDoubleQuote;
+			} elseif ($char === '`' && !$inSingleQuote && !$inDoubleQuote) {
+				$inBacktick = !$inBacktick;
+			}
+
+			// セミコロン分割（クォート外の場合のみ）
+			if ($char === ';' && !$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
+				$trimmedStatement = trim($currentStatement);
+				if (!empty($trimmedStatement)) {
+					$statements[] = $trimmedStatement;
+				}
+				$currentStatement = '';
+				continue;
+			}
+
+			$currentStatement .= $char;
+		}
+
+		// 最後のステートメント処理
+		$trimmedStatement = trim($currentStatement);
+		if (!empty($trimmedStatement)) {
+			$statements[] = $trimmedStatement;
+		}
+
+		return $statements;
+	}
+}
+
+if (!function_exists('isCommentOnly')) {
+	function isCommentOnly($statement)
+	{
+		// コメントのみの行判定
+		$trimmed = trim($statement);
+		return empty($trimmed) ||
+			   strpos($trimmed, '--') === 0 ||
+			   (strpos($trimmed, '/*') === 0 && strpos($trimmed, '*/') !== false);
+	}
+}
 
 	function truncate_table($table)
 	{
