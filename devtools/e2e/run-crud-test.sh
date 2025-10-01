@@ -11,8 +11,8 @@ echo "ログファイル: $LOG_FILE"
 # Web環境確認
 echo "📡 Web環境確認中..."
 if ! curl -s http://adminer-bigquery-test >/dev/null 2>&1; then
-  echo "❌ Web環境が起動していません。container/web/compose.yml を起動してください。"
-  echo "cd container/web && docker compose up -d"
+  echo "❌ Web環境が起動していません。devtools/web/compose.yml を起動してください。"
+  echo "cd devtools/web && docker compose up -d"
   exit 1
 fi
 echo "✅ Web環境確認完了"

@@ -36,7 +36,7 @@
 ### 基本実行パターン（推奨）
 ```bash
 # 1. Web環境起動
-cd container/web && docker compose up -d
+cd devtools/web && docker compose up -d
 
 # 2. 参照系テスト実行
 cd ../e2e && ./run-reference-tests.sh

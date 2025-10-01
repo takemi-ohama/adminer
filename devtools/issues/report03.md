@@ -125,7 +125,7 @@ function select($table, $select, $where, $group, $order = array(), $limit = 1, $
 ### テスト実行方法
 ```bash
 # Webコンテナ起動
-cd container/web
+cd devtools/web
 docker compose up --build -d
 
 # Playwright MCPテスト実行

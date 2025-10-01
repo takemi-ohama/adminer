@@ -281,7 +281,7 @@ GitHub Actions等でのCI実行例：
 ```yaml
 - name: Setup Web Environment
   run: |
-    cd container/web
+    cd devtools/web
     docker compose up -d
 
 - name: Run E2E Tests
