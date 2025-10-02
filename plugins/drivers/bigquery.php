@@ -2226,8 +2226,37 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 
+				// BigQueryジョブの状態を詳細にチェック
 				$jobInfo = $job->info();
-				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+				error_log("BigQuery INSERT Debug - Job info: " . json_encode($jobInfo));
+
+				// ジョブが完了しているかチェック（複数の方法で確認）
+				$isJobComplete = false;
+				$jobState = null;
+
+				// 方法1: job->isComplete()メソッドで確認
+				if ($job->isComplete()) {
+					$isJobComplete = true;
+					error_log("BigQuery INSERT Debug - Job is complete via isComplete() method");
+				}
+
+				// 方法2: status.state フィールドで確認
+				if (isset($jobInfo['status']['state'])) {
+					$jobState = $jobInfo['status']['state'];
+					error_log("BigQuery INSERT Debug - Job state: " . $jobState);
+					if ($jobState === 'DONE') {
+						$isJobComplete = true;
+					}
+				}
+
+				// 方法3: statistics が存在すれば通常は完了
+				if (isset($jobInfo['statistics'])) {
+					$isJobComplete = true;
+					error_log("BigQuery INSERT Debug - Job has statistics, assuming complete");
+				}
+
+				if ($isJobComplete) {
+					// エラーがないかチェック
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
 						$errorMessage = $errorResult['message'] ?? 'Unknown error';
@@ -2236,11 +2265,15 @@ if (isset($_GET["bigquery"])) {
 						return false;
 					}
 
+					// 成功時のaffected_rows設定
 					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 1;
+					error_log("BigQuery INSERT completed successfully. Affected rows: " . $connection->affected_rows);
 					return true;
 				}
 
-				$connection->error = "INSERT job did not complete successfully";
+				// ここに到達するのは異常な状態
+				error_log("BigQuery INSERT Debug - Job completion could not be verified. Job state: " . ($jobState ?? 'unknown'));
+				$connection->error = "INSERT job completion status could not be verified";
 				return false;
 			} catch (ServiceException $e) {
 				$errorMessage = $e->getMessage();
