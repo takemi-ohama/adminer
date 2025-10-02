@@ -309,22 +309,7 @@ if (isset($_GET["bigquery"])) {
 				return "'" . str_replace("'", "''", $cleanValue) . "'";
 			}
 		}
-		static function convertWhereCondition($condition)
-		{
-			if (!is_string($condition) || strlen($condition) > 1000) {
-				throw new InvalidArgumentException('Invalid WHERE condition format');
-			}
-			if (BigQueryConfig::isDangerousQuery($condition)) {
-				error_log("BigQuery: Blocked suspicious WHERE condition: " . substr($condition, 0, 100) . "...");
-				throw new InvalidArgumentException('WHERE condition contains prohibited SQL patterns');
-			}
-			$condition = preg_replace('/`([^`]+)`/', '`$1`', $condition);
-			return preg_replace_callback("/'([^']*)'/", function ($matches) {
-				$escaped = str_replace("'", "\\'", $matches[1]);
-				$escaped = str_replace("\\", "\\\\", $escaped);
-				return "'" . $escaped . "'";
-			}, $condition);
-		}
+		
 		static function formatComplexValue($value, $field)
 		{
 			$fieldType = strtolower($field['type'] ?? 'text');
@@ -416,6 +401,62 @@ if (isset($_GET["bigquery"])) {
 		{
 			return "`" . $projectId . "`.`" . $database . "`.`" . $table . "`";
 		}
+
+	/**
+	 * BigQueryジョブの完了状態を包括的に確認する共通関数
+	 * 
+	 * @param object $job BigQueryジョブオブジェクト
+	 * @return bool ジョブが完了している場合はtrue
+	 */
+	static function isJobCompleted($job)
+	{
+		if (!$job) {
+			return false;
+		}
+
+		$jobInfo = $job->info();
+		$isJobComplete = false;
+
+		// 方法1: job->isComplete()メソッドによる確認
+		if ($job->isComplete()) {
+			$isJobComplete = true;
+		}
+
+		// 方法2: status.state フィールドによる確認
+		if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+			$isJobComplete = true;
+		}
+
+		// 方法3: statistics の存在による確認
+		if (isset($jobInfo['statistics'])) {
+			$isJobComplete = true;
+		}
+
+		return $isJobComplete;
+	}
+
+	/**
+	 * Process WHERE clause for BigQuery DML operations
+	 * 
+	 * @param string $queryWhere The WHERE condition from Adminer
+	 * @return string Properly formatted WHERE clause with WHERE prefix
+	 * @throws InvalidArgumentException If WHERE condition is invalid
+	 */
+	static function processWhereClause($queryWhere)
+	{
+		if (empty($queryWhere) || trim($queryWhere) === '') {
+			return '';
+		}
+
+		$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
+		
+		// Check if the converted WHERE already starts with WHERE keyword
+		if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {
+			return ' ' . $convertedWhere;
+		} else {
+			return ' WHERE ' . $convertedWhere;
+		}
+	}
 	}
 
 	if (!function_exists('Adminer\\idf_escape')) {
@@ -1048,21 +1089,29 @@ if (isset($_GET["bigquery"])) {
 			"NOT REGEXP"
 		);
 
-		public $partitionBy = array();
+		/** @var array BigQuery table partitioning configuration */
+	public $partitionBy = array();
 
-		public $unsigned = array();
+		/** @var array Unsigned numeric type definitions */
+	public $unsigned = array();
 
-		public $generated = array();
+		/** @var array Generated column definitions */
+	public $generated = array();
 
-		public $enumLength = array();
+		/** @var array Enum field length restrictions */
+	public $enumLength = array();
 
-		public $insertFunctions = array();
+		/** @var array Functions available for INSERT operations */
+	public $insertFunctions = array();
 
-		public $editFunctions = array();
+		/** @var array Functions available for field editing operations */
+	public $editFunctions = array();
 
-		public $functions = array();
+		/** @var array Database functions available for use in queries */
+	public $functions = array();
 
-		public $grouping = array();
+		/** @var array Field grouping configuration for query operations */
+	public $grouping = array();
 
 		protected $types = array(
 			array("INT64" => 0, "INTEGER" => 0, "FLOAT64" => 0, "FLOAT" => 0, "NUMERIC" => 0, "BIGNUMERIC" => 0),
@@ -1902,8 +1951,7 @@ if (isset($_GET["bigquery"])) {
 	}
 	function convertAdminerWhereToBigQuery($condition)
 	{
-		// デバッグ: 元の条件をログ出力
-		error_log("BigQuery WHERE Debug - Original condition: " . var_export($condition, true));
+		// WHERE条件の検証
 		
 		if (!is_string($condition)) {
 			throw new InvalidArgumentException('WHERE condition must be a string');
@@ -1945,8 +1993,7 @@ if (isset($_GET["bigquery"])) {
 		// COLLATE句を削除
 		$condition = preg_replace('/\\s+COLLATE\\s+\\w+/i', '', $condition);
 		
-		// デバッグ: 変換後の条件をログ出力
-		error_log("BigQuery WHERE Debug - Converted condition: " . var_export($condition, true));
+		// WHERE条件の変換完了
 
 		return $condition;
 	}
@@ -2086,8 +2133,7 @@ if (isset($_GET["bigquery"])) {
 	if (!function_exists('convert_field')) {
 		function convert_field(array $field)
 		{
-			// 一時的に変換機能を無効化してSQLエラーを回避
-			return null;
+			return BigQueryUtils::generateFieldConversion($field);
 		}
 	}
 	if (!function_exists('unconvert_field')) {
@@ -2226,27 +2272,9 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 
-				// BigQuery INSERT ジョブ完了判定の強化版
-				// トリプル方法による包括的ジョブ完了検証
-				$jobInfo = $job->info();
-				$isJobComplete = false;
-
-				// 方法1: job->isComplete()メソッドによる確認
-				if ($job->isComplete()) {
-					$isJobComplete = true;
-				}
-
-				// 方法2: status.state フィールドによる確認
-				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
-					$isJobComplete = true;
-				}
-
-				// 方法3: statistics の存在による確認
-				if (isset($jobInfo['statistics'])) {
-					$isJobComplete = true;
-				}
-
-				if ($isJobComplete) {
+				// BigQuery INSERT ジョブ完了判定（共通関数を使用）
+				if (BigQueryUtils::isJobCompleted($job)) {
+					$jobInfo = $job->info();
 					// ジョブが完了している場合、エラー結果をチェック
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
@@ -2258,7 +2286,6 @@ if (isset($_GET["bigquery"])) {
 
 					// 成功時の処理
 					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 1;
-					error_log("BigQuery INSERT completed successfully. Affected rows: " . $connection->affected_rows);
 					return true;
 				}
 				// ジョブが完了していない場合
@@ -2309,27 +2336,14 @@ if (isset($_GET["bigquery"])) {
 					return false;
 				}
 
-				// WHERE句構築のデバッグログ
-				error_log("BigQuery UPDATE Debug - Raw queryWhere: " . var_export($queryWhere, true));
-				$whereClause = '';
-				if (!empty($queryWhere)) {
-					$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
-					// $queryWhereが既にWHEREで始まっている場合は追加しない
-					if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {
-						$whereClause = ' ' . $convertedWhere;
-					} else {
-						$whereClause = ' WHERE ' . $convertedWhere;
-					}
-					error_log("BigQuery UPDATE Debug - Built whereClause: " . var_export($whereClause, true));
-				}
+				// Use the consolidated WHERE clause processing helper
+				$whereClause = BigQueryUtils::processWhereClause($queryWhere);
 
 				$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
 				$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
 				$setStr = implode(", ", $setParts);
 				$updateQuery = "UPDATE $fullTableName SET $setStr$whereClause";
 
-				// 最終SQL文のデバッグログ
-				error_log("BigQuery UPDATE Debug - Final SQL: " . var_export($updateQuery, true));
 
 				BigQueryUtils::logQuerySafely($updateQuery, "UPDATE");
 
@@ -2343,36 +2357,9 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 
-				// BigQueryジョブの状態を詳細にチェック
-				$jobInfo = $job->info();
-				error_log("BigQuery UPDATE Debug - Job info: " . json_encode($jobInfo));
-
-				// ジョブが完了しているかチェック（複数の方法で確認）
-				$isJobComplete = false;
-				$jobState = null;
-
-				// 方法1: job->isComplete()メソッドで確認
-				if ($job->isComplete()) {
-					$isJobComplete = true;
-					error_log("BigQuery UPDATE Debug - Job is complete via isComplete() method");
-				}
-
-				// 方法2: status.state フィールドで確認
-				if (isset($jobInfo['status']['state'])) {
-					$jobState = $jobInfo['status']['state'];
-					error_log("BigQuery UPDATE Debug - Job state: " . $jobState);
-					if ($jobState === 'DONE') {
-						$isJobComplete = true;
-					}
-				}
-
-				// 方法3: statistics が存在すれば通常は完了
-				if (isset($jobInfo['statistics'])) {
-					$isJobComplete = true;
-					error_log("BigQuery UPDATE Debug - Job has statistics, assuming complete");
-				}
-
-				if ($isJobComplete) {
+				// BigQuery UPDATE ジョブ完了判定（共通関数を使用）
+				if (BigQueryUtils::isJobCompleted($job)) {
+					$jobInfo = $job->info();
 					// エラーがないかチェック
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
@@ -2384,12 +2371,10 @@ if (isset($_GET["bigquery"])) {
 
 					// 成功時のaffected_rows設定
 					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
-					error_log("BigQuery UPDATE completed successfully. Affected rows: " . $connection->affected_rows);
 					return true;
 				}
 
 				// ここに到達するのは異常な状態
-				error_log("BigQuery UPDATE Debug - Job completion could not be verified. Job state: " . ($jobState ?? 'unknown'));
 				$connection->error = "UPDATE job completion status could not be verified";
 				return false;
 			} catch (ServiceException $e) {
@@ -2418,17 +2403,9 @@ if (isset($_GET["bigquery"])) {
 					return false;
 				}
 
-				$whereClause = '';
-				if (!empty($queryWhere) && trim($queryWhere) !== '') {
-					$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
-					// $queryWhereが既にWHEREで始まっている場合は追加しない
-					if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {
-						$whereClause = $convertedWhere;
-					} else {
-						$whereClause = 'WHERE ' . $convertedWhere;
-					}
-				} else {
-
+				// Use the consolidated WHERE clause processing helper
+				$whereClause = BigQueryUtils::processWhereClause($queryWhere);
+				if (empty($whereClause)) {
 					throw new InvalidArgumentException("BigQuery: DELETE without WHERE clause is not allowed. Please specify WHERE conditions to avoid accidental data deletion.");
 				}
 
@@ -2448,16 +2425,18 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 
-				$jobInfo = $job->info();
-				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+				// BigQuery DELETE ジョブ完了判定（共通関数を使用）
+				if (BigQueryUtils::isJobCompleted($job)) {
+					$jobInfo = $job->info();
+					// エラーがないかチェック
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
 						$errorMessage = $errorResult['message'] ?? 'Unknown error';
-						error_log("BigQuery DELETE failed: " . $errorMessage);
 						$connection->error = "DELETE failed: " . $errorMessage;
 						return false;
 					}
 
+					// 成功時のaffected_rows設定
 					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
 					return true;
 				}
