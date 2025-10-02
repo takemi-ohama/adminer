@@ -2226,37 +2226,28 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 
-				// BigQueryジョブの状態を詳細にチェック
+				// BigQuery INSERT ジョブ完了判定の強化版
+				// トリプル方法による包括的ジョブ完了検証
 				$jobInfo = $job->info();
-				error_log("BigQuery INSERT Debug - Job info: " . json_encode($jobInfo));
-
-				// ジョブが完了しているかチェック（複数の方法で確認）
 				$isJobComplete = false;
-				$jobState = null;
 
-				// 方法1: job->isComplete()メソッドで確認
+				// 方法1: job->isComplete()メソッドによる確認
 				if ($job->isComplete()) {
 					$isJobComplete = true;
-					error_log("BigQuery INSERT Debug - Job is complete via isComplete() method");
 				}
 
-				// 方法2: status.state フィールドで確認
-				if (isset($jobInfo['status']['state'])) {
-					$jobState = $jobInfo['status']['state'];
-					error_log("BigQuery INSERT Debug - Job state: " . $jobState);
-					if ($jobState === 'DONE') {
-						$isJobComplete = true;
-					}
+				// 方法2: status.state フィールドによる確認
+				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+					$isJobComplete = true;
 				}
 
-				// 方法3: statistics が存在すれば通常は完了
+				// 方法3: statistics の存在による確認
 				if (isset($jobInfo['statistics'])) {
 					$isJobComplete = true;
-					error_log("BigQuery INSERT Debug - Job has statistics, assuming complete");
 				}
 
 				if ($isJobComplete) {
-					// エラーがないかチェック
+					// ジョブが完了している場合、エラー結果をチェック
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
 						$errorMessage = $errorResult['message'] ?? 'Unknown error';
@@ -2265,16 +2256,15 @@ if (isset($_GET["bigquery"])) {
 						return false;
 					}
 
-					// 成功時のaffected_rows設定
+					// 成功時の処理
 					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 1;
 					error_log("BigQuery INSERT completed successfully. Affected rows: " . $connection->affected_rows);
 					return true;
 				}
-
-				// ここに到達するのは異常な状態
-				error_log("BigQuery INSERT Debug - Job completion could not be verified. Job state: " . ($jobState ?? 'unknown'));
-				$connection->error = "INSERT job completion status could not be verified";
+				// ジョブが完了していない場合
+				$connection->error = "INSERT job did not complete successfully";
 				return false;
+				
 			} catch (ServiceException $e) {
 				$errorMessage = $e->getMessage();
 				BigQueryUtils::logQuerySafely($errorMessage, 'INSERT_SERVICE_ERROR');
