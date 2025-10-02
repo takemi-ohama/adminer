@@ -1060,6 +1060,10 @@ if (isset($_GET["bigquery"])) {
 
 		public $editFunctions = array();
 
+		public $functions = array();
+
+		public $grouping = array();
+
 		protected $types = array(
 			array("INT64" => 0, "INTEGER" => 0, "FLOAT64" => 0, "FLOAT" => 0, "NUMERIC" => 0, "BIGNUMERIC" => 0),
 			array("STRING" => 0, "BYTES" => 0),
@@ -1898,6 +1902,9 @@ if (isset($_GET["bigquery"])) {
 	}
 	function convertAdminerWhereToBigQuery($condition)
 	{
+		// デバッグ: 元の条件をログ出力
+		error_log("BigQuery WHERE Debug - Original condition: " . var_export($condition, true));
+		
 		if (!is_string($condition)) {
 			throw new InvalidArgumentException('WHERE condition must be a string');
 		}
@@ -1905,13 +1912,13 @@ if (isset($_GET["bigquery"])) {
 			throw new InvalidArgumentException('WHERE condition exceeds maximum length');
 		}
 		$suspiciousPatterns = array(
-			'/;\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\s+/i',
-			'/UNION\s+(ALL\s+)?SELECT/i',
-			'/\/\*.*?\*\//s',
-			'/--[^\r\n]*/i',
-			'/\bEXEC\b/i',
-			'/\bEXECUTE\b/i',
-			'/\bSP_/i'
+			'/;\\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
+			'/UNION\\s+(ALL\\s+)?SELECT/i',
+			'/\\/\\*.*?\\*\\//s',
+			'/--[^\\r\\n]*/i',
+			'/\\bEXEC\\b/i',
+			'/\\bEXECUTE\\b/i',
+			'/\\bSP_/i'
 		);
 		foreach ($suspiciousPatterns as $pattern) {
 			if (preg_match($pattern, $condition)) {
@@ -1920,21 +1927,26 @@ if (isset($_GET["bigquery"])) {
 			}
 		}
 
+		// 正規表現を修正：\\\\s を \\s に変更
 		$condition = preg_replace_callback('/(`[^`]+`)\\s*=\\s*`([^`]+)`/', function ($matches) {
 			$column = $matches[1];
 			$value = $matches[2];
 
-			if (preg_match('/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/', $value)) {
-
+			if (preg_match('/^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$/', $value)) {
+				// 数値の場合
 				return $column . ' = ' . $value;
 			} else {
-
+				// 文字列の場合
 				$escaped = str_replace("'", "''", $value);
 				return $column . " = '" . $escaped . "'";
 			}
 		}, $condition);
 
+		// COLLATE句を削除
 		$condition = preg_replace('/\\s+COLLATE\\s+\\w+/i', '', $condition);
+		
+		// デバッグ: 変換後の条件をログ出力
+		error_log("BigQuery WHERE Debug - Converted condition: " . var_export($condition, true));
 
 		return $condition;
 	}
@@ -2074,7 +2086,8 @@ if (isset($_GET["bigquery"])) {
 	if (!function_exists('convert_field')) {
 		function convert_field(array $field)
 		{
-			return BigQueryUtils::generateFieldConversion($field);
+			// 一時的に変換機能を無効化してSQLエラーを回避
+			return null;
 		}
 	}
 	if (!function_exists('unconvert_field')) {
@@ -2217,7 +2230,9 @@ if (isset($_GET["bigquery"])) {
 				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
-						error_log("BigQuery INSERT failed: " . ($errorResult['message'] ?? 'Unknown error'));
+						$errorMessage = $errorResult['message'] ?? 'Unknown error';
+						error_log("BigQuery INSERT failed: " . $errorMessage);
+						$connection->error = "INSERT failed: " . $errorMessage;
 						return false;
 					}
 
@@ -2225,12 +2240,17 @@ if (isset($_GET["bigquery"])) {
 					return true;
 				}
 
+				$connection->error = "INSERT job did not complete successfully";
 				return false;
 			} catch (ServiceException $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'INSERT_SERVICE_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'INSERT_SERVICE_ERROR');
+				$connection->error = "INSERT ServiceException: " . $errorMessage;
 				return false;
 			} catch (Exception $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'INSERT_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'INSERT_ERROR');
+				$connection->error = "INSERT Exception: " . $errorMessage;
 				return false;
 			}
 		}
@@ -2266,15 +2286,27 @@ if (isset($_GET["bigquery"])) {
 					return false;
 				}
 
+				// WHERE句構築のデバッグログ
+				error_log("BigQuery UPDATE Debug - Raw queryWhere: " . var_export($queryWhere, true));
 				$whereClause = '';
 				if (!empty($queryWhere)) {
-					$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
+					$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
+					// $queryWhereが既にWHEREで始まっている場合は追加しない
+					if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {
+						$whereClause = ' ' . $convertedWhere;
+					} else {
+						$whereClause = ' WHERE ' . $convertedWhere;
+					}
+					error_log("BigQuery UPDATE Debug - Built whereClause: " . var_export($whereClause, true));
 				}
 
 				$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
 				$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
 				$setStr = implode(", ", $setParts);
-				$updateQuery = "UPDATE $fullTableName SET $setStr $whereClause";
+				$updateQuery = "UPDATE $fullTableName SET $setStr$whereClause";
+
+				// 最終SQL文のデバッグログ
+				error_log("BigQuery UPDATE Debug - Final SQL: " . var_export($updateQuery, true));
 
 				BigQueryUtils::logQuerySafely($updateQuery, "UPDATE");
 
@@ -2288,24 +2320,64 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 
+				// BigQueryジョブの状態を詳細にチェック
 				$jobInfo = $job->info();
-				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+				error_log("BigQuery UPDATE Debug - Job info: " . json_encode($jobInfo));
+
+				// ジョブが完了しているかチェック（複数の方法で確認）
+				$isJobComplete = false;
+				$jobState = null;
+
+				// 方法1: job->isComplete()メソッドで確認
+				if ($job->isComplete()) {
+					$isJobComplete = true;
+					error_log("BigQuery UPDATE Debug - Job is complete via isComplete() method");
+				}
+
+				// 方法2: status.state フィールドで確認
+				if (isset($jobInfo['status']['state'])) {
+					$jobState = $jobInfo['status']['state'];
+					error_log("BigQuery UPDATE Debug - Job state: " . $jobState);
+					if ($jobState === 'DONE') {
+						$isJobComplete = true;
+					}
+				}
+
+				// 方法3: statistics が存在すれば通常は完了
+				if (isset($jobInfo['statistics'])) {
+					$isJobComplete = true;
+					error_log("BigQuery UPDATE Debug - Job has statistics, assuming complete");
+				}
+
+				if ($isJobComplete) {
+					// エラーがないかチェック
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
-						error_log("BigQuery UPDATE failed: " . ($errorResult['message'] ?? 'Unknown error'));
+						$errorMessage = $errorResult['message'] ?? 'Unknown error';
+						error_log("BigQuery UPDATE failed: " . $errorMessage);
+						$connection->error = "UPDATE failed: " . $errorMessage;
 						return false;
 					}
 
+					// 成功時のaffected_rows設定
 					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
+					error_log("BigQuery UPDATE completed successfully. Affected rows: " . $connection->affected_rows);
 					return true;
 				}
 
+				// ここに到達するのは異常な状態
+				error_log("BigQuery UPDATE Debug - Job completion could not be verified. Job state: " . ($jobState ?? 'unknown'));
+				$connection->error = "UPDATE job completion status could not be verified";
 				return false;
 			} catch (ServiceException $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'UPDATE_SERVICE_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'UPDATE_SERVICE_ERROR');
+				$connection->error = "UPDATE ServiceException: " . $errorMessage;
 				return false;
 			} catch (Exception $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'UPDATE_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'UPDATE_ERROR');
+				$connection->error = "UPDATE Exception: " . $errorMessage;
 				return false;
 			}
 		}
@@ -2325,7 +2397,13 @@ if (isset($_GET["bigquery"])) {
 
 				$whereClause = '';
 				if (!empty($queryWhere) && trim($queryWhere) !== '') {
-					$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
+					$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
+					// $queryWhereが既にWHEREで始まっている場合は追加しない
+					if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {
+						$whereClause = $convertedWhere;
+					} else {
+						$whereClause = 'WHERE ' . $convertedWhere;
+					}
 				} else {
 
 					throw new InvalidArgumentException("BigQuery: DELETE without WHERE clause is not allowed. Please specify WHERE conditions to avoid accidental data deletion.");
@@ -2351,7 +2429,9 @@ if (isset($_GET["bigquery"])) {
 				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
-						error_log("BigQuery DELETE failed: " . ($errorResult['message'] ?? 'Unknown error'));
+						$errorMessage = $errorResult['message'] ?? 'Unknown error';
+						error_log("BigQuery DELETE failed: " . $errorMessage);
+						$connection->error = "DELETE failed: " . $errorMessage;
 						return false;
 					}
 
@@ -2359,12 +2439,17 @@ if (isset($_GET["bigquery"])) {
 					return true;
 				}
 
+				$connection->error = "DELETE job did not complete successfully";
 				return false;
 			} catch (ServiceException $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'DELETE_SERVICE_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'DELETE_SERVICE_ERROR');
+				$connection->error = "DELETE ServiceException: " . $errorMessage;
 				return false;
 			} catch (Exception $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'DELETE_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'DELETE_ERROR');
+				$connection->error = "DELETE Exception: " . $errorMessage;
 				return false;
 			}
 		}
@@ -2633,6 +2718,7 @@ if (isset($_GET["bigquery"])) {
 						return false;
 					}
 				}
+
 				if ($tableCount > 0) {
 					error_log("BigQuery: Found $tableCount tables to copy from '$old_name' to '$new_name'");
 				}
@@ -3208,9 +3294,9 @@ if (!function_exists('schema')) {
 	}
 }
 
-if (!function_exists('import_sql')) {
+if (!function_exists('Adminer\\bigquery_view')) {
 
-	function view($name)
+	function bigquery_view($name)
 	{
 		// Phase 4 Sprint 4.1: BigQuery ビュー定義取得機能
 		// BigQuery ビューの詳細情報とクエリ定義を返す
@@ -3562,7 +3648,6 @@ if (!function_exists('isCommentOnly')) {
 			return false;
 		}
 	}
-}
 
 if (!function_exists('check_table')) {
 
