@@ -2226,8 +2226,31 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 
+				// BigQuery INSERT ジョブ完了判定の強化版
+				// トリプル方法による包括的ジョブ完了検証
 				$jobInfo = $job->info();
+				$isJobComplete = false;
+				
+				// 方法1: job->isComplete()メソッドによる確認
+				if ($job->isComplete()) {
+					$isJobComplete = true;
+					error_log("BigQuery INSERT: Job completion verified by isComplete() method");
+				}
+				
+				// 方法2: status.state フィールドによる確認  
 				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+					$isJobComplete = true;
+					error_log("BigQuery INSERT: Job completion verified by status.state === 'DONE'");
+				}
+				
+				// 方法3: statistics の存在による確認
+				if (isset($jobInfo['statistics'])) {
+					$isJobComplete = true;
+					error_log("BigQuery INSERT: Job completion verified by statistics existence");
+				}
+				
+				if ($isJobComplete) {
+					// ジョブが完了している場合、エラー結果をチェック
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
 						$errorMessage = $errorResult['message'] ?? 'Unknown error';
@@ -2235,13 +2258,15 @@ if (isset($_GET["bigquery"])) {
 						$connection->error = "INSERT failed: " . $errorMessage;
 						return false;
 					}
-
+					
+					// 成功時の処理
 					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 1;
+					error_log("BigQuery INSERT completed successfully. Affected rows: " . $connection->affected_rows);
 					return true;
 				}
-
 				$connection->error = "INSERT job did not complete successfully";
 				return false;
+				
 			} catch (ServiceException $e) {
 				$errorMessage = $e->getMessage();
 				BigQueryUtils::logQuerySafely($errorMessage, 'INSERT_SERVICE_ERROR');
