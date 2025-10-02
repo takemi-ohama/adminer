@@ -309,22 +309,7 @@ if (isset($_GET["bigquery"])) {
 				return "'" . str_replace("'", "''", $cleanValue) . "'";
 			}
 		}
-		static function convertWhereCondition($condition)
-		{
-			if (!is_string($condition) || strlen($condition) > 1000) {
-				throw new InvalidArgumentException('Invalid WHERE condition format');
-			}
-			if (BigQueryConfig::isDangerousQuery($condition)) {
-				error_log("BigQuery: Blocked suspicious WHERE condition: " . substr($condition, 0, 100) . "...");
-				throw new InvalidArgumentException('WHERE condition contains prohibited SQL patterns');
-			}
-			$condition = preg_replace('/`([^`]+)`/', '`$1`', $condition);
-			return preg_replace_callback("/'([^']*)'/", function ($matches) {
-				$escaped = str_replace("'", "\\'", $matches[1]);
-				$escaped = str_replace("\\", "\\\\", $escaped);
-				return "'" . $escaped . "'";
-			}, $condition);
-		}
+		
 		static function formatComplexValue($value, $field)
 		{
 			$fieldType = strtolower($field['type'] ?? 'text');
@@ -416,6 +401,62 @@ if (isset($_GET["bigquery"])) {
 		{
 			return "`" . $projectId . "`.`" . $database . "`.`" . $table . "`";
 		}
+
+	/**
+	 * BigQueryジョブの完了状態を包括的に確認する共通関数
+	 * 
+	 * @param object $job BigQueryジョブオブジェクト
+	 * @return bool ジョブが完了している場合はtrue
+	 */
+	static function isJobCompleted($job)
+	{
+		if (!$job) {
+			return false;
+		}
+
+		$jobInfo = $job->info();
+		$isJobComplete = false;
+
+		// 方法1: job->isComplete()メソッドによる確認
+		if ($job->isComplete()) {
+			$isJobComplete = true;
+		}
+
+		// 方法2: status.state フィールドによる確認
+		if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+			$isJobComplete = true;
+		}
+
+		// 方法3: statistics の存在による確認
+		if (isset($jobInfo['statistics'])) {
+			$isJobComplete = true;
+		}
+
+		return $isJobComplete;
+	}
+
+	/**
+	 * Process WHERE clause for BigQuery DML operations
+	 * 
+	 * @param string $queryWhere The WHERE condition from Adminer
+	 * @return string Properly formatted WHERE clause with WHERE prefix
+	 * @throws InvalidArgumentException If WHERE condition is invalid
+	 */
+	static function processWhereClause($queryWhere)
+	{
+		if (empty($queryWhere) || trim($queryWhere) === '') {
+			return '';
+		}
+
+		$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
+		
+		// Check if the converted WHERE already starts with WHERE keyword
+		if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {
+			return ' ' . $convertedWhere;
+		} else {
+			return ' WHERE ' . $convertedWhere;
+		}
+	}
 	}
 
 	if (!function_exists('Adminer\\idf_escape')) {
@@ -1048,17 +1089,29 @@ if (isset($_GET["bigquery"])) {
 			"NOT REGEXP"
 		);
 
-		public $partitionBy = array();
+		/** @var array BigQuery table partitioning configuration */
+	public $partitionBy = array();
 
-		public $unsigned = array();
+		/** @var array Unsigned numeric type definitions */
+	public $unsigned = array();
 
-		public $generated = array();
+		/** @var array Generated column definitions */
+	public $generated = array();
 
-		public $enumLength = array();
+		/** @var array Enum field length restrictions */
+	public $enumLength = array();
 
-		public $insertFunctions = array();
+		/** @var array Functions available for INSERT operations */
+	public $insertFunctions = array();
 
-		public $editFunctions = array();
+		/** @var array Functions available for field editing operations */
+	public $editFunctions = array();
+
+		/** @var array Database functions available for use in queries */
+	public $functions = array();
+
+		/** @var array Field grouping configuration for query operations */
+	public $grouping = array();
 
 		protected $types = array(
 			array("INT64" => 0, "INTEGER" => 0, "FLOAT64" => 0, "FLOAT" => 0, "NUMERIC" => 0, "BIGNUMERIC" => 0),
@@ -1898,6 +1951,8 @@ if (isset($_GET["bigquery"])) {
 	}
 	function convertAdminerWhereToBigQuery($condition)
 	{
+		// WHERE条件の検証
+		
 		if (!is_string($condition)) {
 			throw new InvalidArgumentException('WHERE condition must be a string');
 		}
@@ -1905,13 +1960,13 @@ if (isset($_GET["bigquery"])) {
 			throw new InvalidArgumentException('WHERE condition exceeds maximum length');
 		}
 		$suspiciousPatterns = array(
-			'/;\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\s+/i',
-			'/UNION\s+(ALL\s+)?SELECT/i',
-			'/\/\*.*?\*\//s',
-			'/--[^\r\n]*/i',
-			'/\bEXEC\b/i',
-			'/\bEXECUTE\b/i',
-			'/\bSP_/i'
+			'/;\\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
+			'/UNION\\s+(ALL\\s+)?SELECT/i',
+			'/\\/\\*.*?\\*\\//s',
+			'/--[^\\r\\n]*/i',
+			'/\\bEXEC\\b/i',
+			'/\\bEXECUTE\\b/i',
+			'/\\bSP_/i'
 		);
 		foreach ($suspiciousPatterns as $pattern) {
 			if (preg_match($pattern, $condition)) {
@@ -1920,21 +1975,25 @@ if (isset($_GET["bigquery"])) {
 			}
 		}
 
+		// 正規表現を修正：\\\\s を \\s に変更
 		$condition = preg_replace_callback('/(`[^`]+`)\\s*=\\s*`([^`]+)`/', function ($matches) {
 			$column = $matches[1];
 			$value = $matches[2];
 
-			if (preg_match('/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/', $value)) {
-
+			if (preg_match('/^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$/', $value)) {
+				// 数値の場合
 				return $column . ' = ' . $value;
 			} else {
-
+				// 文字列の場合
 				$escaped = str_replace("'", "''", $value);
 				return $column . " = '" . $escaped . "'";
 			}
 		}, $condition);
 
+		// COLLATE句を削除
 		$condition = preg_replace('/\\s+COLLATE\\s+\\w+/i', '', $condition);
+		
+		// WHERE条件の変換完了
 
 		return $condition;
 	}
@@ -2213,24 +2272,35 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 
-				$jobInfo = $job->info();
-				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+				// BigQuery INSERT ジョブ完了判定（共通関数を使用）
+				if (BigQueryUtils::isJobCompleted($job)) {
+					$jobInfo = $job->info();
+					// ジョブが完了している場合、エラー結果をチェック
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
-						error_log("BigQuery INSERT failed: " . ($errorResult['message'] ?? 'Unknown error'));
+						$errorMessage = $errorResult['message'] ?? 'Unknown error';
+						error_log("BigQuery INSERT failed: " . $errorMessage);
+						$connection->error = "INSERT failed: " . $errorMessage;
 						return false;
 					}
 
+					// 成功時の処理
 					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 1;
 					return true;
 				}
-
+				// ジョブが完了していない場合
+				$connection->error = "INSERT job did not complete successfully";
 				return false;
+				
 			} catch (ServiceException $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'INSERT_SERVICE_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'INSERT_SERVICE_ERROR');
+				$connection->error = "INSERT ServiceException: " . $errorMessage;
 				return false;
 			} catch (Exception $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'INSERT_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'INSERT_ERROR');
+				$connection->error = "INSERT Exception: " . $errorMessage;
 				return false;
 			}
 		}
@@ -2266,15 +2336,14 @@ if (isset($_GET["bigquery"])) {
 					return false;
 				}
 
-				$whereClause = '';
-				if (!empty($queryWhere)) {
-					$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
-				}
+				// Use the consolidated WHERE clause processing helper
+				$whereClause = BigQueryUtils::processWhereClause($queryWhere);
 
 				$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
 				$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
 				$setStr = implode(", ", $setParts);
-				$updateQuery = "UPDATE $fullTableName SET $setStr $whereClause";
+				$updateQuery = "UPDATE $fullTableName SET $setStr$whereClause";
+
 
 				BigQueryUtils::logQuerySafely($updateQuery, "UPDATE");
 
@@ -2288,24 +2357,35 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 
-				$jobInfo = $job->info();
-				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+				// BigQuery UPDATE ジョブ完了判定（共通関数を使用）
+				if (BigQueryUtils::isJobCompleted($job)) {
+					$jobInfo = $job->info();
+					// エラーがないかチェック
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
-						error_log("BigQuery UPDATE failed: " . ($errorResult['message'] ?? 'Unknown error'));
+						$errorMessage = $errorResult['message'] ?? 'Unknown error';
+						error_log("BigQuery UPDATE failed: " . $errorMessage);
+						$connection->error = "UPDATE failed: " . $errorMessage;
 						return false;
 					}
 
+					// 成功時のaffected_rows設定
 					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
 					return true;
 				}
 
+				// ここに到達するのは異常な状態
+				$connection->error = "UPDATE job completion status could not be verified";
 				return false;
 			} catch (ServiceException $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'UPDATE_SERVICE_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'UPDATE_SERVICE_ERROR');
+				$connection->error = "UPDATE ServiceException: " . $errorMessage;
 				return false;
 			} catch (Exception $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'UPDATE_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'UPDATE_ERROR');
+				$connection->error = "UPDATE Exception: " . $errorMessage;
 				return false;
 			}
 		}
@@ -2323,11 +2403,9 @@ if (isset($_GET["bigquery"])) {
 					return false;
 				}
 
-				$whereClause = '';
-				if (!empty($queryWhere) && trim($queryWhere) !== '') {
-					$whereClause = 'WHERE ' . convertAdminerWhereToBigQuery($queryWhere);
-				} else {
-
+				// Use the consolidated WHERE clause processing helper
+				$whereClause = BigQueryUtils::processWhereClause($queryWhere);
+				if (empty($whereClause)) {
 					throw new InvalidArgumentException("BigQuery: DELETE without WHERE clause is not allowed. Please specify WHERE conditions to avoid accidental data deletion.");
 				}
 
@@ -2347,24 +2425,33 @@ if (isset($_GET["bigquery"])) {
 					$job->waitUntilComplete();
 				}
 
-				$jobInfo = $job->info();
-				if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
+				// BigQuery DELETE ジョブ完了判定（共通関数を使用）
+				if (BigQueryUtils::isJobCompleted($job)) {
+					$jobInfo = $job->info();
+					// エラーがないかチェック
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
-						error_log("BigQuery DELETE failed: " . ($errorResult['message'] ?? 'Unknown error'));
+						$errorMessage = $errorResult['message'] ?? 'Unknown error';
+						$connection->error = "DELETE failed: " . $errorMessage;
 						return false;
 					}
 
+					// 成功時のaffected_rows設定
 					$connection->affected_rows = $jobInfo['statistics']['query']['numDmlAffectedRows'] ?? 0;
 					return true;
 				}
 
+				$connection->error = "DELETE job did not complete successfully";
 				return false;
 			} catch (ServiceException $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'DELETE_SERVICE_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'DELETE_SERVICE_ERROR');
+				$connection->error = "DELETE ServiceException: " . $errorMessage;
 				return false;
 			} catch (Exception $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'DELETE_ERROR');
+				$errorMessage = $e->getMessage();
+				BigQueryUtils::logQuerySafely($errorMessage, 'DELETE_ERROR');
+				$connection->error = "DELETE Exception: " . $errorMessage;
 				return false;
 			}
 		}
@@ -2633,6 +2720,7 @@ if (isset($_GET["bigquery"])) {
 						return false;
 					}
 				}
+
 				if ($tableCount > 0) {
 					error_log("BigQuery: Found $tableCount tables to copy from '$old_name' to '$new_name'");
 				}
@@ -3208,9 +3296,9 @@ if (!function_exists('schema')) {
 	}
 }
 
-if (!function_exists('import_sql')) {
+if (!function_exists('Adminer\\bigquery_view')) {
 
-	function view($name)
+	function bigquery_view($name)
 	{
 		// Phase 4 Sprint 4.1: BigQuery ビュー定義取得機能
 		// BigQuery ビューの詳細情報とクエリ定義を返す
@@ -3562,7 +3650,6 @@ if (!function_exists('isCommentOnly')) {
 			return false;
 		}
 	}
-}
 
 if (!function_exists('check_table')) {
 
