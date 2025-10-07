@@ -19,13 +19,15 @@ ENV NODE_ENV=test
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 # E2E設定ファイル、テストファイル、スクリプトファイルをコピー
-COPY container/e2e/package.json /usr/local/src/container/e2e/package.json
-COPY container/e2e/playwright.config.js /usr/local/src/container/e2e/playwright.config.js
-COPY container/e2e/tests/ /usr/local/src/container/e2e/tests/
-COPY container/e2e/scripts/ /usr/local/src/container/e2e/scripts/
+COPY devtools/e2e/package.json /usr/local/src/devtools/e2e/package.json
+COPY devtools/e2e/playwright.config.js /usr/local/src/devtools/e2e/playwright.config.js
+COPY devtools/e2e/tests/ /usr/local/src/devtools/e2e/tests/
+COPY devtools/e2e/tests-full/ /usr/local/src/devtools/e2e/tests-full/
+COPY devtools/e2e/scripts/ /usr/local/src/devtools/e2e/scripts/
+COPY devtools/e2e/export-fix-test.js /usr/local/src/devtools/e2e/export-fix-test.js
 
 # エントリーポイントスクリプトをコピー
-COPY container/e2e/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY devtools/e2e/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # エントリーポイント設定

@@ -382,4 +382,106 @@ test.describe('Import & Export Tests', () => {
             }
         }
     });
+
+    test('【問題再現】output=Openでtext表示されずtarダウンロードされる問題', async ({ page }) => {
+        console.log('🐛 Export output=Open問題の再現テストを開始');
+
+        // 特定のURLパラメーターでアクセス（ユーザー報告のURL）
+        await page.goto('http://adminer-bigquery-test/?bigquery=adminer-test-472623&username=bigquery-service-account&db=dataset_test&dump=');
+        await page.waitForTimeout(3000);
+
+        // Export画面であることを確認
+        const pageTitle = await page.title();
+        console.log(`📄 現在のページタイトル: ${pageTitle}`);
+
+        // Export設定フォームの確認
+        const outputRadios = page.locator('input[name="output"]');
+        const outputCount = await outputRadios.count();
+        console.log(`📋 output選択肢数: ${outputCount}`);
+
+        if (outputCount > 0) {
+            // 各output選択肢の確認
+            for (let i = 0; i < outputCount; i++) {
+                const radio = outputRadios.nth(i);
+                const value = await radio.getAttribute('value');
+                const labelText = await page.locator(`label[for="${await radio.getAttribute('id')}"]`).textContent();
+                console.log(`📋 output選択肢 ${i}: value="${value}", label="${labelText}"`);
+            }
+
+            // "Open"（text表示）オプションを選択
+            const openOption = outputRadios.filter({ hasValue: 'open' })
+                .or(outputRadios.filter({ hasValue: 'output' }))
+                .or(outputRadios.filter({ hasValue: '' }));
+
+            if (await openOption.count() > 0) {
+                await openOption.first().click();
+                console.log('✅ Output=Open選択完了');
+
+                // Exportボタンを探す
+                const exportButton = page.locator('input[type="submit"]')
+                    .filter({ hasText: /export|エクスポート|実行/i })
+                    .or(page.locator('button')
+                        .filter({ hasText: /export|エクスポート|実行/i }));
+
+                if (await exportButton.count() > 0) {
+                    console.log('🔍 Exportボタンクリック前の状態確認');
+
+                    // レスポンスを監視してdownloadイベントをキャッチ
+                    let downloadTriggered = false;
+                    let responseContentType = null;
+
+                    page.on('response', async (response) => {
+                        if (response.url().includes('dump') || response.url().includes('export')) {
+                            responseContentType = response.headers()['content-type'];
+                            console.log(`📥 Export Response Content-Type: ${responseContentType}`);
+                        }
+                    });
+
+                    page.on('download', async (download) => {
+                        downloadTriggered = true;
+                        const fileName = download.suggestedFilename();
+                        console.log(`📥 ダウンロード検出: ${fileName}`);
+
+                        // tarファイルかどうかチェック
+                        if (fileName.includes('.tar') || fileName.includes('.gz')) {
+                            console.log('❌ 問題再現: tarファイルとしてダウンロードされました');
+                        }
+                    });
+
+                    // Exportボタンをクリック
+                    await exportButton.first().click();
+                    await page.waitForTimeout(5000);
+
+                    // 結果の判定
+                    if (downloadTriggered) {
+                        console.log('❌ 問題確認: ファイルダウンロードが発生しました（text表示されるべき）');
+                    } else {
+                        // ページにtext内容が表示されているかチェック
+                        const bodyText = await page.locator('body').textContent();
+                        if (bodyText && bodyText.length > 100) {
+                            console.log('✅ 正常: text内容がページに表示されています');
+                        } else {
+                            console.log('❌ 問題: text表示もダウンロードも発生していません');
+                        }
+                    }
+
+                    // Content-Typeの確認
+                    if (responseContentType) {
+                        if (responseContentType.includes('application/x-tar') || responseContentType.includes('application/gzip')) {
+                            console.log('❌ 問題確認: Response Content-Typeがtar/gzipです');
+                        } else if (responseContentType.includes('text/')) {
+                            console.log('✅ 正常: Response Content-Typeがtextです');
+                        }
+                    }
+
+                } else {
+                    console.log('⚠️ Exportボタンが見つかりません');
+                }
+            } else {
+                console.log('⚠️ Output=Open選択肢が見つかりません');
+            }
+        } else {
+            console.log('⚠️ output設定が見つかりません');
+        }
+    });
 });

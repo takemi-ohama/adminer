@@ -2,7 +2,7 @@ services:
   playwright-e2e:
     build:
       context: ../../
-      dockerfile: container/e2e/Dockerfile
+      dockerfile: devtools/e2e/Dockerfile
     container_name: playwright-e2e
     volumes:
       - ../../:/app
