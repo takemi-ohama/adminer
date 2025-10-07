@@ -1643,6 +1643,7 @@ if (isset($_GET["bigquery"])) {
 			'drop',
 			'select',
 			'export',
+			'dump',
 		);
 		$unsupportedFeatures = array(
 			'foreignkeys',
@@ -1652,7 +1653,6 @@ if (isset($_GET["bigquery"])) {
 			'transaction',
 			'comment',
 			'drop_col',
-			'dump',
 			'event',
 			'move_col',
 			'move_tables',
@@ -1681,6 +1681,47 @@ if (isset($_GET["bigquery"])) {
 		}
 		return false;
 	}
+
+	function dumpOutput()
+	{
+		// BigQuery用のExport出力オプション
+		return array(
+			'text' => 'Open', // ブラウザで表示
+			'file' => 'Save', // ファイル保存
+		);
+	}
+
+	function dumpFormat()
+	{
+		// BigQuery用のExport形式オプション
+		return array(
+			'csv' => 'CSV',
+			'json' => 'JSON',
+			'sql' => 'SQL',
+		);
+	}
+
+	function dumpHeaders($identifier, $multi_table = false)
+	{
+		$format = $_POST["format"] ?? 'csv';
+
+		// BigQuery用の適切なContent-Typeを設定
+		switch ($format) {
+			case 'csv':
+				header("Content-Type: text/csv; charset=utf-8");
+				return 'csv';
+			case 'json':
+				header("Content-Type: application/json; charset=utf-8");
+				return 'json';
+			case 'sql':
+				header("Content-Type: text/plain; charset=utf-8");
+				return 'sql';
+			default:
+				header("Content-Type: text/plain; charset=utf-8");
+				return 'txt';
+		}
+	}
+
 	function operators()
 	{
 		return array(
