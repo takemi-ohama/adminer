@@ -1,5 +1,10 @@
 ## Adminer dev
+
+## Adminer 5.4.1 (released 2025-09-26)
 - SQL command: Unlink NULL primary keys
+- Do not quote 0 in CSV export
+- Warn about exceeded upload_max_filesize in imports
+- Prolong queries saved from SQL command to URL (bug #1154)
 - MySQL: Fix displaying routine definition (bug #1156, regression from 5.4.0)
 
 ## Adminer 5.4.0 (released 2025-09-08)
@@ -153,8 +158,8 @@
 - MariaDB: Fix creating and altering generated columns (bug #897)
 - PostgreSQL: Fix "where" and "order" privileges (bug #902, regression from 5.0.2)
 - SQLite: Fix creating table in compiled version (bug #901, regression from 5.0.0)
-- Elastic: Do not pass null values on insert (PR #892)
-- Elastic: Fix displaying sparse rows (PR #893)
+- Elasticsearch: Do not pass null values on insert (PR #892)
+- Elasticsearch: Fix displaying sparse rows (PR #893)
 - Plugins: Add method dumpFooter()
 
 ## Adminer 5.0.2 (released 2025-03-10)
@@ -235,6 +240,7 @@
 - SQLite: Fix expressions in default values (bug SF-860)
 - MS SQL: Foreign keys in non-default schema (bug SF-833)
 - Oracle: Include tables granted by other user
+- Elasticsearch: Move to plugin
 - MongoDB: Execute commands against the selected DB
 
 ## Adminer 4.15.0
