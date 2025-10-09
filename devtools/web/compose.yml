@@ -15,7 +15,8 @@ services:
       - GOOGLE_CLOUD_PROJECT=nyle-carmo-analysis
       # OAuth2認証設定（テスト用）
       - GOOGLE_OAUTH2_ENABLE=false
-      - GOOGLE_OAUTH2_CLIENT_ID=128266455669-qsqdnpuifgrek683fjhgd1abi9qfkdca.apps.googleusercontent.com
+      - GOOGLE_OAUTH2_CLIENT_ID=your-oauth2-client-id
+      - GOOGLE_OAUTH2_CLIENT_SECRET=your-oauth2-client-secret
       - GOOGLE_OAUTH2_REDIRECT_URL=http://localhost:8080/oauth2/callback
       - GOOGLE_OAUTH2_COOKIE_DOMAIN=localhost
       - GOOGLE_OAUTH2_COOKIE_NAME=oauth2_token

@@ -59,10 +59,12 @@ COPY --from=build /app/vendor ./vendor
 COPY devtools/web/index.php ./
 COPY devtools/web/.htaccess ./
 COPY devtools/web/php.ini /usr/local/etc/php/php.ini
+COPY devtools/web/apache-custom.conf /etc/apache2/conf-available/
 
 # Apache設定
 RUN a2enmod rewrite && \
-    echo "ServerName localhost" >> /etc/apache2/apache2.conf
+    echo "ServerName localhost" >> /etc/apache2/apache2.conf && \
+    a2enconf apache-custom
 
 # BigQuery設定用環境変数
 ENV HOME=/var/www
