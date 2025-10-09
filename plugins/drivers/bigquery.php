@@ -714,7 +714,10 @@ if (isset($_GET["bigquery"])) {
 		try {
 			$accessToken = $this->getOAuth2AccessToken();
 			if (!$accessToken) {
-				throw new Exception('OAuth2 access token not found. Please authenticate first.');
+				// OAuth2認証フローを開始
+				$this->initiateOAuth2Flow();
+				// この後はリダイレクトされるので、到達しない
+				return false;
 			}
 
 			// Google Client を使用してOAuth2認証を設定
@@ -743,6 +746,41 @@ if (isset($_GET["bigquery"])) {
 		} catch (Exception $e) {
 			throw new Exception('OAuth2 BigQuery client initialization failed: ' . $e->getMessage());
 		}
+	}
+
+	/**
+	 * OAuth2認証フローを開始（Googleの認証エンドポイントにリダイレクト）
+	 */
+	private function initiateOAuth2Flow()
+	{
+		$config = $this->getOAuth2Config();
+		$clientId = $config['client_id'];
+		$redirectUrl = $config['redirect_url'];
+
+		if (!$clientId || !$redirectUrl) {
+			throw new Exception('OAuth2 configuration is incomplete. Please set GOOGLE_OAUTH2_CLIENT_ID and GOOGLE_OAUTH2_REDIRECT_URL environment variables.');
+		}
+
+		// 現在のURLを保存してコールバック後にリダイレクト
+		$currentUrl = $_SERVER['REQUEST_URI'] ?? '/';
+		$state = base64_encode(json_encode(['redirect_to' => $currentUrl]));
+
+		// Google OAuth2認証URL
+		$authUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
+		$params = [
+			'client_id' => $clientId,
+			'redirect_uri' => $redirectUrl,
+			'scope' => 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform',
+			'response_type' => 'code',
+			'access_type' => 'offline',
+			'state' => $state
+		];
+
+		$authUrlWithParams = $authUrl . '?' . http_build_query($params);
+
+		// OAuth2認証ページにリダイレクト
+		header('Location: ' . $authUrlWithParams);
+		exit();
 	}
 
 	/**
