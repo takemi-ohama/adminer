@@ -8,12 +8,13 @@ services:
       - "8080:80"
     volumes:
       # Google Credentials をホストからマウント
-      - /var/tmp/adminer-test-owner.json:/etc/google_credentials.json:ro
+      #- /var/tmp/adminer-test-owner.json:/etc/google_credentials.json:ro
+      - /var/tmp/google_credential.json:/etc/google_credentials.json:ro
     environment:
-      #- GOOGLE_APPLICATION_CREDENTIALS=/etc/google_credentials.json
-      - GOOGLE_CLOUD_PROJECT=adminer-test-472623
+      - GOOGLE_APPLICATION_CREDENTIALS=/etc/google_credentials.json
+      - GOOGLE_CLOUD_PROJECT=nyle-carmo-analysis
       # OAuth2認証設定（テスト用）
-      - GOOGLE_OAUTH2_ENABLE=true
+      - GOOGLE_OAUTH2_ENABLE=false
       - GOOGLE_OAUTH2_CLIENT_ID=128266455669-qsqdnpuifgrek683fjhgd1abi9qfkdca.apps.googleusercontent.com
       - GOOGLE_OAUTH2_REDIRECT_URL=http://localhost:8080/oauth2/callback
       - GOOGLE_OAUTH2_COOKIE_DOMAIN=localhost
