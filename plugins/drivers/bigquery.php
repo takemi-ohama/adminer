@@ -1355,7 +1355,9 @@ if (isset($_GET["bigquery"])) {
 		}
 		function convert_field(array $field)
 		{
-			return BigQueryUtils::generateFieldConversion($field);
+			// BigQuery SELECT * との併用問題を回避するため、フィールド変換を無効化
+			// Adminerが SELECT * を使用する際に不正なSQL生成を防ぐ
+			return null;
 		}
 
 		function hasCStyleEscapes(): bool
@@ -2370,7 +2372,9 @@ if (isset($_GET["bigquery"])) {
 	if (!function_exists('convert_field')) {
 		function convert_field(array $field)
 		{
-			return BigQueryUtils::generateFieldConversion($field);
+			// BigQuery SELECT * との併用問題を回避するため、フィールド変換を無効化
+			// Adminerが SELECT * を使用する際に不正なSQL生成を防ぐ
+			return null;
 		}
 	}
 	if (!function_exists('unconvert_field')) {
