@@ -24,13 +24,12 @@ function adminer_object()
 }
 
 // OAuth2コールバック処理（Adminer実行前に処理）
-$request_uri = $_SERVER['REQUEST_URI'] ?? '';
-$is_oauth_callback = strpos($request_uri, '/oauth2/callback') !== false ||
-                    (isset($_GET['code']) && isset($_GET['state']) && strpos($request_uri, 'oauth2') !== false);
+$is_oauth_callback = isset($_GET['oauth2']) && $_GET['oauth2'] === 'callback' &&
+                    isset($_GET['code']) && isset($_GET['state']);
 
 if ($is_oauth_callback) {
 	// デバッグログ出力
-	error_log('OAuth2 callback detected. REQUEST_URI: ' . $request_uri);
+	error_log('OAuth2 callback detected. Query parameter oauth2=callback');
 	error_log('GET parameters: ' . json_encode($_GET));
 
 	// OAuth2コールバックURLの場合、BigQueryドライバーのOAuth2処理を実行

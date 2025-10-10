@@ -2,7 +2,3 @@ php_value max_input_vars 50000
 php_value max_input_nesting_level 256
 php_value memory_limit 1G
 php_value max_execution_time 600
-
-# OAuth2コールバック用URLリライト
-RewriteEngine On
-RewriteRule ^oauth2/callback$ /index.php [L,QSA]

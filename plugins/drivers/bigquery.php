@@ -690,7 +690,14 @@ if (isset($_GET["bigquery"])) {
 		$config = $this->getOAuth2Config();
 		$cookieName = $config['cookie_name'] ?: 'oauth2_proxy';
 		
-		// セッションから取得を試行
+		// 1. プロキシレベルのOAuth2認証をチェック（最優先）
+		if (isset($_COOKIE['__Host-oauth2_proxy'])) {
+			// プロキシが既にOAuth2認証を完了している場合
+			error_log('OAuth2: Using proxy-level authentication');
+			return $_COOKIE['__Host-oauth2_proxy'];
+		}
+		
+		// 2. セッションから取得を試行
 		if (session_status() === PHP_SESSION_NONE) {
 			session_start();
 		}
@@ -698,9 +705,52 @@ if (isset($_GET["bigquery"])) {
 			return $_SESSION['oauth2_token']['access_token'];
 		}
 
-		// クッキーから取得を試行
+		// 3. アプリケーションレベルのクッキーから取得を試行
 		if (isset($_COOKIE[$cookieName])) {
 			return $_COOKIE[$cookieName];
+		}
+		
+		// 4. プロキシ認証情報をHTTPヘッダーから取得（oauth2_proxy標準）
+		if (isset($_SERVER['HTTP_X_USER'])) {
+			error_log('OAuth2: Using proxy HTTP_X_USER header authentication');
+			// プロキシが設定したユーザー情報を使用してアクセストークンを生成
+			return $this->generateTokenFromProxyAuth();
+		}
+		
+		return null;
+	}
+
+	/**
+	 * プロキシ認証情報からアクセストークンを生成
+	 */
+	private function generateTokenFromProxyAuth()
+	{
+		// プロキシが設定したヘッダー情報を確認
+		$userEmail = $_SERVER['HTTP_X_USER'] ?? '';
+		$accessToken = $_SERVER['HTTP_X_ACCESS_TOKEN'] ?? '';
+		
+		if ($accessToken) {
+			// プロキシが直接アクセストークンを提供している場合
+			error_log("OAuth2: Using proxy-provided access token for user: $userEmail");
+			return $accessToken;
+		}
+		
+		// プロキシ認証成功の場合、環境に応じたトークン取得
+		if ($userEmail) {
+			error_log("OAuth2: Proxy authentication detected for user: $userEmail");
+			
+			// プロキシ認証が成功している場合、デフォルト認証情報を使用
+			// この場合、Google Cloud のデフォルト認証情報が使用される
+			try {
+				$credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
+				if ($credentialsPath && file_exists($credentialsPath)) {
+					// サービスアカウント認証を使用
+					error_log("OAuth2: Falling back to service account authentication");
+					return 'service_account_fallback';
+				}
+			} catch (Exception $e) {
+				error_log("OAuth2: Service account fallback failed: " . $e->getMessage());
+			}
 		}
 		
 		return null;
@@ -718,6 +768,12 @@ if (isset($_GET["bigquery"])) {
 				$this->initiateOAuth2Flow();
 				// この後はリダイレクトされるので、到達しない
 				return false;
+			}
+
+			// 特別な値の場合はサービスアカウント認証にフォールバック
+			if ($accessToken === 'service_account_fallback') {
+				error_log('OAuth2: Using service account fallback after proxy authentication');
+				return $this->createBigQueryClientWithServiceAccount($location);
 			}
 
 			// Google Client を使用してOAuth2認証を設定
@@ -742,9 +798,48 @@ if (isset($_GET["bigquery"])) {
 			
 			$this->location = $location;
 			
+			error_log('OAuth2: BigQuery client created successfully with OAuth2 authentication');
 			return true;
 		} catch (Exception $e) {
+			error_log('OAuth2: BigQuery client initialization failed: ' . $e->getMessage());
+			
+			// プロキシ認証が成功している場合、サービスアカウントにフォールバック
+			if (isset($_SERVER['HTTP_X_USER']) || isset($_COOKIE['__Host-oauth2_proxy'])) {
+				error_log('OAuth2: Attempting service account fallback after proxy authentication');
+				return $this->createBigQueryClientWithServiceAccount($location);
+			}
+			
 			throw new Exception('OAuth2 BigQuery client initialization failed: ' . $e->getMessage());
+		}
+	}
+
+	/**
+	 * サービスアカウント認証でBigQueryクライアントを作成（プロキシ認証後のフォールバック）
+	 */
+	private function createBigQueryClientWithServiceAccount($location)
+	{
+		try {
+			require_once __DIR__ . '/../../vendor/autoload.php';
+			
+			$credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
+			if (!$credentialsPath || !file_exists($credentialsPath)) {
+				throw new Exception('Service account credentials not found');
+			}
+			
+			$config = [
+				'projectId' => $this->projectId,
+				'keyFilePath' => $credentialsPath,
+				'location' => $location
+			];
+			
+			$this->bigquery = new BigQueryClient($config);
+			$this->location = $location;
+			
+			error_log('OAuth2: Successfully created BigQuery client with service account fallback');
+			return true;
+		} catch (Exception $e) {
+			error_log('OAuth2: Service account fallback failed: ' . $e->getMessage());
+			throw $e;
 		}
 	}
 
@@ -854,22 +949,39 @@ if (isset($_GET["bigquery"])) {
 		$cookieDomain = $config['cookie_domain'] ?: '';
 		$cookieExpire = $config['cookie_expire'] ?: 3600;
 
-		// アクセストークンをクッキーに保存
-		setcookie(
-			$cookieName,
-			$tokenData['access_token'],
-			time() + $cookieExpire,
-			'/',
-			$cookieDomain,
-			true, // secure
-			true  // httponly
-		);
+		// プロキシレベル認証が存在する場合は、アプリレベルのCookie設定をスキップ
+		if (isset($_COOKIE['__Host-oauth2_proxy'])) {
+			error_log('OAuth2: Proxy-level authentication detected, skipping app-level cookie');
+		} else {
+			// HTTPS検出を動的に行う
+			$isHttps = (
+				(!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+				(!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
+				(!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on') ||
+				(!empty($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443)
+			);
+
+			// アクセストークンをクッキーに保存（HTTPSの場合のみsecure設定）
+			setcookie(
+				$cookieName,
+				$tokenData['access_token'],
+				time() + $cookieExpire,
+				'/',
+				$cookieDomain,
+				$isHttps, // 動的にsecure設定
+				true  // httponly
+			);
+			
+			error_log("OAuth2: Stored app-level cookie with secure=" . ($isHttps ? 'true' : 'false'));
+		}
 
 		// セッションにも保存
 		if (session_status() === PHP_SESSION_NONE) {
 			session_start();
 		}
 		$_SESSION['oauth2_token'] = $tokenData;
+		
+		error_log('OAuth2: Token stored in session successfully');
 	}
 		private function validateCredentialsFile($credentialsPath)
 		{
