@@ -1,6 +1,6 @@
 services:
   adminer-bigquery:
-    image: ghcr.io/takemi-ohama/adminer-bigquery:latest
+    image: 422746423551.dkr.ecr.ap-northeast-1.amazonaws.com/adminer-bigquery:latest
     container_name: adminer-bigquery-prod
     ports:
       - "8081:80"
