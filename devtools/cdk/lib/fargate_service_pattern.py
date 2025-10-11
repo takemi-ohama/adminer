@@ -186,7 +186,7 @@ class FargateServicePattern(Stack):
             zone=self.zone,
             record_name=arecord,
             ttl=Duration.seconds(60),
-            target=route53.RecordTarget.from_alias(r53_targes.LoadBalancerTarget(load_balancer)),
+            target=route53.RecordTarget.from_alias(r53_targets.LoadBalancerTarget(load_balancer)),
         )
 
     def listener_priority(self, listener_arn, host_headers):
