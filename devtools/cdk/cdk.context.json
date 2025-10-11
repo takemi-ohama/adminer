@@ -1,0 +1,103 @@
+{
+  "hosted-zone:account=422746423551:domainName=dev.car-mo.jp:privateZone=false:region=ap-northeast-1": {
+    "Id": "/hostedzone/ZTQOB3LUF1EAW",
+    "Name": "dev.car-mo.jp."
+  },
+  "hosted-zone:account=422746423551:domainName=carmo-kun.net:privateZone=false:region=ap-northeast-1": {
+    "Id": "/hostedzone/Z0471087IOMJWS09MLAP",
+    "Name": "carmo-kun.net."
+  },
+  "hosted-zone:account=422746423551:domainName=app.carmo-kun.net:privateZone=false:region=ap-northeast-1": {
+    "Id": "/hostedzone/Z072112636LZUSI6ZPO0U",
+    "Name": "app.carmo-kun.net."
+  },
+  "hosted-zone:account=422746423551:domainName=system.carmo-kun.net:privateZone=false:region=ap-northeast-1": {
+    "Id": "/hostedzone/Z1015213IA6DYIQHW59R",
+    "Name": "system.carmo-kun.net."
+  },
+  "ssm:account=422746423551:parameterName=dev-common-listener-arn:region=ap-northeast-1": "arn:aws:elasticloadbalancing:ap-northeast-1:422746423551:listener/app/dev-ecs-alb/e79b8893be6c0522/d85c476404caddb1",
+  "ssm:account=422746423551:parameterName=dev-common-lb-arn:region=ap-northeast-1": "arn:aws:elasticloadbalancing:ap-northeast-1:422746423551:loadbalancer/app/dev-ecs-alb/e79b8893be6c0522",
+  "load-balancer:account=422746423551:loadBalancerArn=arn$:aws$:elasticloadbalancing$:ap-northeast-1$:422746423551$:loadbalancer/app/dev-ecs-alb/e79b8893be6c0522:loadBalancerType=application:region=ap-northeast-1": {
+    "loadBalancerArn": "arn:aws:elasticloadbalancing:ap-northeast-1:422746423551:loadbalancer/app/dev-ecs-alb/e79b8893be6c0522",
+    "loadBalancerCanonicalHostedZoneId": "Z14GRHDCWA56QT",
+    "loadBalancerDnsName": "dev-ecs-alb-1761336980.ap-northeast-1.elb.amazonaws.com",
+    "vpcId": "vpc-03365ffdf742e6bbb",
+    "securityGroupIds": [
+      "sg-02efcc5424dac8ca0"
+    ],
+    "ipAddressType": "ipv4"
+  },
+  "vpc-provider:account=422746423551:filter.vpc-id=vpc-03365ffdf742e6bbb:region=ap-northeast-1:returnAsymmetricSubnets=true": {
+    "vpcId": "vpc-03365ffdf742e6bbb",
+    "vpcCidrBlock": "10.21.0.0/16",
+    "ownerAccountId": "422746423551",
+    "availabilityZones": [],
+    "vpnGatewayId": "vgw-063f59a5715571cf2",
+    "subnetGroups": [
+      {
+        "name": "Private",
+        "type": "Private",
+        "subnets": [
+          {
+            "subnetId": "subnet-0fcebc29b11e50891",
+            "cidr": "10.21.11.0/24",
+            "availabilityZone": "ap-northeast-1a",
+            "routeTableId": "rtb-02d31d7d468c0235d"
+          },
+          {
+            "subnetId": "subnet-01475de3064a44ca9",
+            "cidr": "10.21.12.0/24",
+            "availabilityZone": "ap-northeast-1a",
+            "routeTableId": "rtb-02d31d7d468c0235d"
+          },
+          {
+            "subnetId": "subnet-09ce0885726bcd8d4",
+            "cidr": "10.21.13.0/24",
+            "availabilityZone": "ap-northeast-1a",
+            "routeTableId": "rtb-02d31d7d468c0235d"
+          },
+          {
+            "subnetId": "subnet-0cf8885bc016cc60f",
+            "cidr": "10.21.21.0/24",
+            "availabilityZone": "ap-northeast-1c",
+            "routeTableId": "rtb-02d31d7d468c0235d"
+          },
+          {
+            "subnetId": "subnet-0ab6f6bcfac7c33e2",
+            "cidr": "10.21.22.0/24",
+            "availabilityZone": "ap-northeast-1c",
+            "routeTableId": "rtb-02d31d7d468c0235d"
+          },
+          {
+            "subnetId": "subnet-0792208e3f2245a1e",
+            "cidr": "10.21.23.0/24",
+            "availabilityZone": "ap-northeast-1c",
+            "routeTableId": "rtb-02d31d7d468c0235d"
+          }
+        ]
+      },
+      {
+        "name": "Public",
+        "type": "Public",
+        "subnets": [
+          {
+            "subnetId": "subnet-09ad251edb3478cf9",
+            "cidr": "10.21.1.0/24",
+            "availabilityZone": "ap-northeast-1a",
+            "routeTableId": "rtb-07b6eb28b91849577"
+          },
+          {
+            "subnetId": "subnet-083d8b04ca08ef2ff",
+            "cidr": "10.21.2.0/24",
+            "availabilityZone": "ap-northeast-1c",
+            "routeTableId": "rtb-07b6eb28b91849577"
+          }
+        ]
+      }
+    ]
+  },
+  "security-group:account=422746423551:region=ap-northeast-1:securityGroupId=sg-02efcc5424dac8ca0": {
+    "securityGroupId": "sg-02efcc5424dac8ca0",
+    "allowAllOutbound": false
+  }
+}
