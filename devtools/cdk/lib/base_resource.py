@@ -39,7 +39,7 @@ class IResource:
     carmo-cdk/bin/create_vpnkey.shで作成
     """
 
-    nameserers: list[str]
+    nameservers: list[str]
     """
     route53resolverインバウンドのdnsサーバーのIPアドレスリスト
 

@@ -9,7 +9,7 @@ from types import ModuleType
 from lib.base_resource import IResource
 
 
-class DefultPatterns:
+class DefaultPatterns:
     """
     Constractにするほどでもない、定型な処理フローをまとめたもの。
     """

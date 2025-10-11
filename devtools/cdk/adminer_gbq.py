@@ -3,7 +3,7 @@ from aws_cdk import (
     aws_ecs as ecs,
 )
 from constructs import Construct
-from lib.default_patterns import DefultPatterns
+from lib.default_patterns import DefaultPatterns
 from lib.fargate_service_pattern import FargateServicePattern
 
 
@@ -23,7 +23,7 @@ class AdminerGbqStack(FargateServicePattern):
         """
         super().__init__(scope, id, **kwargs)
 
-        patterns = DefultPatterns(self)
+        patterns = DefaultPatterns(self)
         self.rs = patterns.newResource(site_module)
         """環境別の既存リソース定義"""
 

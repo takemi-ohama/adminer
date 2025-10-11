@@ -5,13 +5,12 @@ from aws_cdk import (
     aws_elasticloadbalancingv2 as elb,
     aws_iam as iam,
     aws_route53 as route53,
-    aws_route53_targets as r53_targes,
+    aws_route53_targets as r53_targets,
     aws_ssm as ssm,
 )
 from constructs import Construct
 from lib.base_resource import IResource
 import boto3
-import pdb
 
 
 class FargateServicePattern(Stack):

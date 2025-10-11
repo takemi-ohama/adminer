@@ -79,7 +79,7 @@ class Resource(IResource):
 
         self.vpn_cert_arn = "arn:aws:acm:ap-northeast-1:422746423551:certificate/6a66488a-4370-4fc5-9d8e-ec7490006121"
 
-        self.nameserers = ["10.21.1.254", "10.21.2.254"]
+        self.nameservers = ["10.21.1.254", "10.21.2.254"]
 
         self.sg_default = ec2.SecurityGroup.from_security_group_id(
             scope, "sg_default", security_group_id="sg-0ab24e2d8fe967682"
