@@ -1,5 +1,5 @@
 # Build stage - Adminer本体の取得と依存関係インストール
-FROM public.ecr.aws/docker/library/php:8.3-apache
+FROM public.ecr.aws/docker/library/php:8.3-apache AS build
 
 # ビルド用ツールのインストール
 RUN apt-get update && apt-get install -y \
@@ -37,7 +37,7 @@ COPY composer.lock /app/
 RUN composer install --no-dev --optimize-autoloader
 
 # Production stage - 本番用最小イメージ
-FROM php:8.3-apache AS production
+FROM public.ecr.aws/docker/library/php:8.3-apache AS production
 
 # 本番用最小限パッケージのインストール
 RUN apt-get update \
