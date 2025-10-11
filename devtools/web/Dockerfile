@@ -1,5 +1,5 @@
 # Build stage - Adminer本体の取得と依存関係インストール
-FROM php:8.3-apache AS build
+FROM public.ecr.aws/docker/library/php:8.3-apache
 
 # ビルド用ツールのインストール
 RUN apt-get update && apt-get install -y \
