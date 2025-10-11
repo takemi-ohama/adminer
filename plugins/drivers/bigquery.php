@@ -4080,7 +4080,7 @@ if (!function_exists('analyze_table')) {
 	}
 }
 
-class AdminerLoginBigQuery extends \Adminer\Plugin
+class AdminerLoginBigQuery extends Adminer\Plugin
 {
 	protected $config;
 
@@ -4335,7 +4335,7 @@ class AdminerLoginBigQuery extends \Adminer\Plugin
 // =============================================================================
 
 
-class AdminerBigQueryCSS extends \Adminer\Plugin
+class AdminerBigQueryCSS extends Adminer\Plugin
 {
 	function head($dark = null)
 	{
