@@ -26,7 +26,71 @@ class AdminerLoginBigQuery extends Plugin
 	private function isOAuth2Enabled()
 	{
 		$oauth2Enable = getenv('GOOGLE_OAUTH2_ENABLE');
-		return $oauth2Enable === 'true';
+		// Add input validation and sanitization
+		return $oauth2Enable === 'true' && $this->validateOAuth2Configuration();
+	}
+
+	/**
+	 * Validate OAuth2 configuration for security
+	 */
+	private function validateOAuth2Configuration()
+	{
+		$clientId = getenv('GOOGLE_OAUTH2_CLIENT_ID');
+		$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
+
+		// Validate client ID format
+		if (!$clientId || !preg_match('/^[a-zA-Z0-9\-_.]+$/', $clientId)) {
+			error_log('OAuth2: Invalid client ID format');
+			return false;
+		}
+
+		// Validate redirect URL
+		if (!$redirectUrl || !filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
+			error_log('OAuth2: Invalid redirect URL');
+			return false;
+		}
+
+		// Ensure HTTPS for production
+		if (parse_url($redirectUrl, PHP_URL_SCHEME) !== 'https' &&
+			!in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'])) {
+			error_log('OAuth2: Redirect URL must use HTTPS in production');
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Validate OAuth2 state parameter for CSRF protection
+	 */
+	private function validateStateParameter($state)
+	{
+		try {
+			$decodedState = base64_decode($state, true);
+			if ($decodedState === false) {
+				return false;
+			}
+
+			$stateData = json_decode($decodedState, true);
+			if (!is_array($stateData)) {
+				return false;
+			}
+
+			// Validate redirect_to parameter
+			if (isset($stateData['redirect_to'])) {
+				$redirectTo = $stateData['redirect_to'];
+				// Only allow relative URLs or same-origin URLs
+				if (!preg_match('/^\/[^\/]/', $redirectTo) &&
+					parse_url($redirectTo, PHP_URL_HOST) !== $_SERVER['HTTP_HOST']) {
+					return false;
+				}
+			}
+
+			return true;
+		} catch (Exception $e) {
+			error_log('OAuth2: State validation error: ' . $e->getMessage());
+			return false;
+		}
 	}
 
 	/**
@@ -77,11 +141,11 @@ class AdminerLoginBigQuery extends Plugin
 
 		// 従来のCREDENTIAL認証
 		$fieldHandlers = array(
-			'driver' => fn() => $this->renderDriverField($heading),
-			'server' => fn() => $this->renderProjectIdField(),
-			'username' => fn() => $this->renderHiddenField('username'),
-			'password' => fn() => $this->renderHiddenField('password'),
-			'db' => fn() => $this->renderHiddenField('db')
+			'driver' => function() use ($heading) { return $this->renderDriverField($heading); },
+			'server' => function() { return $this->renderProjectIdField(); },
+			'username' => function() { return $this->renderHiddenField('username'); },
+			'password' => function() { return $this->renderHiddenField('password'); },
+			'db' => function() { return $this->renderHiddenField('db'); }
 		);
 
 		return isset($fieldHandlers[$name]) ? $fieldHandlers[$name]() : '';
@@ -268,9 +332,14 @@ class AdminerLoginBigQuery extends Plugin
 
 class AdminerBigQueryCSS extends Plugin
 {
+	private function isBigQueryDriver()
+	{
+		return (defined('DRIVER') && DRIVER === 'bigquery') || (defined('Adminer\\DRIVER') && constant('Adminer\\DRIVER') === 'bigquery');
+	}
+
 	function head($dark = null)
 	{
-		if ((defined('DRIVER') && DRIVER === 'bigquery') || (defined('Adminer\\DRIVER') && constant('Adminer\\DRIVER') === 'bigquery')) {
+		if ($this->isBigQueryDriver()) {
 
 			if (class_exists('Adminer\\Driver')) {
 				$driver = new \Adminer\Driver();
@@ -925,7 +994,71 @@ if (isset($_GET["bigquery"])) {
 		private function isOAuth2Enabled()
 		{
 			$oauth2Enable = getenv('GOOGLE_OAUTH2_ENABLE');
-			return $oauth2Enable === 'true';
+			// Add input validation and sanitization
+			return $oauth2Enable === 'true' && $this->validateOAuth2Configuration();
+		}
+
+		/**
+		 * Validate OAuth2 configuration for security
+		 */
+		private function validateOAuth2Configuration()
+		{
+			$clientId = getenv('GOOGLE_OAUTH2_CLIENT_ID');
+			$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
+
+			// Validate client ID format
+			if (!$clientId || !preg_match('/^[a-zA-Z0-9\-_.]+$/', $clientId)) {
+				error_log('OAuth2: Invalid client ID format');
+				return false;
+			}
+
+			// Validate redirect URL
+			if (!$redirectUrl || !filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
+				error_log('OAuth2: Invalid redirect URL');
+				return false;
+			}
+
+			// Ensure HTTPS for production
+			if (parse_url($redirectUrl, PHP_URL_SCHEME) !== 'https' &&
+				!in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'])) {
+				error_log('OAuth2: Redirect URL must use HTTPS in production');
+				return false;
+			}
+
+			return true;
+		}
+
+		/**
+		 * Validate OAuth2 state parameter for CSRF protection
+		 */
+		private function validateStateParameter($state)
+		{
+			try {
+				$decodedState = base64_decode($state, true);
+				if ($decodedState === false) {
+					return false;
+				}
+
+				$stateData = json_decode($decodedState, true);
+				if (!is_array($stateData)) {
+					return false;
+				}
+
+				// Validate redirect_to parameter
+				if (isset($stateData['redirect_to'])) {
+					$redirectTo = $stateData['redirect_to'];
+					// Only allow relative URLs or same-origin URLs
+					if (!preg_match('/^\/[^\/]/', $redirectTo) &&
+						parse_url($redirectTo, PHP_URL_HOST) !== $_SERVER['HTTP_HOST']) {
+						return false;
+					}
+				}
+
+				return true;
+			} catch (Exception $e) {
+				error_log('OAuth2: State validation error: ' . $e->getMessage());
+				return false;
+			}
 		}
 
 		/**
@@ -1159,11 +1292,27 @@ if (isset($_GET["bigquery"])) {
 				return false;
 			}
 
+			// Validate state parameter to prevent CSRF attacks
+			if (!$this->validateStateParameter($_GET['state'])) {
+				error_log('OAuth2: Invalid state parameter detected');
+				return false;
+			}
+
 			$config = $this->getOAuth2Config();
 			$clientId = $config['client_id'];
 			$redirectUrl = $config['redirect_url'];
 
 			try {
+				// Validate authorization code format
+				if (!preg_match('/^[a-zA-Z0-9\-_.\\/]+$/', $_GET['code'])) {
+					throw new Exception('Invalid authorization code format');
+				}
+
+				// Validate client configuration
+				if (!$clientId || !$redirectUrl) {
+					throw new Exception('OAuth2 configuration incomplete');
+				}
+
 				// 認証コードをアクセストークンに交換
 				$tokenData = $this->exchangeCodeForToken($_GET['code'], $clientId, $redirectUrl);
 
