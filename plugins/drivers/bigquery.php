@@ -11,6 +11,347 @@ if (function_exists('Adminer\\add_driver')) {
 	add_driver("bigquery", "Google BigQuery");
 }
 
+class AdminerLoginBigQuery extends Plugin
+{
+	protected $config;
+
+	function __construct($config = array())
+	{
+		$this->config = $config;
+		$this->initializeDriverSelection();
+	}
+	/**
+	 * OAuth2認証が有効かどうかをチェック
+	 */
+	private function isOAuth2Enabled()
+	{
+		$oauth2Enable = getenv('GOOGLE_OAUTH2_ENABLE');
+		// Add input validation and sanitization
+		return $oauth2Enable === 'true' && $this->validateOAuth2Configuration();
+	}
+
+	/**
+	 * Validate OAuth2 configuration for security
+	 */
+	private function validateOAuth2Configuration()
+	{
+		$clientId = getenv('GOOGLE_OAUTH2_CLIENT_ID');
+		$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
+
+		// Validate client ID format
+		if (!$clientId || !preg_match('/^[a-zA-Z0-9\-_.]+$/', $clientId)) {
+			error_log('OAuth2: Invalid client ID format');
+			return false;
+		}
+
+		// Validate redirect URL
+		if (!$redirectUrl || !filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
+			error_log('OAuth2: Invalid redirect URL');
+			return false;
+		}
+
+		// Ensure HTTPS for production
+		if (parse_url($redirectUrl, PHP_URL_SCHEME) !== 'https' &&
+			!in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'])) {
+			error_log('OAuth2: Redirect URL must use HTTPS in production');
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * Validate OAuth2 state parameter for CSRF protection
+	 */
+	private function validateStateParameter($state)
+	{
+		try {
+			$decodedState = base64_decode($state, true);
+			if ($decodedState === false) {
+				return false;
+			}
+
+			$stateData = json_decode($decodedState, true);
+			if (!is_array($stateData)) {
+				return false;
+			}
+
+			// Validate redirect_to parameter
+			if (isset($stateData['redirect_to'])) {
+				$redirectTo = $stateData['redirect_to'];
+				// Only allow relative URLs or same-origin URLs
+				if (!preg_match('/^\/[^\/]/', $redirectTo) &&
+					parse_url($redirectTo, PHP_URL_HOST) !== $_SERVER['HTTP_HOST']) {
+					return false;
+				}
+			}
+
+			return true;
+		} catch (Exception $e) {
+			error_log('OAuth2: State validation error: ' . $e->getMessage());
+			return false;
+		}
+	}
+
+	/**
+	 * OAuth2設定を取得
+	 */
+	private function getOAuth2Config()
+	{
+		return [
+			'client_id' => getenv('GOOGLE_OAUTH2_CLIENT_ID'),
+			'redirect_url' => getenv('GOOGLE_OAUTH2_REDIRECT_URL')
+		];
+	}
+
+	private function initializeDriverSelection()
+	{
+		if (!isset($_POST["auth"])) {
+			return;
+		}
+
+		$_POST["auth"]["driver"] = 'bigquery';
+	}
+
+	function credentials()
+	{
+		$server = $this->getProjectId();
+
+		return array($server, 'bigquery-service-account', 'service-account-auth');
+	}
+
+	private function getProjectId()
+	{
+		return $_GET["server"] ??
+			$_POST["auth"]["server"] ??
+			$this->config['project_id'];
+	}
+
+	function login($login, $password)
+	{
+		return true;
+	}
+
+	function loginFormField($name, $heading, $value)
+	{
+		// OAuth2認証が有効な場合は異なる表示
+		if ($this->isOAuth2Enabled()) {
+			return $this->renderOAuth2Field($name, $heading, $value);
+		}
+
+		// 従来のCREDENTIAL認証
+		$fieldHandlers = array(
+			'driver' => function() use ($heading) { return $this->renderDriverField($heading); },
+			'server' => function() { return $this->renderProjectIdField(); },
+			'username' => function() { return $this->renderHiddenField('username'); },
+			'password' => function() { return $this->renderHiddenField('password'); },
+			'db' => function() { return $this->renderHiddenField('db'); }
+		);
+
+		return isset($fieldHandlers[$name]) ? $fieldHandlers[$name]() : '';
+	}
+
+	private function renderDriverField($heading)
+	{
+		return $heading . '<select name="auth[driver]" readonly><option value="bigquery" selected>Google BigQuery</option></select>' . "\n";
+	}
+
+	private function renderProjectIdField()
+	{
+		$default_value = htmlspecialchars($this->getProjectId());
+		return '<tr><th>Project ID</th><td><input name="auth[server]" value="' . $default_value . '" title="GCP Project ID" placeholder="your-project-id" autocapitalize="off" required></td></tr>' . "\n";
+	}
+
+	private function renderHiddenField($fieldName)
+	{
+		$defaultValues = array(
+			'username' => 'bigquery-service-account',
+			'password' => 'service-account-auth',
+			'db' => ''
+		);
+		$value = $defaultValues[$fieldName] ?? '';
+		return '<input type="hidden" name="auth[' . $fieldName . ']" value="' . htmlspecialchars($value) . '">' . "\n";
+	}
+
+	/**
+	 * OAuth2認証用のフィールドを描画
+	 */
+	private function renderOAuth2Field($name, $heading, $value)
+	{
+		switch ($name) {
+			case 'driver':
+				return $this->renderDriverField($heading);
+			case 'server':
+				return $this->renderOAuth2ProjectIdField();
+			case 'username':
+			case 'password':
+			case 'db':
+				return $this->renderHiddenField($name);
+			default:
+				return '';
+		}
+	}
+
+	/**
+	 * OAuth2認証用のProject IDフィールドを描画
+	 */
+	private function renderOAuth2ProjectIdField()
+	{
+		$default_value = htmlspecialchars($this->getProjectId());
+		return '<tr><th>Project ID</th><td><input name="auth[server]" value="' . $default_value . '" title="GCP Project ID" placeholder="your-project-id" autocapitalize="off" required></td></tr>' . "\n";
+	}
+
+	/**
+	 * Google OAuth2ログインボタンを描画
+	 */
+	private function renderOAuth2LoginButton()
+	{
+		$config = $this->getOAuth2Config();
+		$clientId = $config['client_id'];
+		$redirectUrl = $config['redirect_url'];
+
+		if (!$clientId || !$redirectUrl) {
+			return '<div class="oauth2-error">OAuth2 configuration incomplete. Please set GOOGLE_OAUTH2_CLIENT_ID and GOOGLE_OAUTH2_REDIRECT_URL.</div>';
+		}
+
+		// Google OAuth2 認証URL を構築
+		$scope = urlencode('https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform');
+		$state = urlencode(base64_encode(json_encode(['redirect_to' => $_SERVER['REQUEST_URI']])));
+
+		$authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query([
+			'client_id' => $clientId,
+			'redirect_uri' => $redirectUrl,
+			'scope' => 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform',
+			'response_type' => 'code',
+			'state' => $state,
+			'access_type' => 'offline',
+			'prompt' => 'consent'
+		]);
+
+		return '
+		<div class="oauth2-login-container">
+			<div class="oauth2-logo">
+				<svg width="40" height="40" viewBox="0 0 24 24" fill="none">
+					<path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+					<path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+					<path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+					<path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+				</svg>
+			</div>
+			<h2>Adminer</h2>
+			<a href="' . htmlspecialchars($authUrl) . '" class="oauth2-signin-button">Sign in with Google</a>
+		</div>';
+	}
+
+	function loginForm()
+	{
+		// OAuth2認証が有効な場合は専用のログイン画面を表示
+		if ($this->isOAuth2Enabled()) {
+			echo "<style>";
+			echo ".layout { display: none; }"; // 通常のログインフォームを非表示
+			echo ".oauth2-login-container {
+				display: flex;
+				flex-direction: column;
+				align-items: center;
+				justify-content: center;
+				min-height: 60vh;
+				text-align: center;
+				background: #f5f5f5;
+				margin: 20px;
+				border-radius: 8px;
+				padding: 40px;
+				box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+			}";
+			echo ".oauth2-logo {
+				margin-bottom: 20px;
+			}";
+			echo ".oauth2-login-container h2 {
+				color: #5f6368;
+				font-size: 24px;
+				font-weight: 400;
+				margin: 10px 0 30px 0;
+			}";
+			echo ".oauth2-signin-button {
+				background: #1a73e8;
+				color: white;
+				border: none;
+				border-radius: 4px;
+				padding: 12px 24px;
+				font-size: 14px;
+				font-weight: 500;
+				text-decoration: none;
+				display: inline-block;
+				transition: background-color 0.2s;
+			}";
+			echo ".oauth2-signin-button:hover {
+				background: #1557b0;
+				color: white;
+				text-decoration: none;
+			}";
+			echo ".oauth2-error {
+				color: #d93025;
+				background: #fce8e6;
+				border: 1px solid #fce8e6;
+				border-radius: 4px;
+				padding: 12px 16px;
+				margin: 20px 0;
+			}";
+			echo "</style>";
+
+			// OAuth2ログインボタンを表示
+			echo $this->renderOAuth2LoginButton();
+		} else {
+			// 従来のCREDENTIAL認証用のスタイル
+			echo "<style>";
+			echo ".layout tr:has(input[type='hidden']) { display: none; }";
+			echo "</style>";
+		}
+	}
+
+	function operators()
+	{
+		return array(
+			"=", "!=", "<>", "<", "<=", ">", ">=",
+			"IN", "NOT IN", "IS NULL", "IS NOT NULL",
+			"LIKE", "NOT LIKE", "REGEXP", "NOT REGEXP"
+		);
+	}
+
+	protected $translations = array(
+		'en' => array('' => 'BigQuery authentication with service account credentials'),
+		'ja' => array('' => 'サービスアカウント認証情報によるBigQuery認証'),
+	);
+}
+
+// =============================================================================
+// Phase 1 Sprint 1.1: 基本クエリ機能実装
+// Note: これらの関数はAdminerのDriverクラス内で既に実装されている場合があるため、
+// BigQueryドライバー固有の拡張機能としてDriverクラス内のメソッドとして実装済み
+// =============================================================================
+
+
+class AdminerBigQueryCSS extends Plugin
+{
+	private function isBigQueryDriver()
+	{
+		return (defined('DRIVER') && DRIVER === 'bigquery') || (defined('Adminer\\DRIVER') && constant('Adminer\\DRIVER') === 'bigquery');
+	}
+
+	function head($dark = null)
+	{
+		if ($this->isBigQueryDriver()) {
+
+			if (class_exists('Adminer\\Driver')) {
+				$driver = new \Adminer\Driver();
+				if (method_exists($driver, 'css')) {
+
+					echo $driver->css();
+				}
+			}
+		}
+	}
+}
+
 if (isset($_GET["bigquery"])) {
 	define('Adminer\DRIVER', "bigquery");
 
@@ -505,37 +846,37 @@ if (isset($_GET["bigquery"])) {
 
 		public $last_result = null;
 		function connect($server, $username, $password)
-	{
-		try {
-			$this->projectId = $this->validateAndParseProjectId($server);
-			$location = $this->determineLocation($server, $this->projectId);
-			
-			// OAuth2認証が有効な場合
-			if ($this->isOAuth2Enabled()) {
-				$this->initializeConfiguration($location);
-				$this->createBigQueryClientWithOAuth2($location);
-			} else {
-				// 従来のCREDENTIAL認証
-				$credentialsPath = $this->getCredentialsPath();
-				if (!$credentialsPath) {
-					throw new Exception('BigQuery authentication not configured. Set GOOGLE_APPLICATION_CREDENTIALS environment variable or provide credentials file path.');
+		{
+			try {
+				$this->projectId = $this->validateAndParseProjectId($server);
+				$location = $this->determineLocation($server, $this->projectId);
+
+				// OAuth2認証が有効な場合
+				if ($this->isOAuth2Enabled()) {
+					$this->initializeConfiguration($location);
+					$this->createBigQueryClientWithOAuth2($location);
+				} else {
+					// 従来のCREDENTIAL認証
+					$credentialsPath = $this->getCredentialsPath();
+					if (!$credentialsPath) {
+						throw new Exception('BigQuery authentication not configured. Set GOOGLE_APPLICATION_CREDENTIALS environment variable or provide credentials file path.');
+					}
+					$this->initializeConfiguration($location);
+					$this->createBigQueryClient($credentialsPath, $location);
 				}
-				$this->initializeConfiguration($location);
-				$this->createBigQueryClient($credentialsPath, $location);
+
+				if (!$this->isLocationExplicitlySet($server)) {
+					$this->scheduleLocationDetection($this->projectId, $location);
+				}
+				return true;
+			} catch (ServiceException $e) {
+				$this->logConnectionError($e, 'ServiceException');
+				return false;
+			} catch (Exception $e) {
+				$this->logConnectionError($e, 'Exception');
+				return false;
 			}
-			
-			if (!$this->isLocationExplicitlySet($server)) {
-				$this->scheduleLocationDetection($this->projectId, $location);
-			}
-			return true;
-		} catch (ServiceException $e) {
-			$this->logConnectionError($e, 'ServiceException');
-			return false;
-		} catch (Exception $e) {
-			$this->logConnectionError($e, 'Exception');
-			return false;
 		}
-	}
 		private function validateAndParseProjectId($server)
 		{
 			if (empty($server)) {
@@ -647,342 +988,422 @@ if (isset($_GET["bigquery"])) {
 			return $credentialsPath;
 		}
 
-	/**
-	 * OAuth2認証が有効かどうかをチェック
-	 */
-	private function isOAuth2Enabled()
-	{
-		$oauth2Enable = getenv('GOOGLE_OAUTH2_ENABLE');
-		return $oauth2Enable === 'true';
-	}
-
-	/**
-	 * OAuth2認証用の環境変数を取得
-	 */
-	private function getOAuth2Config()
-	{
-		return [
-			'client_id' => getenv('GOOGLE_OAUTH2_CLIENT_ID'),
-			'redirect_url' => getenv('GOOGLE_OAUTH2_REDIRECT_URL'), 
-			'cookie_domain' => getenv('GOOGLE_OAUTH2_COOKIE_DOMAIN'),
-			'cookie_name' => getenv('GOOGLE_OAUTH2_COOKIE_NAME'),
-			'cookie_expire' => getenv('GOOGLE_OAUTH2_COOKIE_EXPIRE'),
-			'cookie_secret' => getenv('GOOGLE_OAUTH2_COOKIE_SECRET')
-		];
-	}
-
-	/**
-	 * OAuth2アクセストークンを取得
-	 */
-	private function getOAuth2AccessToken()
-	{
-		// OAuth2コールバック処理をチェック
-		if ($this->handleOAuth2Callback()) {
-			// コールバック処理完了後、適切にリダイレクト
-			$state = $_GET['state'] ?? '';
-			$stateData = json_decode(base64_decode($state), true);
-			$redirectTo = $stateData['redirect_to'] ?? $_SERVER['PHP_SELF'];
-			
-			header('Location: ' . $redirectTo);
-			exit();
+		/**
+		 * OAuth2認証が有効かどうかをチェック
+		 */
+		private function isOAuth2Enabled()
+		{
+			$oauth2Enable = getenv('GOOGLE_OAUTH2_ENABLE');
+			// Add input validation and sanitization
+			return $oauth2Enable === 'true' && $this->validateOAuth2Configuration();
 		}
 
-		$config = $this->getOAuth2Config();
-		$cookieName = $config['cookie_name'] ?: 'oauth2_proxy';
-		
-		// 1. プロキシレベルのOAuth2認証をチェック（最優先）
-		if (isset($_COOKIE['__Host-oauth2_proxy'])) {
-			// プロキシが既にOAuth2認証を完了している場合
-			error_log('OAuth2: Using proxy-level authentication');
-			return $_COOKIE['__Host-oauth2_proxy'];
-		}
-		
-		// 2. セッションから取得を試行
-		if (session_status() === PHP_SESSION_NONE) {
-			session_start();
-		}
-		if (isset($_SESSION['oauth2_token']['access_token'])) {
-			return $_SESSION['oauth2_token']['access_token'];
-		}
+		/**
+		 * Validate OAuth2 configuration for security
+		 */
+		private function validateOAuth2Configuration()
+		{
+			$clientId = getenv('GOOGLE_OAUTH2_CLIENT_ID');
+			$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
 
-		// 3. アプリケーションレベルのクッキーから取得を試行
-		if (isset($_COOKIE[$cookieName])) {
-			return $_COOKIE[$cookieName];
-		}
-		
-		// 4. プロキシ認証情報をHTTPヘッダーから取得（oauth2_proxy標準）
-		if (isset($_SERVER['HTTP_X_USER'])) {
-			error_log('OAuth2: Using proxy HTTP_X_USER header authentication');
-			// プロキシが設定したユーザー情報を使用してアクセストークンを生成
-			return $this->generateTokenFromProxyAuth();
-		}
-		
-		return null;
-	}
-
-	/**
-	 * プロキシ認証情報からアクセストークンを生成
-	 */
-	private function generateTokenFromProxyAuth()
-	{
-		// プロキシが設定したヘッダー情報を確認
-		$userEmail = $_SERVER['HTTP_X_USER'] ?? '';
-		$accessToken = $_SERVER['HTTP_X_ACCESS_TOKEN'] ?? '';
-		
-		if ($accessToken) {
-			// プロキシが直接アクセストークンを提供している場合
-			error_log("OAuth2: Using proxy-provided access token for user: $userEmail");
-			return $accessToken;
-		}
-		
-		// プロキシ認証成功の場合、環境に応じたトークン取得
-		if ($userEmail) {
-			error_log("OAuth2: Proxy authentication detected for user: $userEmail");
-			
-			// プロキシ認証が成功している場合、デフォルト認証情報を使用
-			// この場合、Google Cloud のデフォルト認証情報が使用される
-			try {
-				$credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
-				if ($credentialsPath && file_exists($credentialsPath)) {
-					// サービスアカウント認証を使用
-					error_log("OAuth2: Falling back to service account authentication");
-					return 'service_account_fallback';
-				}
-			} catch (Exception $e) {
-				error_log("OAuth2: Service account fallback failed: " . $e->getMessage());
-			}
-		}
-		
-		return null;
-	}
-
-	/**
-	 * OAuth2認証を使用してBigQueryクライアントを作成
-	 */
-	private function createBigQueryClientWithOAuth2($location)
-	{
-		try {
-			$accessToken = $this->getOAuth2AccessToken();
-			if (!$accessToken) {
-				// OAuth2認証フローを開始
-				$this->initiateOAuth2Flow();
-				// この後はリダイレクトされるので、到達しない
+			// Validate client ID format
+			if (!$clientId || !preg_match('/^[a-zA-Z0-9\-_.]+$/', $clientId)) {
+				error_log('OAuth2: Invalid client ID format');
 				return false;
 			}
 
-			// 特別な値の場合はサービスアカウント認証にフォールバック
-			if ($accessToken === 'service_account_fallback') {
-				error_log('OAuth2: Using service account fallback after proxy authentication');
-				return $this->createBigQueryClientWithServiceAccount($location);
+			// Validate redirect URL
+			if (!$redirectUrl || !filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
+				error_log('OAuth2: Invalid redirect URL');
+				return false;
 			}
 
-			// Google Client を使用してOAuth2認証を設定
-			require_once __DIR__ . '/../../vendor/autoload.php';
-			
-			$client = new \Google\Client();
-			$client->setAccessToken($accessToken);
-			
-			// BigQueryクライアントを作成
-			$config = [
-				'projectId' => $this->projectId,
-				'location' => $location
-			];
+			// Ensure HTTPS for production
+			if (parse_url($redirectUrl, PHP_URL_SCHEME) !== 'https' &&
+				!in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'])) {
+				error_log('OAuth2: Redirect URL must use HTTPS in production');
+				return false;
+			}
 
-			// OAuth2クライアントを使用してBigQueryクライアントを初期化
-			$this->bigquery = new BigQueryClient($config + [
-				'authHttpHandler' => function ($request, $options) use ($client) {
-					// OAuth2アクセストークンをHTTPヘッダーに追加
-					return $client->authorize()->send($request, $options);
+			return true;
+		}
+
+		/**
+		 * Validate OAuth2 state parameter for CSRF protection
+		 */
+		private function validateStateParameter($state)
+		{
+			try {
+				$decodedState = base64_decode($state, true);
+				if ($decodedState === false) {
+					return false;
 				}
-			]);
-			
-			$this->location = $location;
-			
-			error_log('OAuth2: BigQuery client created successfully with OAuth2 authentication');
-			return true;
-		} catch (Exception $e) {
-			error_log('OAuth2: BigQuery client initialization failed: ' . $e->getMessage());
-			
-			// プロキシ認証が成功している場合、サービスアカウントにフォールバック
-			if (isset($_SERVER['HTTP_X_USER']) || isset($_COOKIE['__Host-oauth2_proxy'])) {
-				error_log('OAuth2: Attempting service account fallback after proxy authentication');
-				return $this->createBigQueryClientWithServiceAccount($location);
-			}
-			
-			throw new Exception('OAuth2 BigQuery client initialization failed: ' . $e->getMessage());
-		}
-	}
 
-	/**
-	 * サービスアカウント認証でBigQueryクライアントを作成（プロキシ認証後のフォールバック）
-	 */
-	private function createBigQueryClientWithServiceAccount($location)
-	{
-		try {
-			require_once __DIR__ . '/../../vendor/autoload.php';
-			
-			$credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
-			if (!$credentialsPath || !file_exists($credentialsPath)) {
-				throw new Exception('Service account credentials not found');
+				$stateData = json_decode($decodedState, true);
+				if (!is_array($stateData)) {
+					return false;
+				}
+
+				// Validate redirect_to parameter
+				if (isset($stateData['redirect_to'])) {
+					$redirectTo = $stateData['redirect_to'];
+					// Only allow relative URLs or same-origin URLs
+					if (!preg_match('/^\/[^\/]/', $redirectTo) &&
+						parse_url($redirectTo, PHP_URL_HOST) !== $_SERVER['HTTP_HOST']) {
+						return false;
+					}
+				}
+
+				return true;
+			} catch (Exception $e) {
+				error_log('OAuth2: State validation error: ' . $e->getMessage());
+				return false;
 			}
-			
-			$config = [
-				'projectId' => $this->projectId,
-				'keyFilePath' => $credentialsPath,
-				'location' => $location
+		}
+
+		/**
+		 * OAuth2認証用の環境変数を取得
+		 */
+		private function getOAuth2Config()
+		{
+			return [
+				'client_id' => getenv('GOOGLE_OAUTH2_CLIENT_ID'),
+				'redirect_url' => getenv('GOOGLE_OAUTH2_REDIRECT_URL'),
+				'cookie_domain' => getenv('GOOGLE_OAUTH2_COOKIE_DOMAIN'),
+				'cookie_name' => getenv('GOOGLE_OAUTH2_COOKIE_NAME'),
+				'cookie_expire' => getenv('GOOGLE_OAUTH2_COOKIE_EXPIRE'),
+				'cookie_secret' => getenv('GOOGLE_OAUTH2_COOKIE_SECRET')
 			];
-			
-			$this->bigquery = new BigQueryClient($config);
-			$this->location = $location;
-			
-			error_log('OAuth2: Successfully created BigQuery client with service account fallback');
-			return true;
-		} catch (Exception $e) {
-			error_log('OAuth2: Service account fallback failed: ' . $e->getMessage());
-			throw $e;
-		}
-	}
-
-	/**
-	 * OAuth2認証フローを開始（Googleの認証エンドポイントにリダイレクト）
-	 */
-	private function initiateOAuth2Flow()
-	{
-		$config = $this->getOAuth2Config();
-		$clientId = $config['client_id'];
-		$redirectUrl = $config['redirect_url'];
-
-		if (!$clientId || !$redirectUrl) {
-			throw new Exception('OAuth2 configuration is incomplete. Please set GOOGLE_OAUTH2_CLIENT_ID and GOOGLE_OAUTH2_REDIRECT_URL environment variables.');
 		}
 
-		// 現在のURLを保存してコールバック後にリダイレクト
-		$currentUrl = $_SERVER['REQUEST_URI'] ?? '/';
-		$state = base64_encode(json_encode(['redirect_to' => $currentUrl]));
+		/**
+		 * OAuth2アクセストークンを取得
+		 */
+		private function getOAuth2AccessToken()
+		{
+			// OAuth2コールバック処理をチェック
+			if ($this->handleOAuth2Callback()) {
+				// コールバック処理完了後、適切にリダイレクト
+				$state = $_GET['state'] ?? '';
+				$stateData = json_decode(base64_decode($state), true);
+				$redirectTo = $stateData['redirect_to'] ?? $_SERVER['PHP_SELF'];
 
-		// Google OAuth2認証URL
-		$authUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
-		$params = [
-			'client_id' => $clientId,
-			'redirect_uri' => $redirectUrl,
-			'scope' => 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform',
-			'response_type' => 'code',
-			'access_type' => 'offline',
-			'state' => $state
-		];
+				header('Location: ' . $redirectTo);
+				exit();
+			}
 
-		$authUrlWithParams = $authUrl . '?' . http_build_query($params);
+			$config = $this->getOAuth2Config();
+			$cookieName = $config['cookie_name'] ?: 'oauth2_proxy';
 
-		// OAuth2認証ページにリダイレクト
-		header('Location: ' . $authUrlWithParams);
-		exit();
-	}
+			// 1. プロキシレベルのOAuth2認証をチェック（最優先）
+			if (isset($_COOKIE['__Host-oauth2_proxy'])) {
+				// プロキシが既にOAuth2認証を完了している場合
+				error_log('OAuth2: Using proxy-level authentication');
+				return $_COOKIE['__Host-oauth2_proxy'];
+			}
 
-	/**
-	 * OAuth2認証コールバックを処理
-	 */
-	private function handleOAuth2Callback()
-	{
-		if (!isset($_GET['code']) || !isset($_GET['state'])) {
+			// 2. セッションから取得を試行
+			if (session_status() === PHP_SESSION_NONE) {
+				session_start();
+			}
+			if (isset($_SESSION['oauth2_token']['access_token'])) {
+				return $_SESSION['oauth2_token']['access_token'];
+			}
+
+			// 3. アプリケーションレベルのクッキーから取得を試行
+			if (isset($_COOKIE[$cookieName])) {
+				return $_COOKIE[$cookieName];
+			}
+
+			// 4. プロキシ認証情報をHTTPヘッダーから取得（oauth2_proxy標準）
+			if (isset($_SERVER['HTTP_X_USER'])) {
+				error_log('OAuth2: Using proxy HTTP_X_USER header authentication');
+				// プロキシが設定したユーザー情報を使用してアクセストークンを生成
+				return $this->generateTokenFromProxyAuth();
+			}
+
+			return null;
+		}
+
+		/**
+		 * プロキシ認証情報からアクセストークンを生成
+		 */
+		private function generateTokenFromProxyAuth()
+		{
+			// プロキシが設定したヘッダー情報を確認
+			$userEmail = $_SERVER['HTTP_X_USER'] ?? '';
+			$accessToken = $_SERVER['HTTP_X_ACCESS_TOKEN'] ?? '';
+
+			if ($accessToken) {
+				// プロキシが直接アクセストークンを提供している場合
+				error_log("OAuth2: Using proxy-provided access token for user: $userEmail");
+				return $accessToken;
+			}
+
+			// プロキシ認証成功の場合、環境に応じたトークン取得
+			if ($userEmail) {
+				error_log("OAuth2: Proxy authentication detected for user: $userEmail");
+
+				// プロキシ認証が成功している場合、デフォルト認証情報を使用
+				// この場合、Google Cloud のデフォルト認証情報が使用される
+				try {
+					$credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
+					if ($credentialsPath && file_exists($credentialsPath)) {
+						// サービスアカウント認証を使用
+						error_log("OAuth2: Falling back to service account authentication");
+						return 'service_account_fallback';
+					}
+				} catch (Exception $e) {
+					error_log("OAuth2: Service account fallback failed: " . $e->getMessage());
+				}
+			}
+
+			return null;
+		}
+
+		/**
+		 * OAuth2認証を使用してBigQueryクライアントを作成
+		 */
+		private function createBigQueryClientWithOAuth2($location)
+		{
+			try {
+				$accessToken = $this->getOAuth2AccessToken();
+				if (!$accessToken) {
+					// OAuth2認証フローを開始
+					$this->initiateOAuth2Flow();
+					// この後はリダイレクトされるので、到達しない
+					return false;
+				}
+
+				// 特別な値の場合はサービスアカウント認証にフォールバック
+				if ($accessToken === 'service_account_fallback') {
+					error_log('OAuth2: Using service account fallback after proxy authentication');
+					return $this->createBigQueryClientWithServiceAccount($location);
+				}
+
+				// Google Client を使用してOAuth2認証を設定
+				require_once __DIR__ . '/../../vendor/autoload.php';
+
+				$client = new \Google\Client();
+				$client->setAccessToken($accessToken);
+
+				// BigQueryクライアントを作成
+				$config = [
+					'projectId' => $this->projectId,
+					'location' => $location
+				];
+
+				// OAuth2クライアントを使用してBigQueryクライアントを初期化
+				$this->bigquery = new BigQueryClient($config + [
+					'authHttpHandler' => function ($request, $options) use ($client) {
+						// OAuth2アクセストークンをHTTPヘッダーに追加
+						return $client->authorize()->send($request, $options);
+					}
+				]);
+
+				$this->location = $location;
+
+				error_log('OAuth2: BigQuery client created successfully with OAuth2 authentication');
+				return true;
+			} catch (Exception $e) {
+				error_log('OAuth2: BigQuery client initialization failed: ' . $e->getMessage());
+
+				// プロキシ認証が成功している場合、サービスアカウントにフォールバック
+				if (isset($_SERVER['HTTP_X_USER']) || isset($_COOKIE['__Host-oauth2_proxy'])) {
+					error_log('OAuth2: Attempting service account fallback after proxy authentication');
+					return $this->createBigQueryClientWithServiceAccount($location);
+				}
+
+				throw new Exception('OAuth2 BigQuery client initialization failed: ' . $e->getMessage());
+			}
+		}
+
+		/**
+		 * サービスアカウント認証でBigQueryクライアントを作成（プロキシ認証後のフォールバック）
+		 */
+		private function createBigQueryClientWithServiceAccount($location)
+		{
+			try {
+				require_once __DIR__ . '/../../vendor/autoload.php';
+
+				$credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
+				if (!$credentialsPath || !file_exists($credentialsPath)) {
+					throw new Exception('Service account credentials not found');
+				}
+
+				$config = [
+					'projectId' => $this->projectId,
+					'keyFilePath' => $credentialsPath,
+					'location' => $location
+				];
+
+				$this->bigquery = new BigQueryClient($config);
+				$this->location = $location;
+
+				error_log('OAuth2: Successfully created BigQuery client with service account fallback');
+				return true;
+			} catch (Exception $e) {
+				error_log('OAuth2: Service account fallback failed: ' . $e->getMessage());
+				throw $e;
+			}
+		}
+
+		/**
+		 * OAuth2認証フローを開始（Googleの認証エンドポイントにリダイレクト）
+		 */
+		private function initiateOAuth2Flow()
+		{
+			$config = $this->getOAuth2Config();
+			$clientId = $config['client_id'];
+			$redirectUrl = $config['redirect_url'];
+
+			if (!$clientId || !$redirectUrl) {
+				throw new Exception('OAuth2 configuration is incomplete. Please set GOOGLE_OAUTH2_CLIENT_ID and GOOGLE_OAUTH2_REDIRECT_URL environment variables.');
+			}
+
+			// 現在のURLを保存してコールバック後にリダイレクト
+			$currentUrl = $_SERVER['REQUEST_URI'] ?? '/';
+			$state = base64_encode(json_encode(['redirect_to' => $currentUrl]));
+
+			// Google OAuth2認証URL
+			$authUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
+			$params = [
+				'client_id' => $clientId,
+				'redirect_uri' => $redirectUrl,
+				'scope' => 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform',
+				'response_type' => 'code',
+				'access_type' => 'offline',
+				'state' => $state
+			];
+
+			$authUrlWithParams = $authUrl . '?' . http_build_query($params);
+
+			// OAuth2認証ページにリダイレクト
+			header('Location: ' . $authUrlWithParams);
+			exit();
+		}
+
+		/**
+		 * OAuth2認証コールバックを処理
+		 */
+		private function handleOAuth2Callback()
+		{
+			if (!isset($_GET['code']) || !isset($_GET['state'])) {
+				return false;
+			}
+
+			// Validate state parameter to prevent CSRF attacks
+			if (!$this->validateStateParameter($_GET['state'])) {
+				error_log('OAuth2: Invalid state parameter detected');
+				return false;
+			}
+
+			$config = $this->getOAuth2Config();
+			$clientId = $config['client_id'];
+			$redirectUrl = $config['redirect_url'];
+
+			try {
+				// Validate authorization code format
+				if (!preg_match('/^[a-zA-Z0-9\-_.\\/]+$/', $_GET['code'])) {
+					throw new Exception('Invalid authorization code format');
+				}
+
+				// Validate client configuration
+				if (!$clientId || !$redirectUrl) {
+					throw new Exception('OAuth2 configuration incomplete');
+				}
+
+				// 認証コードをアクセストークンに交換
+				$tokenData = $this->exchangeCodeForToken($_GET['code'], $clientId, $redirectUrl);
+
+				if ($tokenData) {
+					// アクセストークンをセッションまたはクッキーに保存
+					$this->storeOAuth2Token($tokenData);
+					return true;
+				}
+			} catch (Exception $e) {
+				error_log('OAuth2 callback error: ' . $e->getMessage());
+			}
+
 			return false;
 		}
 
-		$config = $this->getOAuth2Config();
-		$clientId = $config['client_id'];
-		$redirectUrl = $config['redirect_url'];
+		/**
+		 * 認証コードをアクセストークンに交換
+		 */
+		private function exchangeCodeForToken($code, $clientId, $redirectUrl)
+		{
+			$tokenUrl = 'https://oauth2.googleapis.com/token';
 
-		try {
-			// 認証コードをアクセストークンに交換
-			$tokenData = $this->exchangeCodeForToken($_GET['code'], $clientId, $redirectUrl);
-			
-			if ($tokenData) {
-				// アクセストークンをセッションまたはクッキーに保存
-				$this->storeOAuth2Token($tokenData);
-				return true;
+			$postData = [
+				'code' => $code,
+				'client_id' => $clientId,
+				'client_secret' => getenv('GOOGLE_OAUTH2_CLIENT_SECRET'), // 必要に応じて追加
+				'redirect_uri' => $redirectUrl,
+				'grant_type' => 'authorization_code'
+			];
+
+			$context = stream_context_create([
+				'http' => [
+					'method' => 'POST',
+					'header' => 'Content-Type: application/x-www-form-urlencoded',
+					'content' => http_build_query($postData)
+				]
+			]);
+
+			$response = file_get_contents($tokenUrl, false, $context);
+
+			if ($response === false) {
+				throw new Exception('Failed to exchange code for token');
 			}
-		} catch (Exception $e) {
-			error_log('OAuth2 callback error: ' . $e->getMessage());
+
+			return json_decode($response, true);
 		}
 
-		return false;
-	}
+		/**
+		 * OAuth2トークンを保存
+		 */
+		private function storeOAuth2Token($tokenData)
+		{
+			$config = $this->getOAuth2Config();
+			$cookieName = $config['cookie_name'] ?: 'oauth2_proxy';
+			$cookieDomain = $config['cookie_domain'] ?: '';
+			$cookieExpire = $config['cookie_expire'] ?: 3600;
 
-	/**
-	 * 認証コードをアクセストークンに交換
-	 */
-	private function exchangeCodeForToken($code, $clientId, $redirectUrl)
-	{
-		$tokenUrl = 'https://oauth2.googleapis.com/token';
-		
-		$postData = [
-			'code' => $code,
-			'client_id' => $clientId,
-			'client_secret' => getenv('GOOGLE_OAUTH2_CLIENT_SECRET'), // 必要に応じて追加
-			'redirect_uri' => $redirectUrl,
-			'grant_type' => 'authorization_code'
-		];
+			// プロキシレベル認証が存在する場合は、アプリレベルのCookie設定をスキップ
+			if (isset($_COOKIE['__Host-oauth2_proxy'])) {
+				error_log('OAuth2: Proxy-level authentication detected, skipping app-level cookie');
+			} else {
+				// HTTPS検出を動的に行う
+				$isHttps = (
+					(!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
+					(!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
+					(!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on') ||
+					(!empty($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443)
+				);
 
-		$context = stream_context_create([
-			'http' => [
-				'method' => 'POST',
-				'header' => 'Content-Type: application/x-www-form-urlencoded',
-				'content' => http_build_query($postData)
-			]
-		]);
+				// アクセストークンをクッキーに保存（HTTPSの場合のみsecure設定）
+				setcookie(
+					$cookieName,
+					$tokenData['access_token'],
+					time() + $cookieExpire,
+					'/',
+					$cookieDomain,
+					$isHttps, // 動的にsecure設定
+					true  // httponly
+				);
 
-		$response = file_get_contents($tokenUrl, false, $context);
-		
-		if ($response === false) {
-			throw new Exception('Failed to exchange code for token');
+				error_log("OAuth2: Stored app-level cookie with secure=" . ($isHttps ? 'true' : 'false'));
+			}
+
+			// セッションにも保存
+			if (session_status() === PHP_SESSION_NONE) {
+				session_start();
+			}
+			$_SESSION['oauth2_token'] = $tokenData;
+
+			error_log('OAuth2: Token stored in session successfully');
 		}
-
-		return json_decode($response, true);
-	}
-
-	/**
-	 * OAuth2トークンを保存
-	 */
-	private function storeOAuth2Token($tokenData)
-	{
-		$config = $this->getOAuth2Config();
-		$cookieName = $config['cookie_name'] ?: 'oauth2_proxy';
-		$cookieDomain = $config['cookie_domain'] ?: '';
-		$cookieExpire = $config['cookie_expire'] ?: 3600;
-
-		// プロキシレベル認証が存在する場合は、アプリレベルのCookie設定をスキップ
-		if (isset($_COOKIE['__Host-oauth2_proxy'])) {
-			error_log('OAuth2: Proxy-level authentication detected, skipping app-level cookie');
-		} else {
-			// HTTPS検出を動的に行う
-			$isHttps = (
-				(!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ||
-				(!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') ||
-				(!empty($_SERVER['HTTP_X_FORWARDED_SSL']) && $_SERVER['HTTP_X_FORWARDED_SSL'] === 'on') ||
-				(!empty($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443)
-			);
-
-			// アクセストークンをクッキーに保存（HTTPSの場合のみsecure設定）
-			setcookie(
-				$cookieName,
-				$tokenData['access_token'],
-				time() + $cookieExpire,
-				'/',
-				$cookieDomain,
-				$isHttps, // 動的にsecure設定
-				true  // httponly
-			);
-			
-			error_log("OAuth2: Stored app-level cookie with secure=" . ($isHttps ? 'true' : 'false'));
-		}
-
-		// セッションにも保存
-		if (session_status() === PHP_SESSION_NONE) {
-			session_start();
-		}
-		$_SESSION['oauth2_token'] = $tokenData;
-		
-		error_log('OAuth2: Token stored in session successfully');
-	}
 		private function validateCredentialsFile($credentialsPath)
 		{
 			$fileInfo = @stat($credentialsPath);
@@ -4077,277 +4498,5 @@ if (!function_exists('analyze_table')) {
 	{
 		show_unsupported_feature_message('analyze');
 		return false;
-	}
-}
-
-class AdminerLoginBigQuery extends Plugin
-{
-	protected $config;
-
-	function __construct($config = array())
-	{
-		$this->config = $config;
-		$this->initializeDriverSelection();
-	}
-	/**
-	 * OAuth2認証が有効かどうかをチェック
-	 */
-	private function isOAuth2Enabled()
-	{
-		$oauth2Enable = getenv('GOOGLE_OAUTH2_ENABLE');
-		return $oauth2Enable === 'true';
-	}
-
-	/**
-	 * OAuth2設定を取得
-	 */
-	private function getOAuth2Config()
-	{
-		return [
-			'client_id' => getenv('GOOGLE_OAUTH2_CLIENT_ID'),
-			'redirect_url' => getenv('GOOGLE_OAUTH2_REDIRECT_URL')
-		];
-	}
-
-	private function initializeDriverSelection()
-	{
-		if (!isset($_POST["auth"])) {
-			return;
-		}
-
-		$_POST["auth"]["driver"] = 'bigquery';
-	}
-
-	function credentials()
-	{
-		$server = $this->getProjectId();
-
-		return array($server, 'bigquery-service-account', 'service-account-auth');
-	}
-
-	private function getProjectId()
-	{
-		return $_GET["server"] ??
-			$_POST["auth"]["server"] ??
-			$this->config['project_id'];
-	}
-
-	function login($login, $password)
-	{
-		return true;
-	}
-
-	function loginFormField($name, $heading, $value)
-	{
-		// OAuth2認証が有効な場合は異なる表示
-		if ($this->isOAuth2Enabled()) {
-			return $this->renderOAuth2Field($name, $heading, $value);
-		}
-
-		// 従来のCREDENTIAL認証
-		$fieldHandlers = array(
-			'driver' => fn() => $this->renderDriverField($heading),
-			'server' => fn() => $this->renderProjectIdField(),
-			'username' => fn() => $this->renderHiddenField('username'),
-			'password' => fn() => $this->renderHiddenField('password'),
-			'db' => fn() => $this->renderHiddenField('db')
-		);
-
-		return isset($fieldHandlers[$name]) ? $fieldHandlers[$name]() : '';
-	}
-
-	private function renderDriverField($heading)
-	{
-		return $heading . '<select name="auth[driver]" readonly><option value="bigquery" selected>Google BigQuery</option></select>' . "\n";
-	}
-
-	private function renderProjectIdField()
-	{
-		$default_value = htmlspecialchars($this->getProjectId());
-		return '<tr><th>Project ID</th><td><input name="auth[server]" value="' . $default_value . '" title="GCP Project ID" placeholder="your-project-id" autocapitalize="off" required></td></tr>' . "\n";
-	}
-
-	private function renderHiddenField($fieldName)
-	{
-		$defaultValues = array(
-			'username' => 'bigquery-service-account',
-			'password' => 'service-account-auth',
-			'db' => ''
-		);
-		$value = $defaultValues[$fieldName] ?? '';
-		return '<input type="hidden" name="auth[' . $fieldName . ']" value="' . htmlspecialchars($value) . '">' . "\n";
-	}
-
-	/**
-	 * OAuth2認証用のフィールドを描画
-	 */
-	private function renderOAuth2Field($name, $heading, $value)
-	{
-		switch ($name) {
-			case 'driver':
-				return $this->renderDriverField($heading);
-			case 'server':
-				return $this->renderOAuth2ProjectIdField();
-			case 'username':
-			case 'password':
-			case 'db':
-				return $this->renderHiddenField($name);
-			default:
-				return '';
-		}
-	}
-
-	/**
-	 * OAuth2認証用のProject IDフィールドを描画
-	 */
-	private function renderOAuth2ProjectIdField()
-	{
-		$default_value = htmlspecialchars($this->getProjectId());
-		return '<tr><th>Project ID</th><td><input name="auth[server]" value="' . $default_value . '" title="GCP Project ID" placeholder="your-project-id" autocapitalize="off" required></td></tr>' . "\n";
-	}
-
-	/**
-	 * Google OAuth2ログインボタンを描画
-	 */
-	private function renderOAuth2LoginButton()
-	{
-		$config = $this->getOAuth2Config();
-		$clientId = $config['client_id'];
-		$redirectUrl = $config['redirect_url'];
-		
-		if (!$clientId || !$redirectUrl) {
-			return '<div class="oauth2-error">OAuth2 configuration incomplete. Please set GOOGLE_OAUTH2_CLIENT_ID and GOOGLE_OAUTH2_REDIRECT_URL.</div>';
-		}
-
-		// Google OAuth2 認証URL を構築
-		$scope = urlencode('https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform');
-		$state = urlencode(base64_encode(json_encode(['redirect_to' => $_SERVER['REQUEST_URI']])));
-		
-		$authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query([
-			'client_id' => $clientId,
-			'redirect_uri' => $redirectUrl,
-			'scope' => 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform',
-			'response_type' => 'code',
-			'state' => $state,
-			'access_type' => 'offline',
-			'prompt' => 'consent'
-		]);
-
-		return '
-		<div class="oauth2-login-container">
-			<div class="oauth2-logo">
-				<svg width="40" height="40" viewBox="0 0 24 24" fill="none">
-					<path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
-					<path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-					<path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-					<path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-				</svg>
-			</div>
-			<h2>Adminer</h2>
-			<a href="' . htmlspecialchars($authUrl) . '" class="oauth2-signin-button">Sign in with Google</a>
-		</div>';
-	}
-
-	function loginForm()
-	{
-		// OAuth2認証が有効な場合は専用のログイン画面を表示
-		if ($this->isOAuth2Enabled()) {
-			echo "<style>";
-			echo ".layout { display: none; }"; // 通常のログインフォームを非表示
-			echo ".oauth2-login-container {
-				display: flex;
-				flex-direction: column;
-				align-items: center;
-				justify-content: center;
-				min-height: 60vh;
-				text-align: center;
-				background: #f5f5f5;
-				margin: 20px;
-				border-radius: 8px;
-				padding: 40px;
-				box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-			}";
-			echo ".oauth2-logo {
-				margin-bottom: 20px;
-			}";
-			echo ".oauth2-login-container h2 {
-				color: #5f6368;
-				font-size: 24px;
-				font-weight: 400;
-				margin: 10px 0 30px 0;
-			}";
-			echo ".oauth2-signin-button {
-				background: #1a73e8;
-				color: white;
-				border: none;
-				border-radius: 4px;
-				padding: 12px 24px;
-				font-size: 14px;
-				font-weight: 500;
-				text-decoration: none;
-				display: inline-block;
-				transition: background-color 0.2s;
-			}";
-			echo ".oauth2-signin-button:hover {
-				background: #1557b0;
-				color: white;
-				text-decoration: none;
-			}";
-			echo ".oauth2-error {
-				color: #d93025;
-				background: #fce8e6;
-				border: 1px solid #fce8e6;
-				border-radius: 4px;
-				padding: 12px 16px;
-				margin: 20px 0;
-			}";
-			echo "</style>";
-			
-			// OAuth2ログインボタンを表示
-			echo $this->renderOAuth2LoginButton();
-		} else {
-			// 従来のCREDENTIAL認証用のスタイル
-			echo "<style>";
-			echo ".layout tr:has(input[type='hidden']) { display: none; }";
-			echo "</style>";
-		}
-	}
-
-	function operators()
-	{
-		return array(
-			"=", "!=", "<>", "<", "<=", ">", ">=",
-			"IN", "NOT IN", "IS NULL", "IS NOT NULL",
-			"LIKE", "NOT LIKE", "REGEXP", "NOT REGEXP"
-		);
-	}
-
-	protected $translations = array(
-		'en' => array('' => 'BigQuery authentication with service account credentials'),
-		'ja' => array('' => 'サービスアカウント認証情報によるBigQuery認証'),
-	);
-}
-
-// =============================================================================
-// Phase 1 Sprint 1.1: 基本クエリ機能実装
-// Note: これらの関数はAdminerのDriverクラス内で既に実装されている場合があるため、
-// BigQueryドライバー固有の拡張機能としてDriverクラス内のメソッドとして実装済み
-// =============================================================================
-
-
-class AdminerBigQueryCSS extends Plugin
-{
-	function head($dark = null)
-	{
-		if ((defined('DRIVER') && DRIVER === 'bigquery') || (defined('Adminer\\DRIVER') && constant('Adminer\\DRIVER') === 'bigquery')) {
-
-			if (class_exists('Adminer\\Driver')) {
-				$driver = new \Adminer\Driver();
-				if (method_exists($driver, 'css')) {
-
-					echo $driver->css();
-				}
-			}
-		}
 	}
 }
