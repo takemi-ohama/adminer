@@ -33,7 +33,7 @@ docker compose build playwright-e2e 2>&1 | tee -a "$LOG_FILE"
 # 1. 参照系テスト実行
 echo "🔍 ======== 参照系テスト実行 ========" | tee -a "$LOG_FILE"
 docker compose run --rm playwright-e2e npx playwright test \
-    --config=/app/container/e2e/playwright.config.js \
+    --config=/app/devtools/e2e/playwright.config.js \
     tests/reference-system-test.spec.js \
     --reporter=line \
     --output=test-results/reference \
@@ -42,7 +42,7 @@ docker compose run --rm playwright-e2e npx playwright test \
 echo "" | tee -a "$LOG_FILE"
 echo "🔧 ======== 更新系テスト実行 ========" | tee -a "$LOG_FILE"
 docker compose run --rm playwright-e2e npx playwright test \
-    --config=/app/container/e2e/playwright.config.js \
+    --config=/app/devtools/e2e/playwright.config.js \
     tests/bigquery-crud-test.spec.js \
     --reporter=line \
     --output=test-results/crud \

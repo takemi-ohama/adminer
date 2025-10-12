@@ -37,7 +37,7 @@ docker compose build playwright-e2e 2>&1 | tee -a "$LOG_FILE"
 
 # Analyzeボタンテスト実行
 log_and_echo "🚀 Analyzeボタンテスト実行中..."
-docker compose run --rm playwright-e2e sh -c "cd /app/container/e2e && npx playwright test tests/analyze-button-test.spec.js --project=chromium --reporter=line" 2>&1 | tee -a "$LOG_FILE"
+docker compose run --rm playwright-e2e sh -c "cd /app/devtools/e2e && npx playwright test tests/analyze-button-test.spec.js --project=chromium --reporter=line" 2>&1 | tee -a "$LOG_FILE"
 TEST_EXIT_CODE=$?
 
 # サーバーログも追記

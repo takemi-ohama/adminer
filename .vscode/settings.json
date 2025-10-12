@@ -33,6 +33,8 @@
 	"intelephense.diagnostics.enable": true,
 	"intelephense.diagnostics.run": "onSave",
 	"intelephense.diagnostics.embeddedLanguages": false,
+	"intelephense.diagnostics.undefinedTypes": false,
+	"intelephense.diagnostics.typeErrors": false,
 	"intelephense.completion.maxItems": 100,
 	"intelephense.completion.insertUseDeclaration": true,
 	"intelephense.completion.fullyQualifyGlobalConstantsAndFunctions": false,

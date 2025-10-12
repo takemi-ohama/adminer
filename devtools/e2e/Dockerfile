@@ -1,5 +1,5 @@
 # E2Eテスト実行用Dockerfile - スクリプト指定実行型
-FROM mcr.microsoft.com/playwright:v1.48.1-focal
+FROM mcr.microsoft.com/playwright:v1.48.0-focal
 
 # 必要なパッケージをインストール
 RUN apt-get update && apt-get install -y \
@@ -11,15 +11,18 @@ RUN apt-get update && apt-get install -y \
 # Node.js環境のセットアップ
 WORKDIR /app
 
+# E2E設定ファイル、テストファイル、スクリプトファイルをコピー
+COPY devtools/e2e/package.json /usr/local/src/devtools/e2e/package.json
+
+# npmパッケージのインストール
+RUN cd /usr/local/src/devtools/e2e && npm install
+
 # Playwrightブラウザをインストール
-RUN npx playwright install chromium firefox webkit
+RUN cd /usr/local/src/devtools/e2e && npx playwright install chromium firefox webkit
 
 # 環境変数設定
 ENV NODE_ENV=test
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-
-# E2E設定ファイル、テストファイル、スクリプトファイルをコピー
-COPY devtools/e2e/package.json /usr/local/src/devtools/e2e/package.json
 COPY devtools/e2e/playwright.config.js /usr/local/src/devtools/e2e/playwright.config.js
 COPY devtools/e2e/tests/ /usr/local/src/devtools/e2e/tests/
 COPY devtools/e2e/tests-full/ /usr/local/src/devtools/e2e/tests-full/
