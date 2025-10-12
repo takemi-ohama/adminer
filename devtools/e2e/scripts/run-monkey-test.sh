@@ -33,7 +33,7 @@ docker compose build playwright-e2e 2>&1 | tee -a "$LOG_FILE"
 # モンキーテスト実行
 echo "🐒 モンキーテスト実行中..." | tee -a "$LOG_FILE"
 docker compose run --rm playwright-e2e npx playwright test \
-    --config=/app/container/e2e/playwright.config.js \
+    --config=/app/devtools/e2e/playwright.config.js \
     tests/bigquery-monkey.spec.js \
     --reporter=line \
     --output=test-results/monkey \

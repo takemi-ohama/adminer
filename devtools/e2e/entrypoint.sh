@@ -4,31 +4,15 @@ set -e
 echo "🚀 E2E テスト実行開始: $(date)" >&2
 echo "📦 E2E環境セットアップ中..." >&2
 
-# E2E環境のファイルをセットアップ
-cp /usr/local/src/devtools/e2e/package.json /app/ 2>/dev/null || true
-mkdir -p /app/devtools/e2e
-# ディレクトリが存在する場合は削除してからファイルをコピー
-rm -rf /app/devtools/e2e/package.json 2>/dev/null || true
-rm -rf /app/devtools/e2e/playwright.config.js 2>/dev/null || true
-cp /usr/local/src/devtools/e2e/package.json /app/devtools/e2e/ 2>/dev/null || true
-cp /usr/local/src/devtools/e2e/playwright.config.js /app/devtools/e2e/ 2>/dev/null || true
-mkdir -p /app/devtools/e2e/tests
-cp -r /usr/local/src/devtools/e2e/tests/* /app/devtools/e2e/tests/ 2>/dev/null || true
-mkdir -p /app/devtools/e2e/tests-full
-cp -r /usr/local/src/devtools/e2e/tests-full/* /app/devtools/e2e/tests-full/ 2>/dev/null || true
-mkdir -p /app/devtools/e2e/scripts
-cp -r /usr/local/src/devtools/e2e/scripts/* /app/devtools/e2e/scripts/ 2>/dev/null || true
-# 単独テストファイルをコピー
-cp /usr/local/src/devtools/e2e/export-fix-test.js /app/devtools/e2e/ 2>/dev/null || true
-
-echo "📦 依存関係をインストール中..." >&2
-npm install
+# E2E環境のセットアップ（統一された作業ディレクトリ使用）
+echo "📦 E2E環境は既にセットアップ済みです（Docker統一ディレクトリ使用）" >&2
+echo "📁 作業ディレクトリ: /app/devtools/e2e" >&2
 
 echo "環境: $NODE_ENV" >&2
 echo "ベースURL: $BASE_URL" >&2
 
 # テスト結果保存ディレクトリを作成
-mkdir -p /app/devtools/e2e/test-results
+mkdir -p ./test-results
 echo "📁 テスト結果保存先: /app/devtools/e2e/test-results" >&2
 
 # コンテナ内ファイルを指定してスクリプトまたはテストを実行
@@ -39,7 +23,6 @@ if [ -f "$1" ]; then
     echo "📋 Playwrightテスト実行: $1" >&2
     # テストファイルの相対パスを計算して実行
     TEST_FILE=$(basename "$1")
-    cd /app/devtools/e2e
     npx playwright test "tests-full/$TEST_FILE" --project=chromium --reporter=line
   else
     echo "📋 スクリプトファイル実行: $1" >&2

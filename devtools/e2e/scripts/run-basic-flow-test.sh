@@ -35,7 +35,7 @@ echo "🚀 基本機能フローテスト実行中..." | tee -a "$LOG_FILE"
 
 # 基本フローテスト実行（Playwrightテスト）
 docker compose run --rm playwright-e2e npx playwright test \
-    --config=/app/container/e2e/playwright.config.js \
+    --config=/app/devtools/e2e/playwright.config.js \
     tests/basic-flow-test.spec.js \
     --reporter=line \
     --output=test-results/basic-flow \

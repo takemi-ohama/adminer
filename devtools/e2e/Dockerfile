@@ -8,8 +8,14 @@ RUN apt-get update && apt-get install -y \
     git \
     && rm -rf /var/lib/apt/lists/*
 
-# Node.js環境のセットアップ
-WORKDIR /app
+# Node.js環境のセットアップ - 作業ディレクトリ統一
+WORKDIR /app/devtools/e2e
+
+# E2E設定ファイル、テストファイル、スクリプトファイルをコピー
+COPY devtools/e2e/package.json ./package.json
+
+# npmパッケージのインストール
+RUN npm install
 
 # Playwrightブラウザをインストール
 RUN npx playwright install chromium firefox webkit
@@ -17,14 +23,11 @@ RUN npx playwright install chromium firefox webkit
 # 環境変数設定
 ENV NODE_ENV=test
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-
-# E2E設定ファイル、テストファイル、スクリプトファイルをコピー
-COPY devtools/e2e/package.json /usr/local/src/devtools/e2e/package.json
-COPY devtools/e2e/playwright.config.js /usr/local/src/devtools/e2e/playwright.config.js
-COPY devtools/e2e/tests/ /usr/local/src/devtools/e2e/tests/
-COPY devtools/e2e/tests-full/ /usr/local/src/devtools/e2e/tests-full/
-COPY devtools/e2e/scripts/ /usr/local/src/devtools/e2e/scripts/
-COPY devtools/e2e/export-fix-test.js /usr/local/src/devtools/e2e/export-fix-test.js
+COPY devtools/e2e/playwright.config.js ./playwright.config.js
+COPY devtools/e2e/tests/ ./tests/
+COPY devtools/e2e/tests-full/ ./tests-full/
+COPY devtools/e2e/scripts/ ./scripts/
+COPY devtools/e2e/export-fix-test.js ./export-fix-test.js
 
 # エントリーポイントスクリプトをコピー
 COPY devtools/e2e/entrypoint.sh /usr/local/bin/entrypoint.sh
