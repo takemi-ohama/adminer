@@ -1,9 +1,11 @@
 <?php
 
+namespace Adminer;
+
 /**
  * AdminerLoginBigQuery - BigQuery認証用のログインプラグイン
  */
-class AdminerLoginBigQuery extends Adminer\Plugin
+class AdminerLoginBigQuery extends \Adminer\Plugin
 {
 	protected $config;
 
