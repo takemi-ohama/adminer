@@ -69,6 +69,7 @@ if (isset($_GET["bigquery"])) {
 		public $last_result = null;
 		function connect($server, $username, $password)
 		{
+			// $username, $password パラメータは関数シグネチャ互換性のため保持（BigQueryでは環境変数認証を使用）
 			try {
 				$this->projectId = $this->validateAndParseProjectId($server);
 				$location = $this->determineLocation($server, $this->projectId);
@@ -669,7 +670,7 @@ if (isset($_GET["bigquery"])) {
 						}
 						break;
 					} catch (Exception $e) {
-
+						// $e パラメータは例外処理のため保持（ログ出力は不要）
 						break;
 					}
 				}
@@ -970,6 +971,7 @@ if (isset($_GET["bigquery"])) {
 
 	function dumpHeaders($identifier, $multi_table = false)
 	{
+		// $identifier, $multi_table パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 		$format = $_POST["format"] ?? 'csv';
 
 		// BigQuery用の適切なContent-Typeを設定
@@ -1069,14 +1071,17 @@ if (isset($_GET["bigquery"])) {
 	}
 	function fk_support($table_status)
 	{
+		// $table_status パラメータは関数シグネチャ互換性のため保持（BigQueryでは外部キー未対応）
 		return false;
 	}
 	function indexes($table, $connection2 = null)
 	{
+		// $table, $connection2 パラメータは関数シグネチャ互換性のため保持（BigQueryではインデックス未対応）
 		return array();
 	}
 	function foreign_keys($table)
 	{
+		// $table パラメータは関数シグネチャ互換性のため保持（BigQueryでは外部キー未対応）
 		return array();
 	}
 	function logged_user()
