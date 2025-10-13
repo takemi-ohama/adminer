@@ -1250,54 +1250,6 @@ if (isset($_GET["bigquery"])) {
 			return array();
 		}
 	}
-	function convertAdminerWhereToBigQuery($condition)
-	{
-		// WHERE条件の検証
-
-		if (!is_string($condition)) {
-			throw new InvalidArgumentException('WHERE condition must be a string');
-		}
-		if (strlen($condition) > 1000) {
-			throw new InvalidArgumentException('WHERE condition exceeds maximum length');
-		}
-		$suspiciousPatterns = array(
-			'/;\\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
-			'/UNION\\s+(ALL\\s+)?SELECT/i',
-			'/\\/\\*.*?\\*\\//s',
-			'/--[^\\r\\n]*/i',
-			'/\\bEXEC\\b/i',
-			'/\\bEXECUTE\\b/i',
-			'/\\bSP_/i'
-		);
-		foreach ($suspiciousPatterns as $pattern) {
-			if (preg_match($pattern, $condition)) {
-				error_log("BigQuery: Blocked suspicious WHERE condition pattern: " . substr($condition, 0, 100) . "...");
-				throw new InvalidArgumentException('WHERE condition contains prohibited SQL patterns');
-			}
-		}
-
-		// 正規表現を修正：\\\\s を \\s に変更
-		$condition = preg_replace_callback('/(`[^`]+`)\\s*=\\s*`([^`]+)`/', function ($matches) {
-			$column = $matches[1];
-			$value = $matches[2];
-
-			if (preg_match('/^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$/', $value)) {
-				// 数値の場合
-				return $column . ' = ' . $value;
-			} else {
-				// 文字列の場合
-				$escaped = str_replace("'", "''", $value);
-				return $column . " = '" . $escaped . "'";
-			}
-		}, $condition);
-
-		// COLLATE句を削除
-		$condition = preg_replace('/\\s+COLLATE\\s+\\w+/i', '', $condition);
-
-		// WHERE条件の変換完了
-
-		return $condition;
-	}
 	function fields($table)
 	{
 		global $connection;
@@ -1389,7 +1341,7 @@ if (isset($_GET["bigquery"])) {
 			if (!empty($where)) {
 				$whereClause = array();
 				foreach ($where as $condition) {
-					$processedCondition = convertAdminerWhereToBigQuery($condition);
+					$processedCondition = BigQueryUtils::convertAdminerWhereToBigQuery($condition);
 					$whereClause[] = $processedCondition;
 				}
 				$query .= " WHERE " . implode(" AND ", $whereClause);
@@ -1436,6 +1388,7 @@ if (isset($_GET["bigquery"])) {
 		{
 			// BigQuery SELECT * との併用問題を回避するため、フィールド変換を無効化
 			// Adminerが SELECT * を使用する際に不正なSQL生成を防ぐ
+			// $field パラメータは関数シグネチャ互換性のため保持（未使用）
 			return null;
 		}
 	}
@@ -1610,6 +1563,7 @@ if (isset($_GET["bigquery"])) {
 
 		function update($table, $set, $queryWhere = '', $limit = 0)
 		{
+			// $limit パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 			global $connection;
 			try {
 				if (!$connection || !isset($connection->bigQueryClient)) {
@@ -1623,7 +1577,7 @@ if (isset($_GET["bigquery"])) {
 
 				$tableFields = fields($table);
 
-				$setParts = array();
+				$setParts = [];
 				foreach ($set as $field => $value) {
 
 					$cleanFieldName = trim(str_replace('`', '', $field));
@@ -1667,8 +1621,8 @@ if (isset($_GET["bigquery"])) {
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
 						$errorMessage = $errorResult['message'] ?? 'Unknown error';
-						error_log("BigQuery UPDATE failed: " . $errorMessage);
-						$connection->error = "UPDATE failed: " . $errorMessage;
+						error_log("BigQuery UPDATE failed: $errorMessage");
+						$connection->error = "UPDATE failed: $errorMessage";
 						return false;
 					}
 
@@ -1683,18 +1637,19 @@ if (isset($_GET["bigquery"])) {
 			} catch (ServiceException $e) {
 				$errorMessage = $e->getMessage();
 				BigQueryUtils::logQuerySafely($errorMessage, 'UPDATE_SERVICE_ERROR');
-				$connection->error = "UPDATE ServiceException: " . $errorMessage;
+				$connection->error = "UPDATE ServiceException: $errorMessage";
 				return false;
 			} catch (Exception $e) {
 				$errorMessage = $e->getMessage();
 				BigQueryUtils::logQuerySafely($errorMessage, 'UPDATE_ERROR');
-				$connection->error = "UPDATE Exception: " . $errorMessage;
+				$connection->error = "UPDATE Exception: $errorMessage";
 				return false;
 			}
 		}
 
 		function delete($table, $queryWhere = '', $limit = 0)
 		{
+			// $limit パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 			global $connection;
 			try {
 				if (!$connection || !isset($connection->bigQueryClient)) {
@@ -2010,6 +1965,8 @@ if (isset($_GET["bigquery"])) {
 
 		function alter_table($table, $name, $fields, $foreign, $comment, $engine, $collation, $auto_increment, $partitioning)
 		{
+			// $foreign, $engine, $collation, $auto_increment, $partitioning パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
+			// $driver 変数は互換性のため宣言（未使用）
 			global $connection, $driver;
 
 			try {
@@ -2028,7 +1985,7 @@ if (isset($_GET["bigquery"])) {
 
 					$dataset = $connection->bigQueryClient->dataset($database);
 
-					$schemaFields = array();
+					$schemaFields = [];
 					foreach ($fields as $field) {
 						if (isset($field[1]) && is_array($field[1])) {
 
@@ -2037,11 +1994,11 @@ if (isset($_GET["bigquery"])) {
 							$fieldMode = ($field[1][3] ?? false) ? 'REQUIRED' : 'NULLABLE';
 
 							if (!empty($fieldName)) {
-								$schemaFields[] = array(
+								$schemaFields[] = [
 									'name' => $fieldName,
 									'type' => strtoupper($fieldType),
 									'mode' => $fieldMode
-								);
+								];
 							}
 						}
 					}
@@ -2050,9 +2007,9 @@ if (isset($_GET["bigquery"])) {
 						return false;
 					}
 
-					$tableOptions = array(
-						'schema' => array('fields' => $schemaFields)
-					);
+					$tableOptions = [
+						'schema' => ['fields' => $schemaFields]
+					];
 
 					if (!empty($comment)) {
 						$tableOptions['description'] = $comment;
@@ -2244,7 +2201,7 @@ if (isset($_GET["bigquery"])) {
 
 		function move_tables($tables, $views, $target)
 		{
-
+			// $views パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 			global $connection;
 
 			if (!$connection || !isset($connection->bigQueryClient)) {
@@ -2868,24 +2825,28 @@ if (isset($_GET["bigquery"])) {
 
 	function check_table($table)
 	{
+		// $table パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 		show_unsupported_feature_message('check');
 		return false;
 	}
 
 	function optimize_table($table)
 	{
+		// $table パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 		show_unsupported_feature_message('optimize');
 		return false;
 	}
 
 	function repair_table($table)
 	{
+		// $table パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 		show_unsupported_feature_message('repair');
 		return false;
 	}
 
 	function analyze_table($table)
 	{
+		// $table パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 		show_unsupported_feature_message('analyze');
 		return false;
 	}

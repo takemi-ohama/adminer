@@ -13,12 +13,13 @@ use Exception;
 class BigQueryUtils
 {
 
-	static function validateProjectId($projectId)
+	public static function validateProjectId($projectId)
 	{
 		return preg_match('/^[a-z0-9][a-z0-9\\-]{4,28}[a-z0-9]$/i', $projectId) &&
 			strlen($projectId) <= 30;
 	}
-	static function escapeIdentifier($identifier)
+	
+	public static function escapeIdentifier($identifier)
 	{
 
 		if (preg_match('/^`[^`]*`$/', $identifier)) {
@@ -28,12 +29,13 @@ class BigQueryUtils
 		$cleanIdentifier = trim($identifier, '`');
 		return "`" . str_replace("`", "``", $cleanIdentifier) . "`";
 	}
-	static function logQuerySafely($query, $context = "QUERY")
+	
+	public static function logQuerySafely($query, $context = "QUERY")
 	{
-		$sanitizers = array(
-			'/([\'"])[^\'\"]*\\1/' => '$1***REDACTED***$1',
+		$sanitizers = [
+			'/([\'"])[^\'"]*\\1/' => '$1***REDACTED***$1',
 			'/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/' => '***EMAIL_REDACTED***'
-		);
+		];
 		$safeQuery = preg_replace(array_keys($sanitizers), array_values($sanitizers), $query);
 		if (strlen($safeQuery) > 200) {
 			$safeQuery = substr($safeQuery, 0, 200) . '... [TRUNCATED]';
@@ -41,7 +43,7 @@ class BigQueryUtils
 		error_log("BigQuery $context: $safeQuery");
 	}
 
-	static function convertValueForBigQuery($value, $fieldType)
+	public static function convertValueForBigQuery($value, $fieldType)
 	{
 
 		if ($value === null) {
@@ -64,7 +66,7 @@ class BigQueryUtils
 			if (is_numeric($cleanValue)) {
 				return $cleanValue;
 			} else {
-				throw new InvalidArgumentException('Invalid numeric value: ' . $cleanValue);
+				throw new InvalidArgumentException("Invalid numeric value: $cleanValue");
 			}
 		} elseif (strpos($fieldType, 'bool') !== false) {
 			return (strtolower($cleanValue) === 'true' || $cleanValue === '1') ? 'TRUE' : 'FALSE';
@@ -73,14 +75,14 @@ class BigQueryUtils
 		}
 	}
 
-	static function formatComplexValue($value, $field)
+	public static function formatComplexValue($value, $field)
 	{
 		$fieldType = strtolower($field['type'] ?? 'text');
-		$typePatterns = array(
-			'json' => array('json', 'struct', 'record', 'array'),
-			'geography' => array('geography'),
-			'binary' => array('bytes', 'blob'),
-		);
+		$typePatterns = [
+			'json' => ['json', 'struct', 'record', 'array'],
+			'geography' => ['geography'],
+			'binary' => ['bytes', 'blob'],
+		];
 		foreach ($typePatterns as $handlerType => $patterns) {
 			if (self::matchesTypePattern($fieldType, $patterns)) {
 				return self::handleTypeConversion($value, $handlerType);
@@ -88,6 +90,7 @@ class BigQueryUtils
 		}
 		return $value;
 	}
+	
 	private static function matchesTypePattern($fieldType, $patterns)
 	{
 		foreach ($patterns as $pattern) {
@@ -97,6 +100,7 @@ class BigQueryUtils
 		}
 		return false;
 	}
+	
 	private static function handleTypeConversion($value, $handlerType)
 	{
 		switch ($handlerType) {
@@ -110,14 +114,15 @@ class BigQueryUtils
 				return $value;
 		}
 	}
-	static function generateFieldConversion($field)
+	
+	public static function generateFieldConversion($field)
 	{
 
 		$fieldName = self::escapeIdentifier($field['field']);
 		$fieldType = strtolower($field['type'] ?? '');
 
 		// BigQuery固有データ型の変換マッピング
-		$conversions = array(
+		$conversions = [
 			// 地理空間データの変換
 			'geography' => "ST_AsText($fieldName)",
 			'geom' => "ST_AsText($fieldName)",
@@ -145,7 +150,7 @@ class BigQueryUtils
 			// 論理データの明示化
 			'boolean' => "IF($fieldName, 'true', 'false')",
 			'bool' => "IF($fieldName, 'true', 'false')"
-		);
+		];
 
 		// パターンマッチングで最適な変換を選択
 		foreach ($conversions as $typePattern => $conversion) {
@@ -158,9 +163,9 @@ class BigQueryUtils
 		return null;
 	}
 
-	static function buildFullTableName($table, $database, $projectId)
+	public static function buildFullTableName($table, $database, $projectId)
 	{
-		return "`" . $projectId . "`.`" . $database . "`.`" . $table . "`";
+		return "`$projectId`.`$database`.`$table`";
 	}
 
 	/**
@@ -169,7 +174,7 @@ class BigQueryUtils
 	 * @param object $job BigQueryジョブオブジェクト
 	 * @return bool ジョブが完了している場合はtrue
 	 */
-	static function isJobCompleted($job)
+	public static function isJobCompleted($job)
 	{
 		if (!$job) {
 			return false;
@@ -203,13 +208,13 @@ class BigQueryUtils
 	 * @return string Properly formatted WHERE clause with WHERE prefix
 	 * @throws InvalidArgumentException If WHERE condition is invalid
 	 */
-	static function processWhereClause($queryWhere)
+	public static function processWhereClause($queryWhere)
 	{
 		if (empty($queryWhere) || trim($queryWhere) === '') {
 			return '';
 		}
 
-		$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
+		$convertedWhere = self::convertAdminerWhereToBigQuery($queryWhere);
 
 		// Check if the converted WHERE already starts with WHERE keyword
 		if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {
@@ -217,5 +222,60 @@ class BigQueryUtils
 		} else {
 			return ' WHERE ' . $convertedWhere;
 		}
+	}
+
+	/**
+	 * Convert Adminer WHERE conditions to BigQuery compatible format
+	 *
+	 * @param string $condition The WHERE condition from Adminer
+	 * @return string Converted WHERE condition
+	 * @throws InvalidArgumentException If WHERE condition is invalid
+	 */
+	public static function convertAdminerWhereToBigQuery($condition)
+	{
+		// WHERE条件の検証
+		if (!is_string($condition)) {
+			throw new InvalidArgumentException('WHERE condition must be a string');
+		}
+		if (strlen($condition) > 1000) {
+			throw new InvalidArgumentException('WHERE condition exceeds maximum length');
+		}
+
+		$suspiciousPatterns = [
+			'/;\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\s+/i',
+			'/UNION\s+(ALL\s+)?SELECT/i',
+			'/\/\*.*?\*\//s',
+			'/--[^\r\n]*/i',
+			'/\bEXEC\b/i',
+			'/\bEXECUTE\b/i',
+			'/\bSP_/i'
+		];
+
+		foreach ($suspiciousPatterns as $pattern) {
+			if (preg_match($pattern, $condition)) {
+				error_log("BigQuery: Blocked suspicious WHERE condition pattern: " . substr($condition, 0, 100) . "...");
+				throw new InvalidArgumentException('WHERE condition contains prohibited SQL patterns');
+			}
+		}
+
+		// 正規表現を修正：\\s を \s に変更
+		$condition = preg_replace_callback('/(`[^`]+`)\s*=\s*`([^`]+)`/', function ($matches) {
+			$column = $matches[1];
+			$value = $matches[2];
+
+			if (preg_match('/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/', $value)) {
+				// 数値の場合
+				return $column . ' = ' . $value;
+			} else {
+				// 文字列の場合
+				$escaped = str_replace("'", "''", $value);
+				return $column . " = '" . $escaped . "'";
+			}
+		}, $condition);
+
+		// COLLATE句を削除
+		$condition = preg_replace('/\s+COLLATE\s+\w+/i', '', $condition);
+
+		return $condition;
 	}
 }
