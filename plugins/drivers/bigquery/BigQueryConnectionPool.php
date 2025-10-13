@@ -4,15 +4,13 @@ namespace Adminer;
 
 use Google\Cloud\BigQuery\BigQueryClient;
 
-class BigQueryConnectionPool
-{
+class BigQueryConnectionPool {
 
 	private static $pool = array();
 	private static $maxConnections = 3;
 	private static $usageTimestamps = array();
 	private static $creationTimes = array();
-	static function getConnection($key, $config)
-	{
+	static function getConnection($key, $config) {
 		if (isset(self::$pool[$key])) {
 			self::$usageTimestamps[$key] = time();
 			$age = time() - self::$creationTimes[$key];
@@ -36,8 +34,7 @@ class BigQueryConnectionPool
 		self::$creationTimes[$key] = time();
 		return $client;
 	}
-	private static function evictOldestConnection()
-	{
+	private static function evictOldestConnection() {
 		if (empty(self::$usageTimestamps)) {
 			return;
 		}
@@ -46,15 +43,13 @@ class BigQueryConnectionPool
 		unset(self::$usageTimestamps[$oldestKey]);
 		unset(self::$creationTimes[$oldestKey]);
 	}
-	function clearPool()
-	{
+	function clearPool() {
 		$count = count(self::$pool);
 		self::$pool = array();
 		self::$usageTimestamps = array();
 		self::$creationTimes = array();
 	}
-	function getStats()
-	{
+	function getStats() {
 		$stats = array(
 			'pool_size' => count(self::$pool),
 			'max_size' => self::$maxConnections,
@@ -70,8 +65,7 @@ class BigQueryConnectionPool
 		return $stats;
 	}
 
-	static function getConnectionFromPool($key)
-	{
+	static function getConnectionFromPool($key) {
 		if (isset(self::$pool[$key])) {
 			self::$usageTimestamps[$key] = time();
 			return self::$pool[$key];

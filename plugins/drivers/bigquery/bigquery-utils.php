@@ -10,17 +10,14 @@ use Exception;
  *
  * bigquery.phpから分離されたユーティリティクラス
  */
-class BigQueryUtils
-{
+class BigQueryUtils {
 
-	public static function validateProjectId($projectId)
-	{
+	public static function validateProjectId($projectId) {
 		return preg_match('/^[a-z0-9][a-z0-9\\-]{4,28}[a-z0-9]$/i', $projectId) &&
 			strlen($projectId) <= 30;
 	}
-	
-	public static function escapeIdentifier($identifier)
-	{
+
+	public static function escapeIdentifier($identifier) {
 
 		if (preg_match('/^`[^`]*`$/', $identifier)) {
 			return $identifier;
@@ -29,9 +26,8 @@ class BigQueryUtils
 		$cleanIdentifier = trim($identifier, '`');
 		return "`" . str_replace("`", "``", $cleanIdentifier) . "`";
 	}
-	
-	public static function logQuerySafely($query, $context = "QUERY")
-	{
+
+	public static function logQuerySafely($query, $context = "QUERY") {
 		$sanitizers = [
 			'/([\'"])[^\'"]*\\1/' => '$1***REDACTED***$1',
 			'/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/' => '***EMAIL_REDACTED***'
@@ -43,8 +39,7 @@ class BigQueryUtils
 		error_log("BigQuery $context: $safeQuery");
 	}
 
-	public static function convertValueForBigQuery($value, $fieldType)
-	{
+	public static function convertValueForBigQuery($value, $fieldType) {
 
 		if ($value === null) {
 			return 'NULL';
@@ -75,8 +70,7 @@ class BigQueryUtils
 		}
 	}
 
-	public static function formatComplexValue($value, $field)
-	{
+	public static function formatComplexValue($value, $field) {
 		$fieldType = strtolower($field['type'] ?? 'text');
 		$typePatterns = [
 			'json' => ['json', 'struct', 'record', 'array'],
@@ -90,9 +84,8 @@ class BigQueryUtils
 		}
 		return $value;
 	}
-	
-	private static function matchesTypePattern($fieldType, $patterns)
-	{
+
+	private static function matchesTypePattern($fieldType, $patterns) {
 		foreach ($patterns as $pattern) {
 			if (strpos($fieldType, $pattern) !== false) {
 				return true;
@@ -100,9 +93,8 @@ class BigQueryUtils
 		}
 		return false;
 	}
-	
-	private static function handleTypeConversion($value, $handlerType)
-	{
+
+	private static function handleTypeConversion($value, $handlerType) {
 		switch ($handlerType) {
 			case 'json':
 				return is_string($value) && (substr($value, 0, 1) === '{' || substr($value, 0, 1) === '[')
@@ -114,9 +106,8 @@ class BigQueryUtils
 				return $value;
 		}
 	}
-	
-	public static function generateFieldConversion($field)
-	{
+
+	public static function generateFieldConversion($field) {
 
 		$fieldName = self::escapeIdentifier($field['field']);
 		$fieldType = strtolower($field['type'] ?? '');
@@ -163,8 +154,7 @@ class BigQueryUtils
 		return null;
 	}
 
-	public static function buildFullTableName($table, $database, $projectId)
-	{
+	public static function buildFullTableName($table, $database, $projectId) {
 		return "`$projectId`.`$database`.`$table`";
 	}
 
@@ -174,8 +164,7 @@ class BigQueryUtils
 	 * @param object $job BigQueryジョブオブジェクト
 	 * @return bool ジョブが完了している場合はtrue
 	 */
-	public static function isJobCompleted($job)
-	{
+	public static function isJobCompleted($job) {
 		if (!$job) {
 			return false;
 		}
@@ -208,8 +197,7 @@ class BigQueryUtils
 	 * @return string Properly formatted WHERE clause with WHERE prefix
 	 * @throws InvalidArgumentException If WHERE condition is invalid
 	 */
-	public static function processWhereClause($queryWhere)
-	{
+	public static function processWhereClause($queryWhere) {
 		if (empty($queryWhere) || trim($queryWhere) === '') {
 			return '';
 		}
@@ -231,8 +219,7 @@ class BigQueryUtils
 	 * @return string Converted WHERE condition
 	 * @throws InvalidArgumentException If WHERE condition is invalid
 	 */
-	public static function convertAdminerWhereToBigQuery($condition)
-	{
+	public static function convertAdminerWhereToBigQuery($condition) {
 		// WHERE条件の検証
 		if (!is_string($condition)) {
 			throw new InvalidArgumentException('WHERE condition must be a string');

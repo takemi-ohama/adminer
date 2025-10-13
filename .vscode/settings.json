@@ -21,7 +21,8 @@
 		"**/externals/**",
 		"**/designs/**",
 		"**/adminer-*",
-		"**/editor-*"
+		"**/editor-*",
+		"**/vendor/**"
 	],
 	"php-cs-fixer.enable": true,
 	"php-cs-fixer.executablePath": "php-cs-fixer",
@@ -132,6 +133,11 @@
 	"phpstan.showErrorsOnSave": true,
 	"phpstan.memoryLimit": "1G",
 	"phpstan.timeout": 60,
+	"phpstan.checkPaths": [
+		"plugins/drivers/bigquery.php",
+		"plugins/drivers/bigquery/**",
+		"devtools/web/index.php"
+	],
 	"files.associations": {
 		"*.php": "php",
 		"*.inc": "php",
@@ -145,7 +151,7 @@
 		"php": "html"
 	},
 	"[php]": {
-		"editor.defaultFormatter": "DEVSENSE.phptools-vscode",
+		"editor.defaultFormatter": "bmewburn.vscode-intelephense-client",
 		"editor.insertSpaces": false,
 		"editor.tabSize": 4,
 		"editor.detectIndentation": false,

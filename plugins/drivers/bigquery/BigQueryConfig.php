@@ -7,8 +7,7 @@ namespace Adminer;
  *
  * BigQueryドライバーで使用される設定定数とユーティリティメソッドを提供
  */
-class BigQueryConfig
-{
+class BigQueryConfig {
 
 	public const TYPE_MAPPING = array(
 		'STRING' => array('type' => 'varchar', 'length' => null),
@@ -78,13 +77,11 @@ class BigQueryConfig
 		'apcu_shm_size' => '64M',
 		'connection_pool_max' => 3,
 	);
-	static function mapType($bigQueryType)
-	{
+	static function mapType($bigQueryType) {
 		$baseType = strtoupper(preg_replace('/\\(.*\\)/', '', $bigQueryType));
 		return self::TYPE_MAPPING[$baseType] ?? array('type' => 'text', 'length' => null);
 	}
-	static function isDangerousQuery($query)
-	{
+	static function isDangerousQuery($query) {
 		foreach (self::DANGEROUS_SQL_PATTERNS as $pattern) {
 			if (preg_match($pattern, $query)) {
 				return true;
@@ -92,8 +89,7 @@ class BigQueryConfig
 		}
 		return false;
 	}
-	static function isFeatureSupported($feature)
-	{
+	static function isFeatureSupported($feature) {
 		return self::SUPPORTED_FEATURES[$feature] ??
 			(self::UNSUPPORTED_FEATURES[$feature] ?? false);
 	}
