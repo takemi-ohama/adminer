@@ -43,4 +43,3 @@ docker ps | grep adminer-bigquery-test
 - 各動作でFatalやError,Invalidなどの警告が画面に発生していないことを確認
 
 このコマンドにより、BigQueryドライバープラグインの包括的な動作検証が自動実行されます。
-syuu

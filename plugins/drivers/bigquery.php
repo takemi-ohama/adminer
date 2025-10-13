@@ -1834,7 +1834,15 @@ if (isset($_GET["bigquery"])) {
 			try {
 				// データベース名取得（引数→接続設定→$_GET['db']の順で優先）
 				if ($database === null) {
-					$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+					$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '');
+				}
+
+				// データベース名が空の場合はエラーを返す
+				if (empty($database)) {
+					if ($connection) {
+						$connection->error = "$logOperation failed: No database specified";
+					}
+					return false;
 				}
 
 				// テーブル名が指定されている場合、フルテーブル名を構築

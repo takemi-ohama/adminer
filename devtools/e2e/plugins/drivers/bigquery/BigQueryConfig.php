@@ -30,9 +30,9 @@ class BigQueryConfig
 		'RECORD' => array('type' => 'text', 'length' => null),
 	);
 	public const DANGEROUS_SQL_PATTERNS = array(
-		'ddl_dml' => '/;\\s*(?:DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
-		'union_injection' => '/UNION\\s+(?:ALL\\s+)?SELECT/i',
-		'block_comments' => '/\\/\\*.*?\\*\\//s',
+		'ddl_dml' => '/;\\s*(?:DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\b/i',
+		'union_injection' => '/\\bUNION\\s+(?:ALL\\s+)?SELECT\\b/i',
+		'block_comments' => '/\\/\\*[^*]*\\*+(?:[^/*][^*]*\\*+)*\\//s',
 		'line_comments' => '/--[^\\r\\n]*/i',
 		'execute_commands' => '/\\b(?:EXEC|EXECUTE|SP_)\\b/i',
 	);
