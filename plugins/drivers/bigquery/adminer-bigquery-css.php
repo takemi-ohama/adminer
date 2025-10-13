@@ -2,12 +2,14 @@
 
 namespace Adminer;
 
+use Adminer\Plugin;
+
 /**
  * AdminerBigQueryCSS - BigQuery用のCSS提供プラグイン
  *
  * bigquery.phpから分離されたCSSクラス
  */
-class AdminerBigQueryCSS extends \Adminer\Plugin
+class AdminerBigQueryCSS extends Plugin
 {
 	private function isBigQueryDriver()
 	{
@@ -18,8 +20,8 @@ class AdminerBigQueryCSS extends \Adminer\Plugin
 	{
 		if ($this->isBigQueryDriver()) {
 
-			if (class_exists('Adminer\\BigQueryDriver')) {
-				$driver = new \Adminer\BigQueryDriver();
+			if (class_exists('Adminer\\Driver')) {
+				$driver = new \Adminer\Driver();
 				if (method_exists($driver, 'css')) {
 
 					echo $driver->css();

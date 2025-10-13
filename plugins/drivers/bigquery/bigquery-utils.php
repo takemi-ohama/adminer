@@ -2,6 +2,8 @@
 
 namespace Adminer;
 
+use InvalidArgumentException;
+
 /**
  * BigQueryUtils - BigQuery用のユーティリティクラス
  *
@@ -206,7 +208,7 @@ class BigQueryUtils
 			return '';
 		}
 
-		$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
+		$convertedWhere = \convertAdminerWhereToBigQuery($queryWhere);
 
 		// Check if the converted WHERE already starts with WHERE keyword
 		if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {

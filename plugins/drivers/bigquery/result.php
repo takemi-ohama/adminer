@@ -2,6 +2,8 @@
 
 namespace Adminer;
 
+use Exception;
+
 /**
  * Result - BigQuery query result handler
  *
