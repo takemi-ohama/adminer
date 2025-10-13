@@ -12,6 +12,31 @@ require_once __DIR__ . '/bigquery/BigQueryCacheManager.php';
 require_once __DIR__ . '/bigquery/BigQueryConnectionPool.php';
 require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 
+// Dependency validation before driver registration
+if (!class_exists('Google\Cloud\BigQuery\BigQueryClient')) {
+	error_log('BigQuery driver: Required dependency Google\Cloud\BigQuery\BigQueryClient not found. Please install google/cloud-bigquery package.');
+	return;
+}
+
+// Validate autoloader availability
+if (!file_exists(__DIR__ . '/../../vendor/autoload.php') && !class_exists('Google\Client')) {
+	error_log('BigQuery driver: Composer autoloader or Google Client library not available. Please run composer install.');
+	return;
+}
+
+// Check critical required files
+$required_files = [
+	__DIR__ . '/bigquery/AdminerLoginBigQuery.php',
+	__DIR__ . '/bigquery/BigQueryUtils.php',
+	__DIR__ . '/bigquery/BigQueryConfig.php'
+];
+
+foreach ($required_files as $file) {
+	if (!file_exists($file)) {
+		error_log("BigQuery driver: Required file not found: $file");
+		return;
+	}
+}
 
 add_driver("bigquery", "Google BigQuery");
 
@@ -2075,54 +2100,6 @@ require_once __DIR__ . '/bigquery/BigQueryUtils.php';
 			return array();
 		}
 	}
-	function convertAdminerWhereToBigQuery($condition)
-	{
-		// WHERE条件の検証
-
-		if (!is_string($condition)) {
-			throw new InvalidArgumentException('WHERE condition must be a string');
-		}
-		if (strlen($condition) > 1000) {
-			throw new InvalidArgumentException('WHERE condition exceeds maximum length');
-		}
-		$suspiciousPatterns = array(
-			'/;\\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
-			'/UNION\\s+(ALL\\s+)?SELECT/i',
-			'/\\/\\*.*?\\*\\//s',
-			'/--[^\\r\\n]*/i',
-			'/\\bEXEC\\b/i',
-			'/\\bEXECUTE\\b/i',
-			'/\\bSP_/i'
-		);
-		foreach ($suspiciousPatterns as $pattern) {
-			if (preg_match($pattern, $condition)) {
-				error_log("BigQuery: Blocked suspicious WHERE condition pattern: " . substr($condition, 0, 100) . "...");
-				throw new InvalidArgumentException('WHERE condition contains prohibited SQL patterns');
-			}
-		}
-
-		// 正規表現を修正：\\\\s を \\s に変更
-		$condition = preg_replace_callback('/(`[^`]+`)\\s*=\\s*`([^`]+)`/', function ($matches) {
-			$column = $matches[1];
-			$value = $matches[2];
-
-			if (preg_match('/^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$/', $value)) {
-				// 数値の場合
-				return $column . ' = ' . $value;
-			} else {
-				// 文字列の場合
-				$escaped = str_replace("'", "''", $value);
-				return $column . " = '" . $escaped . "'";
-			}
-		}, $condition);
-
-		// COLLATE句を削除
-		$condition = preg_replace('/\\s+COLLATE\\s+\\w+/i', '', $condition);
-
-		// WHERE条件の変換完了
-
-		return $condition;
-	}
 	function fields($table)
 	{
 		global $connection;
@@ -2214,7 +2191,7 @@ require_once __DIR__ . '/bigquery/BigQueryUtils.php';
 			if (!empty($where)) {
 				$whereClause = array();
 				foreach ($where as $condition) {
-					$processedCondition = convertAdminerWhereToBigQuery($condition);
+					$processedCondition = BigQueryUtils::convertAdminerWhereToBigQuery($condition);
 					$whereClause[] = $processedCondition;
 				}
 				$query .= " WHERE " . implode(" AND ", $whereClause);

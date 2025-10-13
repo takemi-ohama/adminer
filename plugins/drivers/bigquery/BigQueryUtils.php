@@ -191,6 +191,62 @@ class BigQueryUtils
 	}
 
 	/**
+	 * Convert Adminer WHERE conditions to BigQuery-compatible format
+	 *
+	 * @param string $condition The WHERE condition from Adminer
+	 * @return string Converted WHERE condition
+	 * @throws InvalidArgumentException If WHERE condition is invalid
+	 */
+	static function convertAdminerWhereToBigQuery($condition)
+	{
+		// WHERE条件の検証
+
+		if (!is_string($condition)) {
+			throw new InvalidArgumentException('WHERE condition must be a string');
+		}
+		if (strlen($condition) > 1000) {
+			throw new InvalidArgumentException('WHERE condition exceeds maximum length');
+		}
+		$suspiciousPatterns = array(
+			'/;\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\s+/i',
+			'/UNION\s+(ALL\s+)?SELECT/i',
+			'/\/\*.*?\*\//s',
+			'/--[^\r\n]*/i',
+			'/\bEXEC\b/i',
+			'/\bEXECUTE\b/i',
+			'/\bSP_/i'
+		);
+		foreach ($suspiciousPatterns as $pattern) {
+			if (preg_match($pattern, $condition)) {
+				error_log("BigQuery: Blocked suspicious WHERE condition pattern: " . substr($condition, 0, 100) . "...");
+				throw new InvalidArgumentException('WHERE condition contains prohibited SQL patterns');
+			}
+		}
+
+		// 正規表現を修正：\\s を \s に変更
+		$condition = preg_replace_callback('/(`[^`]+`)\s*=\s*`([^`]+)`/', function ($matches) {
+			$column = $matches[1];
+			$value = $matches[2];
+
+			if (preg_match('/^-?(?:0|[1-9]\d*)(?:\.\d+)?$/', $value)) {
+				// 数値の場合
+				return $column . ' = ' . $value;
+			} else {
+				// 文字列の場合
+				$escaped = str_replace("'", "''", $value);
+				return $column . " = '" . $escaped . "'";
+			}
+		}, $condition);
+
+		// COLLATE句を削除
+		$condition = preg_replace('/\s+COLLATE\s+\w+/i', '', $condition);
+
+		// WHERE条件の変換完了
+
+		return $condition;
+	}
+
+	/**
 	 * Process WHERE clause for BigQuery DML operations
 	 *
 	 * @param string $queryWhere The WHERE condition from Adminer
@@ -203,7 +259,7 @@ class BigQueryUtils
 			return '';
 		}
 
-		$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
+		$convertedWhere = self::convertAdminerWhereToBigQuery($queryWhere);
 
 		// Check if the converted WHERE already starts with WHERE keyword
 		if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {

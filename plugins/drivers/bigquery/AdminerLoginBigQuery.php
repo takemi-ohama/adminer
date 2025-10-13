@@ -6,6 +6,11 @@ use Exception;
 
 class AdminerLoginBigQuery extends Plugin
 {
+	// OAuth2 endpoint URLs as constants for security
+	const GOOGLE_OAUTH2_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
+	const GOOGLE_OAUTH2_TOKEN_URL = 'https://oauth2.googleapis.com/token';
+	const GOOGLE_OAUTH2_SCOPES = 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform';
+
 	protected $config;
 
 	function __construct($config = array())
@@ -31,9 +36,9 @@ class AdminerLoginBigQuery extends Plugin
 		$clientId = getenv('GOOGLE_OAUTH2_CLIENT_ID');
 		$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
 
-		// Validate client ID format
-		if (!$clientId || !preg_match('/^[a-zA-Z0-9\-_.]+$/', $clientId)) {
-			error_log('OAuth2: Invalid client ID format');
+		// Validate client ID format (Google OAuth2 Client ID format)
+		if (!$clientId || !preg_match('/^[0-9]+-[a-zA-Z0-9_]+\.apps\.googleusercontent\.com$/', $clientId)) {
+			error_log('OAuth2: Invalid Google OAuth2 client ID format');
 			return false;
 		}
 
@@ -218,13 +223,13 @@ class AdminerLoginBigQuery extends Plugin
 		}
 
 		// Google OAuth2 認証URL を構築
-		$scope = urlencode('https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform');
+		$scope = urlencode(self::GOOGLE_OAUTH2_SCOPES);
 		$state = urlencode(base64_encode(json_encode(['redirect_to' => $_SERVER['REQUEST_URI']])));
 
-		$authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query([
+		$authUrl = self::GOOGLE_OAUTH2_AUTH_URL . '?' . http_build_query([
 			'client_id' => $clientId,
 			'redirect_uri' => $redirectUrl,
-			'scope' => 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform',
+			'scope' => self::GOOGLE_OAUTH2_SCOPES,
 			'response_type' => 'code',
 			'state' => $state,
 			'access_type' => 'offline',
