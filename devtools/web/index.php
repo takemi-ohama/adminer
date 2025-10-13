@@ -35,6 +35,7 @@ if ($is_oauth_callback) {
 	// OAuth2コールバックURLの場合、BigQueryドライバーのOAuth2処理を実行
 	if (isset($_GET['code']) && isset($_GET['state'])) {
 		// BigQueryドライバーを読み込み
+		include_once __DIR__ . '/adminer/include/plugin.inc.php';
 		require_once __DIR__ . '/plugins/drivers/bigquery.php';
 
 		// OAuth2処理のためのダミー接続を作成
