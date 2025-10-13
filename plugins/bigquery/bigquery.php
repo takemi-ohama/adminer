@@ -361,6 +361,9 @@ class AdminerBigQueryCSS extends Plugin
 }
 
 if (isset($_GET["bigquery"])) {
+	require_once __DIR__ . '/BigQueryCacheManager.php';
+	require_once __DIR__ . '/BigQueryConnectionPool.php';
+	require_once __DIR__ . '/BigQueryConfig.php';
 	define('Adminer\DRIVER', "bigquery");
 
 	class BigQueryUtils
