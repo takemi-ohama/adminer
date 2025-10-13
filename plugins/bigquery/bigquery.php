@@ -6,9 +6,6 @@ use Google\Cloud\BigQuery\BigQueryClient;
 use Google\Cloud\Core\Exception\ServiceException;
 use Exception;
 use InvalidArgumentException;
-use Adminer\BigQueryCacheManager;
-use Adminer\BigQueryConnectionPool;
-use Adminer\BigQueryConfig;
 
 if (function_exists('Adminer\\add_driver')) {
 	add_driver("bigquery", "Google BigQuery");
@@ -568,7 +565,7 @@ if (isset($_GET["bigquery"])) {
 			$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
 
 			// Check if the converted WHERE already starts with WHERE keyword
-			if (preg_match('/^\\s*WHERE\\s/i', $convertedWhere)) {
+			if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {
 				return ' ' . $convertedWhere;
 			} else {
 				return ' WHERE ' . $convertedWhere;
