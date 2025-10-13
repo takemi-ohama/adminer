@@ -2,7 +2,7 @@
 
 namespace Adminer;
 
-use Adminer\Plugin;
+use Exception;
 
 /**
  * AdminerLoginBigQuery - BigQuery認証用のログインプラグイン

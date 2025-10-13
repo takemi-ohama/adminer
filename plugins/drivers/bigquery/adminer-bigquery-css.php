@@ -21,7 +21,7 @@ class AdminerBigQueryCSS extends Plugin
 		if ($this->isBigQueryDriver()) {
 
 			if (class_exists('Adminer\\Driver')) {
-				$driver = new \Adminer\Driver();
+				$driver = new Driver();
 				if (method_exists($driver, 'css')) {
 
 					echo $driver->css();

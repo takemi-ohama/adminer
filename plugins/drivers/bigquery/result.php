@@ -3,6 +3,8 @@
 namespace Adminer;
 
 use Exception;
+use DateTime;
+use DateTimeInterface;
 
 /**
  * Result - BigQuery query result handler
@@ -48,9 +50,9 @@ class Result
 					if (is_array($value)) {
 						$processedRow[$key] = json_encode($value);
 					} elseif (is_object($value)) {
-						if ($value instanceof \DateTime) {
+						if ($value instanceof DateTime) {
 							$processedRow[$key] = $value->format('Y-m-d H:i:s');
-						} elseif ($value instanceof \DateTimeInterface) {
+						} elseif ($value instanceof DateTimeInterface) {
 							$processedRow[$key] = $value->format('Y-m-d H:i:s');
 						} elseif (method_exists($value, 'format')) {
 							try {
