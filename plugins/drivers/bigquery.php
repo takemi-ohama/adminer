@@ -6,262 +6,27 @@ use Google\Cloud\BigQuery\BigQueryClient;
 use Google\Cloud\Core\Exception\ServiceException;
 use Exception;
 use InvalidArgumentException;
+require_once __DIR__ . '/bigquery/AdminerLoginBigQuery.php';
+require_once __DIR__ . '/bigquery/adminer-bigquery-css.php';
+
 
 if (function_exists('Adminer\\add_driver')) {
 	add_driver("bigquery", "Google BigQuery");
 }
 
-// AdminerLoginBigQueryクラスは bigquery/AdminerLoginBigQuery.php に分離済み
-
-
-
-// AdminerLoginBigQueryクラスをinclude
-require_once __DIR__ . '/bigquery/AdminerLoginBigQuery.php';
-
-class AdminerBigQueryCSS extends Plugin
-{
-	private function isBigQueryDriver()
-	{
-		return (defined('DRIVER') && DRIVER === 'bigquery') || (defined('Adminer\\DRIVER') && constant('Adminer\\DRIVER') === 'bigquery');
-	}
-
-	function head($dark = null)
-	{
-		if ($this->isBigQueryDriver()) {
-
-			if (class_exists('Adminer\\Driver')) {
-				$driver = new \Adminer\Driver();
-				if (method_exists($driver, 'css')) {
-
-					echo $driver->css();
-				}
-			}
-		}
-	}
-}
-
 if (isset($_GET["bigquery"])) {
-	require_once __DIR__ . '/bigquery/BigQueryCacheManager.php';
-	require_once __DIR__ . '/bigquery/BigQueryConnectionPool.php';
 	define('Adminer\DRIVER', "bigquery");
 
+	require_once __DIR__ . '/bigquery/bigquery-utils.php';
+	require_once __DIR__ . '/bigquery/result.php';
+	require_once __DIR__ . '/bigquery/driver.php';
+	require_once __DIR__ . '/bigquery/BigQueryCacheManager.php';
+	require_once __DIR__ . '/bigquery/BigQueryConnectionPool.php';
 	require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 
-	class BigQueryUtils
+	function idf_escape($idf)
 	{
-
-		static function validateProjectId($projectId)
-		{
-			return preg_match('/^[a-z0-9][a-z0-9\\-]{4,28}[a-z0-9]$/i', $projectId) &&
-				strlen($projectId) <= 30;
-		}
-		static function escapeIdentifier($identifier)
-		{
-
-			if (preg_match('/^`[^`]*`$/', $identifier)) {
-				return $identifier;
-			}
-
-			$cleanIdentifier = trim($identifier, '`');
-			return "`" . str_replace("`", "``", $cleanIdentifier) . "`";
-		}
-		static function logQuerySafely($query, $context = "QUERY")
-		{
-			$sanitizers = array(
-				'/([\'"])[^\'\"]*\\1/' => '$1***REDACTED***$1',
-				'/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/' => '***EMAIL_REDACTED***'
-			);
-			$safeQuery = preg_replace(array_keys($sanitizers), array_values($sanitizers), $query);
-			if (strlen($safeQuery) > 200) {
-				$safeQuery = substr($safeQuery, 0, 200) . '... [TRUNCATED]';
-			}
-			error_log("BigQuery $context: $safeQuery");
-		}
-
-		static function convertValueForBigQuery($value, $fieldType)
-		{
-
-			if ($value === null) {
-				return 'NULL';
-			}
-
-			$cleanValue = trim(str_replace('`', '', $value));
-			$fieldType = strtolower($fieldType);
-
-			if (strpos($fieldType, 'timestamp') !== false) {
-				return "TIMESTAMP('" . str_replace("'", "''", $cleanValue) . "')";
-			} elseif (strpos($fieldType, 'datetime') !== false) {
-				return "DATETIME('" . str_replace("'", "''", $cleanValue) . "')";
-			} elseif (strpos($fieldType, 'date') !== false) {
-				return "DATE('" . str_replace("'", "''", $cleanValue) . "')";
-			} elseif (strpos($fieldType, 'time') !== false) {
-				return "TIME('" . str_replace("'", "''", $cleanValue) . "')";
-			} elseif (strpos($fieldType, 'int') !== false || strpos($fieldType, 'float') !== false || strpos($fieldType, 'numeric') !== false || strpos($fieldType, 'decimal') !== false) {
-
-				if (is_numeric($cleanValue)) {
-					return $cleanValue;
-				} else {
-					throw new InvalidArgumentException('Invalid numeric value: ' . $cleanValue);
-				}
-			} elseif (strpos($fieldType, 'bool') !== false) {
-				return (strtolower($cleanValue) === 'true' || $cleanValue === '1') ? 'TRUE' : 'FALSE';
-			} else {
-				return "'" . str_replace("'", "''", $cleanValue) . "'";
-			}
-		}
-
-		static function formatComplexValue($value, $field)
-		{
-			$fieldType = strtolower($field['type'] ?? 'text');
-			$typePatterns = array(
-				'json' => array('json', 'struct', 'record', 'array'),
-				'geography' => array('geography'),
-				'binary' => array('bytes', 'blob'),
-			);
-			foreach ($typePatterns as $handlerType => $patterns) {
-				if (self::matchesTypePattern($fieldType, $patterns)) {
-					return self::handleTypeConversion($value, $handlerType);
-				}
-			}
-			return $value;
-		}
-		private static function matchesTypePattern($fieldType, $patterns)
-		{
-			foreach ($patterns as $pattern) {
-				if (strpos($fieldType, $pattern) !== false) {
-					return true;
-				}
-			}
-			return false;
-		}
-		private static function handleTypeConversion($value, $handlerType)
-		{
-			switch ($handlerType) {
-				case 'json':
-					return is_string($value) && (substr($value, 0, 1) === '{' || substr($value, 0, 1) === '[')
-						? $value : json_encode($value);
-				case 'geography':
-				case 'binary':
-					return is_string($value) ? $value : (string) $value;
-				default:
-					return $value;
-			}
-		}
-		static function generateFieldConversion($field)
-		{
-
-			$fieldName = self::escapeIdentifier($field['field']);
-			$fieldType = strtolower($field['type'] ?? '');
-
-			// BigQuery固有データ型の変換マッピング
-			$conversions = array(
-				// 地理空間データの変換
-				'geography' => "ST_AsText($fieldName)",
-				'geom' => "ST_AsText($fieldName)",
-
-				// JSON・構造化データの変換
-				'json' => "TO_JSON_STRING($fieldName)",
-				'struct' => "TO_JSON_STRING($fieldName)",
-				'record' => "TO_JSON_STRING($fieldName)",
-				'array' => "TO_JSON_STRING($fieldName)",
-
-				// 日時データの変換
-				'timestamp' => "TIMESTAMP_TRUNC($fieldName, MICROSECOND)",
-				'datetime' => "DATETIME_TRUNC($fieldName, MICROSECOND)",
-				'time' => "TIME_TRUNC($fieldName, MICROSECOND)",
-
-				// バイナリデータの変換
-				'bytes' => "TO_BASE64($fieldName)",
-				'blob' => "TO_BASE64($fieldName)",
-
-				// 数値データの精度制御
-				'numeric' => "CAST($fieldName AS STRING)",
-				'bignumeric' => "CAST($fieldName AS STRING)",
-				'decimal' => "CAST($fieldName AS STRING)",
-
-				// 論理データの明示化
-				'boolean' => "IF($fieldName, 'true', 'false')",
-				'bool' => "IF($fieldName, 'true', 'false')"
-			);
-
-			// パターンマッチングで最適な変換を選択
-			foreach ($conversions as $typePattern => $conversion) {
-				if (strpos($fieldType, $typePattern) !== false) {
-					return $conversion;
-				}
-			}
-
-			// デフォルト: 変換不要
-			return null;
-		}
-
-		static function buildFullTableName($table, $database, $projectId)
-		{
-			return "`" . $projectId . "`.`" . $database . "`.`" . $table . "`";
-		}
-
-		/**
-		 * BigQueryジョブの完了状態を包括的に確認する共通関数
-		 *
-		 * @param object $job BigQueryジョブオブジェクト
-		 * @return bool ジョブが完了している場合はtrue
-		 */
-		static function isJobCompleted($job)
-		{
-			if (!$job) {
-				return false;
-			}
-
-			$jobInfo = $job->info();
-			$isJobComplete = false;
-
-			// 方法1: job->isComplete()メソッドによる確認
-			if ($job->isComplete()) {
-				$isJobComplete = true;
-			}
-
-			// 方法2: status.state フィールドによる確認
-			if (isset($jobInfo['status']['state']) && $jobInfo['status']['state'] === 'DONE') {
-				$isJobComplete = true;
-			}
-
-			// 方法3: statistics の存在による確認
-			if (isset($jobInfo['statistics'])) {
-				$isJobComplete = true;
-			}
-
-			return $isJobComplete;
-		}
-
-		/**
-		 * Process WHERE clause for BigQuery DML operations
-		 *
-		 * @param string $queryWhere The WHERE condition from Adminer
-		 * @return string Properly formatted WHERE clause with WHERE prefix
-		 * @throws InvalidArgumentException If WHERE condition is invalid
-		 */
-		static function processWhereClause($queryWhere)
-		{
-			if (empty($queryWhere) || trim($queryWhere) === '') {
-				return '';
-			}
-
-			$convertedWhere = convertAdminerWhereToBigQuery($queryWhere);
-
-			// Check if the converted WHERE already starts with WHERE keyword
-			if (preg_match('/^\s*WHERE\s/i', $convertedWhere)) {
-				return ' ' . $convertedWhere;
-			} else {
-				return ' WHERE ' . $convertedWhere;
-			}
-		}
-	}
-
-	if (!function_exists('Adminer\\idf_escape')) {
-		function idf_escape($idf)
-		{
-			return BigQueryUtils::escapeIdentifier($idf);
-		}
+		return BigQueryUtils::escapeIdentifier($idf);
 	}
 
 	class Db
@@ -304,6 +69,7 @@ if (isset($_GET["bigquery"])) {
 		public $last_result = null;
 		function connect($server, $username, $password)
 		{
+			// $username, $password パラメータは関数シグネチャ互換性のため保持（BigQueryでは環境変数認証を使用）
 			try {
 				$this->projectId = $this->validateAndParseProjectId($server);
 				$location = $this->determineLocation($server, $this->projectId);
@@ -904,7 +670,7 @@ if (isset($_GET["bigquery"])) {
 						}
 						break;
 					} catch (Exception $e) {
-
+						// $e パラメータは例外処理のため保持（ログ出力は不要）
 						break;
 					}
 				}
@@ -1125,827 +891,6 @@ if (isset($_GET["bigquery"])) {
 			return false;
 		}
 	}
-	class Result
-	{
-
-		private $queryResults;
-		private $rowNumber = 0;
-		private $fieldsCache = null;
-		private $iterator = null;
-		private $isIteratorInitialized = false;
-		public $num_rows = 0;
-		public $job = null; // Phase 1: last_id()機能のためのジョブ参照
-
-		function __construct($queryResults)
-		{
-			$this->queryResults = $queryResults;
-			$this->job = $queryResults; // BigQueryジョブへの参照を保存
-
-			try {
-				$jobInfo = $queryResults->info();
-				$this->num_rows = (int) ($jobInfo['totalRows'] ?? 0);
-			} catch (Exception $e) {
-
-				$this->num_rows = 0;
-			}
-		}
-		function fetch_assoc()
-		{
-			try {
-				if (!$this->isIteratorInitialized) {
-					$this->iterator = $this->queryResults->getIterator();
-					$this->isIteratorInitialized = true;
-				}
-				if ($this->iterator && $this->iterator->valid()) {
-					$row = $this->iterator->current();
-					$this->iterator->next();
-					$processedRow = array();
-					foreach ($row as $key => $value) {
-						if (is_array($value)) {
-							$processedRow[$key] = json_encode($value);
-						} elseif (is_object($value)) {
-							if ($value instanceof \DateTime) {
-								$processedRow[$key] = $value->format('Y-m-d H:i:s');
-							} elseif ($value instanceof \DateTimeInterface) {
-								$processedRow[$key] = $value->format('Y-m-d H:i:s');
-							} elseif (method_exists($value, 'format')) {
-								try {
-									$processedRow[$key] = $value->format('Y-m-d H:i:s');
-								} catch (Exception $e) {
-									$processedRow[$key] = (string) $value;
-								}
-							} elseif (method_exists($value, '__toString')) {
-								$processedRow[$key] = (string) $value;
-							} else {
-								$processedRow[$key] = json_encode($value);
-							}
-						} elseif (is_null($value)) {
-							$processedRow[$key] = null;
-						} else {
-							$processedRow[$key] = $value;
-						}
-					}
-					$this->rowNumber++;
-					return $processedRow;
-				}
-				return false;
-			} catch (Exception $e) {
-				error_log("Result fetch error: " . $e->getMessage());
-				return false;
-			}
-		}
-		function fetch_row()
-		{
-			$assoc = $this->fetch_assoc();
-			return $assoc ? array_values($assoc) : false;
-		}
-		function num_fields()
-		{
-			if ($this->fieldsCache === null) {
-				$this->fieldsCache = $this->queryResults->info()['schema']['fields'] ?? array();
-			}
-			return count($this->fieldsCache);
-		}
-		function fetch_field($offset = 0)
-		{
-			if ($this->fieldsCache === null) {
-				$this->fieldsCache = $this->queryResults->info()['schema']['fields'] ?? array();
-			}
-			if (!isset($this->fieldsCache[$offset])) {
-				return false;
-			}
-			$field = $this->fieldsCache[$offset];
-			return (object) array(
-				'name' => $field['name'],
-				'type' => $this->mapBigQueryType($field['type']),
-				'length' => null,
-				'flags' => ($field['mode'] ?? 'NULLABLE') === 'REQUIRED' ? 'NOT NULL' : '',
-				'charsetnr' => $this->getBigQueryCharsetNr($field['type']),
-				'orgname' => $field['name'],
-				'orgtable' => ''
-			);
-		}
-		private function mapBigQueryType($bigQueryType)
-		{
-			$typeMap = array(
-				'STRING' => 'varchar',
-				'INT64' => 'bigint',
-				'INTEGER' => 'bigint',
-				'FLOAT64' => 'double',
-				'FLOAT' => 'double',
-				'BOOL' => 'boolean',
-				'BOOLEAN' => 'boolean',
-				'NUMERIC' => 'decimal',
-				'BIGNUMERIC' => 'decimal',
-				'DATETIME' => 'datetime',
-				'DATE' => 'date',
-				'TIME' => 'time',
-				'TIMESTAMP' => 'timestamp',
-				'JSON' => 'json',
-				'GEOGRAPHY' => 'text',
-				'BYTES' => 'blob',
-				'RECORD' => 'text',
-				'STRUCT' => 'text',
-				'ARRAY' => 'text'
-			);
-			return $typeMap[strtoupper($bigQueryType)] ?? 'text';
-		}
-
-		private function getBigQueryCharsetNr($bigQueryType)
-		{
-			$baseType = strtoupper(preg_replace('/\([^)]*\)/', '', $bigQueryType));
-
-			switch ($baseType) {
-				case 'BYTES':
-
-					return 63;
-				case 'STRING':
-				case 'JSON':
-
-					return 33;
-				case 'INT64':
-				case 'INTEGER':
-				case 'FLOAT64':
-				case 'FLOAT':
-				case 'NUMERIC':
-				case 'BIGNUMERIC':
-				case 'BOOLEAN':
-				case 'BOOL':
-				case 'DATE':
-				case 'TIME':
-				case 'DATETIME':
-				case 'TIMESTAMP':
-
-					return 63;
-				case 'ARRAY':
-				case 'STRUCT':
-				case 'RECORD':
-				case 'GEOGRAPHY':
-
-					return 33;
-				default:
-
-					return 33;
-			}
-		}
-	}
-	class Driver
-	{
-
-		static $instance;
-		static $extensions = array("BigQuery");
-		static $jush = "sql";
-		static $operators = array(
-			"=",
-			"!=",
-			"<>",
-			"<",
-			"<=",
-			">",
-			">=",
-			"IN",
-			"NOT IN",
-			"IS NULL",
-			"IS NOT NULL",
-			"LIKE",
-			"NOT LIKE",
-			"REGEXP",
-			"NOT REGEXP"
-		);
-
-		/** @var array BigQuery table partitioning configuration */
-		public $partitionBy = array();
-
-		/** @var array Unsigned numeric type definitions */
-		public $unsigned = array();
-
-		/** @var array Generated column definitions */
-		public $generated = array();
-
-		/** @var array Enum field length restrictions */
-		public $enumLength = array();
-
-		/** @var array Functions available for INSERT operations */
-		public $insertFunctions = array();
-
-		/** @var array Functions available for field editing operations */
-		public $editFunctions = array();
-
-		/** @var array Database functions available for use in queries */
-		public $functions = array();
-
-		/** @var array Field grouping configuration for query operations */
-		public $grouping = array();
-
-		protected $types = array(
-			array("INT64" => 0, "INTEGER" => 0, "FLOAT64" => 0, "FLOAT" => 0, "NUMERIC" => 0, "BIGNUMERIC" => 0),
-			array("STRING" => 0, "BYTES" => 0),
-			array("DATE" => 0, "TIME" => 0, "DATETIME" => 0, "TIMESTAMP" => 0),
-			array("BOOLEAN" => 0, "BOOL" => 0),
-			array("ARRAY" => 0, "STRUCT" => 0, "JSON" => 0, "GEOGRAPHY" => 0)
-		);
-
-		static function connect($server, $username, $password)
-		{
-			$db = new Db();
-			if ($db->connect($server, $username, $password)) {
-				return $db;
-			}
-			return false;
-		}
-		function tableHelp($name, $is_view = false)
-		{
-			return null;
-		}
-		function structuredTypes()
-		{
-			$allTypes = array();
-			foreach ($this->types as $typeGroup) {
-				$allTypes = array_merge($allTypes, array_keys($typeGroup));
-			}
-			return $allTypes;
-		}
-		function inheritsFrom($table)
-		{
-			return array();
-		}
-		function inheritedTables($table)
-		{
-			return array();
-		}
-		function select($table, $select, $where, $group, $order = array(), $limit = 1, $page = 0, $print = false)
-		{
-			return select($table, $select, $where, $group, $order, $limit, $page, $print);
-		}
-		function value($val, $field)
-		{
-			return BigQueryUtils::formatComplexValue($val, $field);
-		}
-		function convert_field(array $field)
-		{
-			// BigQuery SELECT * との併用問題を回避するため、フィールド変換を無効化
-			// Adminerが SELECT * を使用する際に不正なSQL生成を防ぐ
-			return null;
-		}
-
-		function hasCStyleEscapes(): bool
-		{
-			return false;
-		}
-
-		function warnings()
-		{
-
-			return array();
-		}
-
-		function engines()
-		{
-			return array('BigQuery');
-		}
-
-		function types()
-		{
-			return array(
-				'Numbers' => array(
-					'INT64' => 0,
-					'INTEGER' => 0,
-					'FLOAT64' => 0,
-					'FLOAT' => 0,
-					'NUMERIC' => 0,
-					'BIGNUMERIC' => 0
-				),
-				'Strings' => array(
-					'STRING' => 0,
-					'BYTES' => 0
-				),
-				'Date and time' => array(
-					'DATE' => 0,
-					'TIME' => 0,
-					'DATETIME' => 0,
-					'TIMESTAMP' => 0
-				),
-				'Boolean' => array(
-					'BOOLEAN' => 0,
-					'BOOL' => 0
-				),
-				'Complex' => array(
-					'ARRAY' => 0,
-					'STRUCT' => 0,
-					'JSON' => 0,
-					'GEOGRAPHY' => 0
-				)
-			);
-		}
-
-		function enumLength($field)
-		{
-
-			return array();
-		}
-
-		function unconvertFunction($field)
-		{
-
-			return null;
-		}
-
-		function insert($table, $set)
-		{
-
-			return insert($table, $set);
-		}
-
-		function update($table, $set, $queryWhere = '', $limit = 0)
-		{
-
-			return update($table, $set, $queryWhere, $limit);
-		}
-
-		function delete($table, $queryWhere = '', $limit = 0)
-		{
-
-			return delete($table, $queryWhere, $limit);
-		}
-
-		function allFields(): array
-		{
-			$return = array();
-			try {
-				foreach (tables_list() as $table => $type) {
-					$tableFields = fields($table);
-					foreach ($tableFields as $field) {
-						$return[$table][] = $field;
-					}
-				}
-				return $return;
-			} catch (Exception $e) {
-				error_log("BigQuery allFields error: " . $e->getMessage());
-				return array();
-			}
-		}
-
-		function convertSearch(string $idf, array $val, array $field): string
-		{
-
-			return $idf;
-		}
-
-		function dropTables($tables)
-		{
-			// 共通メソッドを使用してテーブル削除を実行
-			return $this->executeForTables("DROP TABLE {table}", $tables, "DROP_TABLE");
-		}
-
-		/**
-		 * 共通SQL実行メソッド - connectionとtableのチェック、エラーハンドリングを統一
-		 * @param string $sql SQL文
-		 * @param string $logOperation ログ用操作名
-		 * @param string|null $table テーブル名（フルネーム構築用、オプション）
-		 * @param string|null $database データベース名（オプション、$_GET['db']より優先）
-		 * @return mixed クエリ実行結果
-		 */
-		public function executeSql($sql, $logOperation, $table = null, $database = null)
-		{
-			global $connection;
-
-			// 基本接続チェック
-			if (!$connection || !isset($connection->bigQueryClient)) {
-				return false;
-			}
-
-			try {
-				// データベース名取得（引数→接続設定→$_GET['db']の順で優先）
-				if ($database === null) {
-					$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '');
-				}
-
-				// データベース名が空の場合はエラーを返す
-				if (empty($database)) {
-					if ($connection) {
-						$connection->error = "$logOperation failed: No database specified";
-					}
-					return false;
-				}
-
-				// テーブル名が指定されている場合、フルテーブル名を構築
-				if ($table !== null && !empty($database)) {
-					$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
-					$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
-					$sql = str_replace('{table}', $fullTableName, $sql);
-				}
-
-				// SQL実行ログ
-				BigQueryUtils::logQuerySafely($sql, $logOperation);
-
-				// クエリ実行
-				return $connection->query($sql);
-
-			} catch (Exception $e) {
-				if ($connection) {
-					$connection->error = "$logOperation failed: " . $e->getMessage();
-				}
-				BigQueryUtils::logQuerySafely($e->getMessage(), $logOperation . '_ERROR');
-				return false;
-			}
-		}
-
-		/**
-		 * 複数テーブルに対する同一SQL実行（MySQLのapply_queriesパターン）
-		 * @param string $sqlTemplate SQL文テンプレート（{table}をプレースホルダーとして使用）
-		 * @param array $tables テーブル名の配列
-		 * @param string $logOperation ログ用操作名
-		 * @param string|null $database データベース名（オプション）
-		 * @return bool 全て成功した場合true、1つでも失敗した場合false
-		 */
-		public function executeForTables($sqlTemplate, $tables, $logOperation, $database = null)
-		{
-			global $connection;
-
-			if (!$connection || !isset($connection->bigQueryClient)) {
-				return false;
-			}
-
-			$errors = array();
-			$successCount = 0;
-
-			foreach ($tables as $table) {
-				if (empty($table)) {
-					continue;
-				}
-
-				$result = $this->executeSql($sqlTemplate, $logOperation, $table, $database);
-				if ($result !== false) {
-					$successCount++;
-				} else {
-					$errors[] = "$logOperation failed for table: $table";
-				}
-			}
-
-			// エラーハンドリング
-			if (!empty($errors) && $connection) {
-				$connection->error = implode('; ', $errors);
-			}
-
-			return $successCount > 0;
-		}
-
-		/**
-		 * 複数データベース（データセット）に対する操作実行
-		 * @param array $databases データベース名の配列
-		 * @param string $logOperation ログ用操作名
-		 * @param callable $callback 各データベースに対する処理関数
-		 * @return bool 1つでも成功した場合true
-		 */
-		public function executeForDatabases($databases, $logOperation, $callback)
-		{
-			global $connection;
-
-			if (!$connection || !isset($connection->bigQueryClient)) {
-				return false;
-			}
-
-			$errors = array();
-			$successCount = 0;
-
-			try {
-				foreach ($databases as $database) {
-					if (empty($database)) {
-						continue;
-					}
-
-					try {
-						// コールバック関数を実行
-						$result = $callback($database, $connection);
-						if ($result) {
-							$successCount++;
-							BigQueryUtils::logQuerySafely("$logOperation $database", $logOperation);
-						} else {
-							$errors[] = "$logOperation failed for database: $database";
-						}
-					} catch (Exception $e) {
-						$errors[] = "$logOperation '$database' failed: " . $e->getMessage();
-						BigQueryUtils::logQuerySafely($e->getMessage(), $logOperation . '_ERROR');
-					}
-				}
-
-				// エラーハンドリング
-				if (!empty($errors) && $connection) {
-					$connection->error = implode('; ', $errors);
-				}
-
-				return $successCount > 0;
-
-			} catch (Exception $e) {
-				if ($connection) {
-					$connection->error = "$logOperation failed: " . $e->getMessage();
-				}
-				BigQueryUtils::logQuerySafely($e->getMessage(), $logOperation . '_ERROR');
-				return false;
-			}
-		}
-
-		function explain($query)
-		{
-			global $connection;
-			if (!$connection || !isset($connection->bigQueryClient)) {
-				return false;
-			}
-
-			try {
-
-				$explainQuery = "EXPLAIN " . $query;
-				BigQueryUtils::logQuerySafely($explainQuery, "EXPLAIN");
-				$result = $connection->query($explainQuery);
-				return $result;
-			} catch (Exception $e) {
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'EXPLAIN_ERROR');
-				return false;
-			}
-		}
-
-		function css()
-		{
-			return "
-		<style>
-		/* BigQuery非対応機能を非表示 - より強い優先度で適用 */
-
-		/* Database画面のSearch data in tables機能を非表示 */
-		.search-tables {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Analyze機能を非表示 */
-		.analyze,
-		input[value='Analyze'],
-		input[type='submit'][value='Analyze'],
-		a[href*='analyze'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Optimize機能を非表示 */
-		.optimize,
-		input[value='Optimize'],
-		input[type='submit'][value='Optimize'],
-		a[href*='optimize'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Repair機能を非表示 */
-		.repair,
-		input[value='Repair'],
-		input[type='submit'][value='Repair'],
-		a[href*='repair'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Check機能を非表示 */
-		.check,
-		input[value='Check'],
-		input[type='submit'][value='Check'],
-		a[href*='check'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Move機能を非表示 */
-		.move,
-		input[value='Move'],
-		input[type='submit'][value='Move'],
-		a[href*='move'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Copy機能を非表示 */
-		.copy,
-		input[value='Copy'],
-		input[type='submit'][value='Copy'],
-		a[href*='copy'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Import機能を非表示 */
-		.import,
-		input[value='Import'],
-		input[type='submit'][value='Import'],
-		a[href*='import'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Export機能（一部）を非表示 */
-		select[name='format'] option[value='csv+excel'],
-		select[name='format'] option[value='xml'] {
-			display: none !important;
-		}
-
-		/* Index関連機能を非表示 */
-		.indexes,
-		a[href*='indexes'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Foreign key関連機能を非表示 */
-		.foreign-keys,
-		a[href*='foreign'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Trigger関連機能を非表示 */
-		.triggers,
-		a[href*='trigger'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Event関連機能を非表示 */
-		.events,
-		a[href*='event'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Routine関連機能を非表示 */
-		.routines,
-		a[href*='routine'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Sequence関連機能を非表示 */
-		.sequences,
-		a[href*='sequence'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* User types関連機能を非表示 */
-		.user-types,
-		a[href*='type'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Auto increment機能を非表示 */
-		input[name*='auto_increment'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Comment機能を非表示（テーブルレベル） */
-		input[name='Comment'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Collation機能を非表示 */
-		select[name*='collation'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* FullText検索機能を非表示 */
-		input[type='submit'][value*='Fulltext'] {
-			display: none !important;
-			visibility: hidden !important;
-		}
-
-		/* Truncate/Dropボタンの明示的な表示 */
-		input[value='Truncate'],
-		input[type='submit'][value='Truncate'],
-		input[name='truncate'] {
-			display: inline-block !important;
-			visibility: visible !important;
-		}
-
-		input[value='Drop'],
-		input[type='submit'][value='Drop'],
-		input[name='drop'] {
-			display: inline-block !important;
-			visibility: visible !important;
-		}
-
-		/* BigQuery対応機能のラベル改善 */
-		body.bigquery .h2 {
-			position: relative;
-		}
-
-		body.bigquery .h2:after {
-			content: ' (BigQuery)';
-			font-size: 0.8em;
-			color: #666;
-		}
-		</style>
-		<script>
-		// *** BigQuery強制表示機能 - 複数タイミングで実行 ***
-		function forceBigQueryButtonsDisplay() {
-			console.log('BigQuery強制表示実行開始');
-
-			// BigQueryドライバー使用時にbody要素にクラス追加
-			if (document.querySelector('title') && document.querySelector('title').textContent.includes('BigQuery')) {
-				document.body.classList.add('bigquery');
-			}
-
-			// 非対応ボタンを非表示（TruncateとDropは除外）
-			var buttonsToHide = [
-				'input[value=\"Analyze\"]',
-				'input[value=\"Optimize\"]',
-				'input[value=\"Repair\"]',
-				'input[value=\"Check\"]',
-				'input[value=\"Move\"]',
-				'input[value=\"Copy\"]',
-				'input[value=\"Import\"]'
-			];
-
-			buttonsToHide.forEach(function(selector) {
-				var elements = document.querySelectorAll(selector);
-				elements.forEach(function(element) {
-					element.style.display = 'none';
-					element.style.visibility = 'hidden';
-				});
-			});
-
-			// *** 重要：Selected フィールドセットの強制表示 ***
-			var selectedFieldsets = document.querySelectorAll('fieldset');
-			selectedFieldsets.forEach(function(fieldset) {
-				var legend = fieldset.querySelector('legend');
-				if (legend && legend.textContent.includes('Selected')) {
-					console.log('Selected fieldset found, forcing display');
-					fieldset.style.setProperty('display', 'block', 'important');
-					fieldset.style.setProperty('visibility', 'visible', 'important');
-					fieldset.style.setProperty('opacity', '1', 'important');
-
-					// fieldset内のdivも強制表示
-					var divs = fieldset.querySelectorAll('div');
-					divs.forEach(function(div) {
-						div.style.setProperty('display', 'block', 'important');
-						div.style.setProperty('visibility', 'visible', 'important');
-						div.style.setProperty('opacity', '1', 'important');
-					});
-				}
-			});
-
-			// Truncate/Dropボタンの最強レベルでの強制表示
-			var buttonsToShow = [
-				'input[name=\"truncate\"]',
-				'input[name=\"drop\"]'
-			];
-
-			buttonsToShow.forEach(function(selector) {
-				var elements = document.querySelectorAll(selector);
-				console.log('Found buttons for', selector, ':', elements.length);
-				elements.forEach(function(element) {
-					// ボタン自体を最強レベルで表示
-					element.style.setProperty('display', 'inline-block', 'important');
-					element.style.setProperty('visibility', 'visible', 'important');
-					element.style.setProperty('opacity', '1', 'important');
-
-					// 親要素チェーンも最強レベルで表示
-					var parent = element.parentElement;
-					while (parent && parent.tagName !== 'BODY') {
-						if (parent.tagName === 'FIELDSET' || parent.tagName === 'DIV') {
-							parent.style.setProperty('display', parent.tagName === 'FIELDSET' ? 'block' : 'block', 'important');
-							parent.style.setProperty('visibility', 'visible', 'important');
-							parent.style.setProperty('opacity', '1', 'important');
-						}
-						parent = parent.parentElement;
-					}
-				});
-			});
-
-			console.log('BigQuery強制表示実行完了');
-		}
-
-		// 複数のタイミングで確実に実行
-		// 1. DOMContentLoaded（通常のタイミング）
-		document.addEventListener('DOMContentLoaded', forceBigQueryButtonsDisplay);
-
-		// 2. window.load（全リソース読み込み完了後）
-		window.addEventListener('load', forceBigQueryButtonsDisplay);
-
-		// 3. 即座実行（既にDOMが読み込まれている場合）
-		if (document.readyState === 'loading') {
-			// まだ読み込み中
-		} else {
-			// 既に読み込み完了
-			forceBigQueryButtonsDisplay();
-		}
-
-		// 4. 遅延実行（最後の保険）
-		setTimeout(forceBigQueryButtonsDisplay, 500);
-		setTimeout(forceBigQueryButtonsDisplay, 1000);
-		</script>
-		";
-		}
-	}
 	function support($feature)
 	{
 		$supportedFeatures = array(
@@ -2026,6 +971,7 @@ if (isset($_GET["bigquery"])) {
 
 	function dumpHeaders($identifier, $multi_table = false)
 	{
+		// $identifier, $multi_table パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 		$format = $_POST["format"] ?? 'csv';
 
 		// BigQuery用の適切なContent-Typeを設定
@@ -2125,14 +1071,17 @@ if (isset($_GET["bigquery"])) {
 	}
 	function fk_support($table_status)
 	{
+		// $table_status パラメータは関数シグネチャ互換性のため保持（BigQueryでは外部キー未対応）
 		return false;
 	}
 	function indexes($table, $connection2 = null)
 	{
+		// $table, $connection2 パラメータは関数シグネチャ互換性のため保持（BigQueryではインデックス未対応）
 		return array();
 	}
 	function foreign_keys($table)
 	{
+		// $table パラメータは関数シグネチャ互換性のため保持（BigQueryでは外部キー未対応）
 		return array();
 	}
 	function logged_user()
@@ -2306,54 +1255,6 @@ if (isset($_GET["bigquery"])) {
 			return array();
 		}
 	}
-	function convertAdminerWhereToBigQuery($condition)
-	{
-		// WHERE条件の検証
-
-		if (!is_string($condition)) {
-			throw new InvalidArgumentException('WHERE condition must be a string');
-		}
-		if (strlen($condition) > 1000) {
-			throw new InvalidArgumentException('WHERE condition exceeds maximum length');
-		}
-		$suspiciousPatterns = array(
-			'/;\\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\\s+/i',
-			'/UNION\\s+(ALL\\s+)?SELECT/i',
-			'/\\/\\*.*?\\*\\//s',
-			'/--[^\\r\\n]*/i',
-			'/\\bEXEC\\b/i',
-			'/\\bEXECUTE\\b/i',
-			'/\\bSP_/i'
-		);
-		foreach ($suspiciousPatterns as $pattern) {
-			if (preg_match($pattern, $condition)) {
-				error_log("BigQuery: Blocked suspicious WHERE condition pattern: " . substr($condition, 0, 100) . "...");
-				throw new InvalidArgumentException('WHERE condition contains prohibited SQL patterns');
-			}
-		}
-
-		// 正規表現を修正：\\\\s を \\s に変更
-		$condition = preg_replace_callback('/(`[^`]+`)\\s*=\\s*`([^`]+)`/', function ($matches) {
-			$column = $matches[1];
-			$value = $matches[2];
-
-			if (preg_match('/^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$/', $value)) {
-				// 数値の場合
-				return $column . ' = ' . $value;
-			} else {
-				// 文字列の場合
-				$escaped = str_replace("'", "''", $value);
-				return $column . " = '" . $escaped . "'";
-			}
-		}, $condition);
-
-		// COLLATE句を削除
-		$condition = preg_replace('/\\s+COLLATE\\s+\\w+/i', '', $condition);
-
-		// WHERE条件の変換完了
-
-		return $condition;
-	}
 	function fields($table)
 	{
 		global $connection;
@@ -2445,7 +1346,7 @@ if (isset($_GET["bigquery"])) {
 			if (!empty($where)) {
 				$whereClause = array();
 				foreach ($where as $condition) {
-					$processedCondition = convertAdminerWhereToBigQuery($condition);
+					$processedCondition = BigQueryUtils::convertAdminerWhereToBigQuery($condition);
 					$whereClause[] = $processedCondition;
 				}
 				$query .= " WHERE " . implode(" AND ", $whereClause);
@@ -2492,6 +1393,7 @@ if (isset($_GET["bigquery"])) {
 		{
 			// BigQuery SELECT * との併用問題を回避するため、フィールド変換を無効化
 			// Adminerが SELECT * を使用する際に不正なSQL生成を防ぐ
+			// $field パラメータは関数シグネチャ互換性のため保持（未使用）
 			return null;
 		}
 	}
@@ -2666,6 +1568,7 @@ if (isset($_GET["bigquery"])) {
 
 		function update($table, $set, $queryWhere = '', $limit = 0)
 		{
+			// $limit パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 			global $connection;
 			try {
 				if (!$connection || !isset($connection->bigQueryClient)) {
@@ -2679,7 +1582,7 @@ if (isset($_GET["bigquery"])) {
 
 				$tableFields = fields($table);
 
-				$setParts = array();
+				$setParts = [];
 				foreach ($set as $field => $value) {
 
 					$cleanFieldName = trim(str_replace('`', '', $field));
@@ -2723,8 +1626,8 @@ if (isset($_GET["bigquery"])) {
 					$errorResult = $jobInfo['status']['errorResult'] ?? null;
 					if ($errorResult) {
 						$errorMessage = $errorResult['message'] ?? 'Unknown error';
-						error_log("BigQuery UPDATE failed: " . $errorMessage);
-						$connection->error = "UPDATE failed: " . $errorMessage;
+						error_log("BigQuery UPDATE failed: $errorMessage");
+						$connection->error = "UPDATE failed: $errorMessage";
 						return false;
 					}
 
@@ -2739,18 +1642,19 @@ if (isset($_GET["bigquery"])) {
 			} catch (ServiceException $e) {
 				$errorMessage = $e->getMessage();
 				BigQueryUtils::logQuerySafely($errorMessage, 'UPDATE_SERVICE_ERROR');
-				$connection->error = "UPDATE ServiceException: " . $errorMessage;
+				$connection->error = "UPDATE ServiceException: $errorMessage";
 				return false;
 			} catch (Exception $e) {
 				$errorMessage = $e->getMessage();
 				BigQueryUtils::logQuerySafely($errorMessage, 'UPDATE_ERROR');
-				$connection->error = "UPDATE Exception: " . $errorMessage;
+				$connection->error = "UPDATE Exception: $errorMessage";
 				return false;
 			}
 		}
 
 		function delete($table, $queryWhere = '', $limit = 0)
 		{
+			// $limit パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 			global $connection;
 			try {
 				if (!$connection || !isset($connection->bigQueryClient)) {
@@ -3066,6 +1970,8 @@ if (isset($_GET["bigquery"])) {
 
 		function alter_table($table, $name, $fields, $foreign, $comment, $engine, $collation, $auto_increment, $partitioning)
 		{
+			// $foreign, $engine, $collation, $auto_increment, $partitioning パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
+			// $driver 変数は互換性のため宣言（未使用）
 			global $connection, $driver;
 
 			try {
@@ -3084,7 +1990,7 @@ if (isset($_GET["bigquery"])) {
 
 					$dataset = $connection->bigQueryClient->dataset($database);
 
-					$schemaFields = array();
+					$schemaFields = [];
 					foreach ($fields as $field) {
 						if (isset($field[1]) && is_array($field[1])) {
 
@@ -3093,11 +1999,11 @@ if (isset($_GET["bigquery"])) {
 							$fieldMode = ($field[1][3] ?? false) ? 'REQUIRED' : 'NULLABLE';
 
 							if (!empty($fieldName)) {
-								$schemaFields[] = array(
+								$schemaFields[] = [
 									'name' => $fieldName,
 									'type' => strtoupper($fieldType),
 									'mode' => $fieldMode
-								);
+								];
 							}
 						}
 					}
@@ -3106,9 +2012,9 @@ if (isset($_GET["bigquery"])) {
 						return false;
 					}
 
-					$tableOptions = array(
-						'schema' => array('fields' => $schemaFields)
-					);
+					$tableOptions = [
+						'schema' => ['fields' => $schemaFields]
+					];
 
 					if (!empty($comment)) {
 						$tableOptions['description'] = $comment;
@@ -3300,7 +2206,7 @@ if (isset($_GET["bigquery"])) {
 
 		function move_tables($tables, $views, $target)
 		{
-
+			// $views パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
 			global $connection;
 
 			if (!$connection || !isset($connection->bigQueryClient)) {
@@ -3558,9 +2464,6 @@ if (isset($_GET["bigquery"])) {
 		}
 
 	}
-}
-
-if (!function_exists('show_unsupported_feature_message')) {
 
 	function show_unsupported_feature_message($feature, $reason = '')
 	{
@@ -3585,9 +2488,7 @@ if (!function_exists('show_unsupported_feature_message')) {
 		echo '<p><a href="javascript:history.back()">← Go Back</a></p>';
 		echo '</div>';
 	}
-}
 
-if (!function_exists('query')) {
 	function query($query)
 	{
 		global $connection;
@@ -3596,18 +2497,12 @@ if (!function_exists('query')) {
 		}
 		return false;
 	}
-}
-
-if (!function_exists('schema')) {
 
 	function schema()
 	{
 		show_unsupported_feature_message('schema', 'BigQuery uses datasets instead of traditional schemas. Dataset information is available in the main database view.');
 		return;
 	}
-}
-
-if (!function_exists('Adminer\\bigquery_view')) {
 
 	function bigquery_view($name)
 	{
@@ -3826,140 +2721,138 @@ if (!function_exists('Adminer\\bigquery_view')) {
 		}
 	}
 
-}
 
-function parseBigQueryStatements($sqlContent)
-{
-	// BigQuery用SQL文分割処理
-	// セミコロン区切りだが、文字列内・コメント内のセミコロンは無視
+	function parseBigQueryStatements($sqlContent)
+	{
+		// BigQuery用SQL文分割処理
+		// セミコロン区切りだが、文字列内・コメント内のセミコロンは無視
 
-	$statements = array();
-	$currentStatement = '';
-	$inSingleQuote = false;
-	$inDoubleQuote = false;
-	$inBacktick = false;
-	$inLineComment = false;
-	$inBlockComment = false;
+		$statements = array();
+		$currentStatement = '';
+		$inSingleQuote = false;
+		$inDoubleQuote = false;
+		$inBacktick = false;
+		$inLineComment = false;
+		$inBlockComment = false;
 
-	$length = strlen($sqlContent);
-	for ($i = 0; $i < $length; $i++) {
-		$char = $sqlContent[$i];
-		$nextChar = ($i + 1 < $length) ? $sqlContent[$i + 1] : '';
+		$length = strlen($sqlContent);
+		for ($i = 0; $i < $length; $i++) {
+			$char = $sqlContent[$i];
+			$nextChar = ($i + 1 < $length) ? $sqlContent[$i + 1] : '';
 
-		// コメント処理
-		if (!$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
-			// 行コメント開始
-			if ($char === '-' && $nextChar === '-') {
-				$inLineComment = true;
+			// コメント処理
+			if (!$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
+				// 行コメント開始
+				if ($char === '-' && $nextChar === '-') {
+					$inLineComment = true;
+					$currentStatement .= $char;
+					continue;
+				}
+				// ブロックコメント開始
+				if ($char === '/' && $nextChar === '*') {
+					$inBlockComment = true;
+					$currentStatement .= $char;
+					continue;
+				}
+			}
+
+			// 行コメント終了
+			if ($inLineComment && ($char === "\n" || $char === "\r")) {
+				$inLineComment = false;
 				$currentStatement .= $char;
 				continue;
 			}
-			// ブロックコメント開始
-			if ($char === '/' && $nextChar === '*') {
-				$inBlockComment = true;
+
+			// ブロックコメント終了
+			if ($inBlockComment && $char === '*' && $nextChar === '/') {
+				$inBlockComment = false;
+				$currentStatement .= $char . $nextChar;
+				$i++; // Skip next character
+				continue;
+			}
+
+			// コメント内の場合はそのまま追加
+			if ($inLineComment || $inBlockComment) {
 				$currentStatement .= $char;
 				continue;
 			}
-		}
 
-		// 行コメント終了
-		if ($inLineComment && ($char === "\n" || $char === "\r")) {
-			$inLineComment = false;
-			$currentStatement .= $char;
-			continue;
-		}
-
-		// ブロックコメント終了
-		if ($inBlockComment && $char === '*' && $nextChar === '/') {
-			$inBlockComment = false;
-			$currentStatement .= $char . $nextChar;
-			$i++; // Skip next character
-			continue;
-		}
-
-		// コメント内の場合はそのまま追加
-		if ($inLineComment || $inBlockComment) {
-			$currentStatement .= $char;
-			continue;
-		}
-
-		// クォート処理
-		if ($char === "'" && !$inDoubleQuote && !$inBacktick) {
-			$inSingleQuote = !$inSingleQuote;
-		} elseif ($char === '"' && !$inSingleQuote && !$inBacktick) {
-			$inDoubleQuote = !$inDoubleQuote;
-		} elseif ($char === '`' && !$inSingleQuote && !$inDoubleQuote) {
-			$inBacktick = !$inBacktick;
-		}
-
-		// セミコロン分割（クォート外の場合のみ）
-		if ($char === ';' && !$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
-			$trimmedStatement = trim($currentStatement);
-			if (!empty($trimmedStatement)) {
-				$statements[] = $trimmedStatement;
+			// クォート処理
+			if ($char === "'" && !$inDoubleQuote && !$inBacktick) {
+				$inSingleQuote = !$inSingleQuote;
+			} elseif ($char === '"' && !$inSingleQuote && !$inBacktick) {
+				$inDoubleQuote = !$inDoubleQuote;
+			} elseif ($char === '`' && !$inSingleQuote && !$inDoubleQuote) {
+				$inBacktick = !$inBacktick;
 			}
-			$currentStatement = '';
-			continue;
+
+			// セミコロン分割（クォート外の場合のみ）
+			if ($char === ';' && !$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
+				$trimmedStatement = trim($currentStatement);
+				if (!empty($trimmedStatement)) {
+					$statements[] = $trimmedStatement;
+				}
+				$currentStatement = '';
+				continue;
+			}
+
+			$currentStatement .= $char;
 		}
 
-		$currentStatement .= $char;
+		$trimmedStatement = trim($currentStatement);
+		if (!empty($trimmedStatement)) {
+			$statements[] = $trimmedStatement;
+		}
+
+		return $statements;
 	}
 
-	$trimmedStatement = trim($currentStatement);
-	if (!empty($trimmedStatement)) {
-		$statements[] = $trimmedStatement;
+	function isCommentOnly($statement)
+	{
+		$trimmed = trim($statement);
+		return empty($trimmed) ||
+			strpos($trimmed, '--') === 0 ||
+			(strpos($trimmed, '/*') === 0 && strpos($trimmed, '*/') !== false);
 	}
 
-	return $statements;
-}
+	function truncate_table($table)
+	{
+		global $driver;
 
-function isCommentOnly($statement)
-{
-	$trimmed = trim($statement);
-	return empty($trimmed) ||
-		strpos($trimmed, '--') === 0 ||
-		(strpos($trimmed, '/*') === 0 && strpos($trimmed, '*/') !== false);
-}
+		if (!$driver) {
+			return false;
+		}
 
+		// 共通メソッドを使用してTRUNCATE文を実行
+		$sql = "TRUNCATE TABLE {table}";
+		return $driver->executeSql($sql, "TRUNCATE", $table) !== false;
+	}
 
-function truncate_table($table)
-{
-	global $driver;
-
-	if (!$driver) {
+	function check_table($table)
+	{
+		// $table パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
+		show_unsupported_feature_message('check');
 		return false;
 	}
 
-	// 共通メソッドを使用してTRUNCATE文を実行
-	$sql = "TRUNCATE TABLE {table}";
-	return $driver->executeSql($sql, "TRUNCATE", $table) !== false;
-}
+	function optimize_table($table)
+	{
+		// $table パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
+		show_unsupported_feature_message('optimize');
+		return false;
+	}
 
-function check_table($table)
-{
-	show_unsupported_feature_message('check');
-	return false;
-}
+	function repair_table($table)
+	{
+		// $table パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
+		show_unsupported_feature_message('repair');
+		return false;
+	}
 
-
-function optimize_table($table)
-{
-	show_unsupported_feature_message('optimize');
-	return false;
-}
-
-
-
-function repair_table($table)
-{
-	show_unsupported_feature_message('repair');
-	return false;
-}
-
-
-
-function analyze_table($table)
-{
-	show_unsupported_feature_message('analyze');
-	return false;
+	function analyze_table($table)
+	{
+		// $table パラメータは関数シグネチャ互換性のため保持（BigQueryでは未使用）
+		show_unsupported_feature_message('analyze');
+		return false;
+	}
 }
