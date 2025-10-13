@@ -34,6 +34,7 @@ docker ps | grep adminer-bigquery-test
 ```
 
 ### 3. Playwright MCPテスト実行
+- テスト対象: http://adminer-bigquery-test
 - BigQuery認証画面への接続
 - ログイン実行
 - データセット選択（dataset_test）
@@ -42,3 +43,4 @@ docker ps | grep adminer-bigquery-test
 - 各動作でFatalやError,Invalidなどの警告が画面に発生していないことを確認
 
 このコマンドにより、BigQueryドライバープラグインの包括的な動作検証が自動実行されます。
+syuu

@@ -141,11 +141,21 @@ class AdminerLoginBigQuery extends Plugin
 
 		// 従来のCREDENTIAL認証
 		$fieldHandlers = array(
-			'driver' => function() use ($heading) { return $this->renderDriverField($heading); },
-			'server' => function() { return $this->renderProjectIdField(); },
-			'username' => function() { return $this->renderHiddenField('username'); },
-			'password' => function() { return $this->renderHiddenField('password'); },
-			'db' => function() { return $this->renderHiddenField('db'); }
+			'driver' => function () use ($heading) {
+				return $this->renderDriverField($heading);
+			},
+			'server' => function () {
+				return $this->renderProjectIdField();
+			},
+			'username' => function () {
+				return $this->renderHiddenField('username');
+			},
+			'password' => function () {
+				return $this->renderHiddenField('password');
+			},
+			'db' => function () {
+				return $this->renderHiddenField('db');
+			}
 		);
 
 		return isset($fieldHandlers[$name]) ? $fieldHandlers[$name]() : '';
@@ -323,11 +333,6 @@ class AdminerLoginBigQuery extends Plugin
 	);
 }
 
-// =============================================================================
-// Phase 1 Sprint 1.1: 基本クエリ機能実装
-// Note: これらの関数はAdminerのDriverクラス内で既に実装されている場合があるため、
-// BigQueryドライバー固有の拡張機能としてDriverクラス内のメソッドとして実装済み
-// =============================================================================
 
 
 class AdminerBigQueryCSS extends Plugin
@@ -353,12 +358,12 @@ class AdminerBigQueryCSS extends Plugin
 }
 
 if (isset($_GET["bigquery"])) {
-require_once __DIR__ . '/bigquery/BigQueryCacheManager.php';
-require_once __DIR__ . '/bigquery/BigQueryConnectionPool.php';
+	require_once __DIR__ . '/bigquery/BigQueryCacheManager.php';
+	require_once __DIR__ . '/bigquery/BigQueryConnectionPool.php';
 	define('Adminer\DRIVER', "bigquery");
 
-require_once __DIR__ . '/bigquery/BigQueryConfig.php';
-	
+	require_once __DIR__ . '/bigquery/BigQueryConfig.php';
+
 	class BigQueryUtils
 	{
 
@@ -461,8 +466,6 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 		}
 		static function generateFieldConversion($field)
 		{
-			// Phase 2 Sprint 2.1: フィールド変換機能強化
-			// BigQueryデータ型の適切なSQL関数による変換処理
 
 			$fieldName = self::escapeIdentifier($field['field']);
 			$fieldType = strtolower($field['type'] ?? '');
@@ -1807,6 +1810,104 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 
 		function dropTables($tables)
 		{
+			// 共通メソッドを使用してテーブル削除を実行
+			return $this->executeForTables("DROP TABLE {table}", $tables, "DROP_TABLE");
+		}
+
+		/**
+		 * 共通SQL実行メソッド - connectionとtableのチェック、エラーハンドリングを統一
+		 * @param string $sql SQL文
+		 * @param string $logOperation ログ用操作名
+		 * @param string|null $table テーブル名（フルネーム構築用、オプション）
+		 * @param string|null $database データベース名（オプション、$_GET['db']より優先）
+		 * @return mixed クエリ実行結果
+		 */
+		public function executeSql($sql, $logOperation, $table = null, $database = null)
+		{
+			global $connection;
+
+			// 基本接続チェック
+			if (!$connection || !isset($connection->bigQueryClient)) {
+				return false;
+			}
+
+			try {
+				// データベース名取得（引数→接続設定→$_GET['db']の順で優先）
+				if ($database === null) {
+					$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
+				}
+
+				// テーブル名が指定されている場合、フルテーブル名を構築
+				if ($table !== null && !empty($database)) {
+					$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
+					$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
+					$sql = str_replace('{table}', $fullTableName, $sql);
+				}
+
+				// SQL実行ログ
+				BigQueryUtils::logQuerySafely($sql, $logOperation);
+
+				// クエリ実行
+				return $connection->query($sql);
+
+			} catch (Exception $e) {
+				if ($connection) {
+					$connection->error = "$logOperation failed: " . $e->getMessage();
+				}
+				BigQueryUtils::logQuerySafely($e->getMessage(), $logOperation . '_ERROR');
+				return false;
+			}
+		}
+
+		/**
+		 * 複数テーブルに対する同一SQL実行（MySQLのapply_queriesパターン）
+		 * @param string $sqlTemplate SQL文テンプレート（{table}をプレースホルダーとして使用）
+		 * @param array $tables テーブル名の配列
+		 * @param string $logOperation ログ用操作名
+		 * @param string|null $database データベース名（オプション）
+		 * @return bool 全て成功した場合true、1つでも失敗した場合false
+		 */
+		public function executeForTables($sqlTemplate, $tables, $logOperation, $database = null)
+		{
+			global $connection;
+
+			if (!$connection || !isset($connection->bigQueryClient)) {
+				return false;
+			}
+
+			$errors = array();
+			$successCount = 0;
+
+			foreach ($tables as $table) {
+				if (empty($table)) {
+					continue;
+				}
+
+				$result = $this->executeSql($sqlTemplate, $logOperation, $table, $database);
+				if ($result !== false) {
+					$successCount++;
+				} else {
+					$errors[] = "$logOperation failed for table: $table";
+				}
+			}
+
+			// エラーハンドリング
+			if (!empty($errors) && $connection) {
+				$connection->error = implode('; ', $errors);
+			}
+
+			return $successCount > 0;
+		}
+
+		/**
+		 * 複数データベース（データセット）に対する操作実行
+		 * @param array $databases データベース名の配列
+		 * @param string $logOperation ログ用操作名
+		 * @param callable $callback 各データベースに対する処理関数
+		 * @return bool 1つでも成功した場合true
+		 */
+		public function executeForDatabases($databases, $logOperation, $callback)
+		{
 			global $connection;
 
 			if (!$connection || !isset($connection->bigQueryClient)) {
@@ -1817,47 +1918,38 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 			$successCount = 0;
 
 			try {
-
-				$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
-				if (empty($database)) {
-					return false;
-				}
-
-				foreach ($tables as $table) {
-					if (empty($table)) {
+				foreach ($databases as $database) {
+					if (empty($database)) {
 						continue;
 					}
 
 					try {
-
-						$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
-						$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
-						$query = "DROP TABLE $fullTableName";
-
-						BigQueryUtils::logQuerySafely($query, "DROP_TABLE");
-						$result = $connection->query($query);
-
-						if ($result !== false) {
+						// コールバック関数を実行
+						$result = $callback($database, $connection);
+						if ($result) {
 							$successCount++;
+							BigQueryUtils::logQuerySafely("$logOperation $database", $logOperation);
 						} else {
-							$errors[] = "Failed to drop table: $table";
+							$errors[] = "$logOperation failed for database: $database";
 						}
 					} catch (Exception $e) {
-						$errors[] = "Drop table '$table' failed: " . $e->getMessage();
-						BigQueryUtils::logQuerySafely($e->getMessage(), 'DROP_TABLE_ERROR');
+						$errors[] = "$logOperation '$database' failed: " . $e->getMessage();
+						BigQueryUtils::logQuerySafely($e->getMessage(), $logOperation . '_ERROR');
 					}
 				}
 
+				// エラーハンドリング
 				if (!empty($errors) && $connection) {
 					$connection->error = implode('; ', $errors);
 				}
 
 				return $successCount > 0;
+
 			} catch (Exception $e) {
 				if ($connection) {
-					$connection->error = "DROP TABLES failed: " . $e->getMessage();
+					$connection->error = "$logOperation failed: " . $e->getMessage();
 				}
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'DROP_TABLES_ERROR');
+				BigQueryUtils::logQuerySafely($e->getMessage(), $logOperation . '_ERROR');
 				return false;
 			}
 		}
@@ -2284,8 +2376,6 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 	}
 	function collations()
 	{
-		// Phase 2 Sprint 2.1: BigQuery照合順序一覧機能
-		// BigQueryでサポートされているUnicode照合順序を返す
 
 		return array(
 			"unicode:cs" => "Unicode (大文字小文字区別)",
@@ -2295,9 +2385,6 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 	}
 	function db_collation($db)
 	{
-		// Phase 2 Sprint 2.1: BigQuery照合順序適切処理機能
-		// BigQueryではデータセット固有の照合順序設定は存在しないが、
-		// 照会時にCOLLATE句でUnicode照合順序を指定可能
 
 		if (!$db) {
 			return "";
@@ -2309,7 +2396,6 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 	}
 	function information_schema($db)
 	{
-		// Phase 1 Sprint 1.3: BigQuery INFORMATION_SCHEMA判定機能
 		if (!$db) {
 			return false;
 		}
@@ -2360,7 +2446,6 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 	}
 	function logged_user()
 	{
-		// Phase 1 Sprint 1.3: サービスアカウント情報の詳細表示
 		global $connection;
 		try {
 			if ($connection && isset($connection->projectId)) {
@@ -2722,8 +2807,6 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 	if (!function_exists('unconvert_field')) {
 		function unconvert_field(array $field, $value)
 		{
-			// Phase 2 Sprint 2.1: フィールド逆変換機能強化
-			// BigQueryの表示用データをAdminer編集可能な形式に戻す
 
 			if ($value === null) {
 				return null;
@@ -3045,7 +3128,6 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 		{
 			global $connection;
 
-			// Phase 1: BigQueryジョブIDを返す機能を追加
 			if ($connection && isset($connection->last_result)) {
 				if ($connection->last_result instanceof Result && isset($connection->last_result->job)) {
 					return $connection->last_result->job->id();
@@ -3057,8 +3139,6 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 
 		function create_database($database, $collation)
 		{
-			// Phase 3 Sprint 3.1: BigQuery Dataset作成機能強化
-			// Dataset API活用・権限チェック・エラーハンドリング強化
 
 			global $connection;
 			try {
@@ -3126,96 +3206,42 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 
 		function drop_databases($databases)
 		{
-			// Phase 3 Sprint 3.1: BigQuery Dataset削除機能実装
-			// 複数データセットの安全な削除処理
 
-			global $connection;
+			global $driver;
 
-			if (!$connection || !isset($connection->bigQueryClient)) {
+			if (!$driver) {
 				return false;
 			}
 
-			$errors = array();
-			$successCount = 0;
-
-			try {
-				foreach ($databases as $database) {
-					if (empty($database)) {
-						continue;
-					}
-
-					try {
-						// データセット名の検証
-						if (!preg_match('/^[a-zA-Z0-9_]{1,1024}$/', $database)) {
-							$errors[] = "Invalid dataset name format: $database";
-							continue;
-						}
-
-						// データセット取得と存在確認
-						$dataset = $connection->bigQueryClient->dataset($database);
-						if (!$dataset->exists()) {
-							$errors[] = "Dataset '$database' does not exist";
-							continue;
-						}
-
-						// 削除前の安全確認（テーブル数チェック）
-						$tableIterator = $dataset->tables(['maxResults' => 1]);
-						if ($tableIterator->current()) {
-							error_log("BigQuery: Warning - Dataset '$database' contains tables, proceeding with deletion");
-						}
-
-						// BigQuery Dataset削除実行
-						BigQueryUtils::logQuerySafely("DROP DATASET $database", "DROP_DATASET");
-						$dataset->delete(['deleteContents' => true]);
-
-						error_log("BigQuery: Dataset '$database' deleted successfully");
-						$successCount++;
-
-					} catch (ServiceException $e) {
-						$message = $e->getMessage();
-						$errorCode = $e->getCode();
-
-						// 権限エラー
-						if (strpos($message, 'permission') !== false || $errorCode === 403) {
-							$errors[] = "Permission denied: Cannot delete dataset '$database'";
-						}
-						// 存在しないデータセット
-						elseif (strpos($message, 'Not found') !== false || $errorCode === 404) {
-							$errors[] = "Dataset '$database' not found";
-						}
-						// その他のエラー
-						else {
-							$errors[] = "Failed to delete dataset '$database': $message";
-						}
-
-						BigQueryUtils::logQuerySafely($e->getMessage(), 'DROP_DATASET_ERROR');
-
-					} catch (Exception $e) {
-						$errors[] = "Delete dataset '$database' failed: " . $e->getMessage();
-						BigQueryUtils::logQuerySafely($e->getMessage(), 'DROP_DATASET_ERROR');
-					}
+			// 共通メソッドでデータベース削除処理を実行
+			return $driver->executeForDatabases($databases, "DROP_DATASET", function ($database, $connection) {
+				// データセット名の検証
+				if (!preg_match('/^[a-zA-Z0-9_]{1,1024}$/', $database)) {
+					throw new Exception("Invalid dataset name format: $database");
 				}
 
-				// エラーハンドリング
-				if (!empty($errors) && $connection) {
-					$connection->error = implode('; ', $errors);
+				// データセット取得と存在確認
+				$dataset = $connection->bigQueryClient->dataset($database);
+				if (!$dataset->exists()) {
+					throw new Exception("Dataset '$database' does not exist");
 				}
 
-				return $successCount > 0;
-
-			} catch (Exception $e) {
-				if ($connection) {
-					$connection->error = "DROP DATASETS failed: " . $e->getMessage();
+				// 削除前の安全確認（テーブル数チェック）
+				$tableIterator = $dataset->tables(['maxResults' => 1]);
+				if ($tableIterator->current()) {
+					error_log("BigQuery: Warning - Dataset '$database' contains tables, proceeding with deletion");
 				}
-				BigQueryUtils::logQuerySafely($e->getMessage(), 'DROP_DATASETS_ERROR');
-				return false;
-			}
+
+				// BigQuery Dataset削除実行
+				$dataset->delete(['deleteContents' => true]);
+				error_log("BigQuery: Dataset '$database' deleted successfully");
+
+				return true;
+			});
 		}
 
 		function rename_database($old_name, $new_name)
 		{
-			// Phase 3 Sprint 3.1: BigQuery Dataset名変更機能実装
-			// BigQueryは直接名前変更をサポートしないため、作成→コピー→削除のフローで実現
 
 			global $connection;
 
@@ -3349,14 +3375,16 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 
 		function alter_table($table, $name, $fields, $foreign, $comment, $engine, $collation, $auto_increment, $partitioning)
 		{
-			global $connection;
+			global $connection, $driver;
 
 			try {
+				// 基本接続チェックを共通化
 				if (!$connection || !isset($connection->bigQueryClient)) {
 					return false;
 				}
 
 				if ($table == "") {
+					// 新規テーブル作成の場合
 
 					$database = $_GET['db'] ?? $connection->datasetId ?? '';
 					if (empty($database)) {
@@ -3397,12 +3425,15 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 
 					$cleanTableName = trim(str_replace('`', '', $name));
 
+					// 共通エラーハンドリングを使用してテーブル作成をログ
+					BigQueryUtils::logQuerySafely("CREATE TABLE $cleanTableName", "CREATE_TABLE");
+
 					$table = $dataset->createTable($cleanTableName, $tableOptions);
 
 					return true;
 
 				} else {
-
+					// 既存テーブルの変更は未対応
 					return false;
 				}
 
@@ -3412,16 +3443,24 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 					error_log("BigQuery: Table '$name' already exists");
 					return false;
 				}
+				// 共通エラーハンドリングを使用
+				if ($connection) {
+					$connection->error = "CREATE TABLE failed: " . $message;
+				}
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'CREATE_TABLE_ERROR');
 				error_log("BigQuery: Table creation failed - " . $message);
 				return false;
 			} catch (Exception $e) {
+				// 共通エラーハンドリングを使用
+				if ($connection) {
+					$connection->error = "CREATE TABLE failed: " . $e->getMessage();
+				}
+				BigQueryUtils::logQuerySafely($e->getMessage(), 'CREATE_TABLE_ERROR');
 				error_log("BigQuery: Table creation error - " . $e->getMessage());
 				return false;
 			}
 		}
 
-		// Phase 3 Sprint 3.2: BigQueryテーブルコピー機能実装
-		// 同一データセット内・データセット間でのテーブルコピーをサポート
 		function copy_tables($tables, $target_db, $overwrite)
 		{
 			global $connection;
@@ -3570,8 +3609,6 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 
 		function move_tables($tables, $views, $target)
 		{
-			// Phase 3 Sprint 3.2: BigQueryテーブル移動機能強化実装
-			// テーブル移動はコピー→削除のフローで実現（BigQuery制限対応）
 
 			global $connection;
 
@@ -3746,8 +3783,6 @@ require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 			}
 		}
 
-		// Phase 4 Sprint 4.2: BigQuery適応版auto_increment機能実装
-		// BigQueryには自動増分カラムが存在しないため、代替手法を提供
 		function auto_increment($table = null)
 		{
 			global $connection;
@@ -3885,8 +3920,6 @@ if (!function_exists('Adminer\\bigquery_view')) {
 
 	function bigquery_view($name)
 	{
-		// Phase 4 Sprint 4.1: BigQuery ビュー定義取得機能
-		// BigQuery ビューの詳細情報とクエリ定義を返す
 
 		global $connection;
 
@@ -3976,8 +4009,6 @@ if (!function_exists('Adminer\\bigquery_view')) {
 
 	function import_sql($file)
 	{
-		// Phase 4 Sprint 4.1: BigQuery SQLインポート機能強化
-		// BigQueryに適したSQLファイル処理とバッチ実行機能
 
 		global $connection;
 
@@ -4106,168 +4137,138 @@ if (!function_exists('Adminer\\bigquery_view')) {
 
 }
 
-if (!function_exists('parseBigQueryStatements')) {
-	function parseBigQueryStatements($sqlContent)
-	{
-		// BigQuery用SQL文分割処理
-		// セミコロン区切りだが、文字列内・コメント内のセミコロンは無視
+function parseBigQueryStatements($sqlContent)
+{
+	// BigQuery用SQL文分割処理
+	// セミコロン区切りだが、文字列内・コメント内のセミコロンは無視
 
-		$statements = array();
-		$currentStatement = '';
-		$inSingleQuote = false;
-		$inDoubleQuote = false;
-		$inBacktick = false;
-		$inLineComment = false;
-		$inBlockComment = false;
+	$statements = array();
+	$currentStatement = '';
+	$inSingleQuote = false;
+	$inDoubleQuote = false;
+	$inBacktick = false;
+	$inLineComment = false;
+	$inBlockComment = false;
 
-		$length = strlen($sqlContent);
-		for ($i = 0; $i < $length; $i++) {
-			$char = $sqlContent[$i];
-			$nextChar = ($i + 1 < $length) ? $sqlContent[$i + 1] : '';
+	$length = strlen($sqlContent);
+	for ($i = 0; $i < $length; $i++) {
+		$char = $sqlContent[$i];
+		$nextChar = ($i + 1 < $length) ? $sqlContent[$i + 1] : '';
 
-			// コメント処理
-			if (!$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
-				// 行コメント開始
-				if ($char === '-' && $nextChar === '-') {
-					$inLineComment = true;
-					$currentStatement .= $char;
-					continue;
-				}
-				// ブロックコメント開始
-				if ($char === '/' && $nextChar === '*') {
-					$inBlockComment = true;
-					$currentStatement .= $char;
-					continue;
-				}
-			}
-
-			// 行コメント終了
-			if ($inLineComment && ($char === "\n" || $char === "\r")) {
-				$inLineComment = false;
+		// コメント処理
+		if (!$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
+			// 行コメント開始
+			if ($char === '-' && $nextChar === '-') {
+				$inLineComment = true;
 				$currentStatement .= $char;
 				continue;
 			}
-
-			// ブロックコメント終了
-			if ($inBlockComment && $char === '*' && $nextChar === '/') {
-				$inBlockComment = false;
-				$currentStatement .= $char . $nextChar;
-				$i++; // Skip next character
-				continue;
-			}
-
-			// コメント内の場合はそのまま追加
-			if ($inLineComment || $inBlockComment) {
+			// ブロックコメント開始
+			if ($char === '/' && $nextChar === '*') {
+				$inBlockComment = true;
 				$currentStatement .= $char;
 				continue;
 			}
+		}
 
-			// クォート処理
-			if ($char === "'" && !$inDoubleQuote && !$inBacktick) {
-				$inSingleQuote = !$inSingleQuote;
-			} elseif ($char === '"' && !$inSingleQuote && !$inBacktick) {
-				$inDoubleQuote = !$inDoubleQuote;
-			} elseif ($char === '`' && !$inSingleQuote && !$inDoubleQuote) {
-				$inBacktick = !$inBacktick;
-			}
-
-			// セミコロン分割（クォート外の場合のみ）
-			if ($char === ';' && !$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
-				$trimmedStatement = trim($currentStatement);
-				if (!empty($trimmedStatement)) {
-					$statements[] = $trimmedStatement;
-				}
-				$currentStatement = '';
-				continue;
-			}
-
+		// 行コメント終了
+		if ($inLineComment && ($char === "\n" || $char === "\r")) {
+			$inLineComment = false;
 			$currentStatement .= $char;
+			continue;
 		}
 
-		// 最後のステートメント処理
-		$trimmedStatement = trim($currentStatement);
-		if (!empty($trimmedStatement)) {
-			$statements[] = $trimmedStatement;
+		// ブロックコメント終了
+		if ($inBlockComment && $char === '*' && $nextChar === '/') {
+			$inBlockComment = false;
+			$currentStatement .= $char . $nextChar;
+			$i++; // Skip next character
+			continue;
 		}
 
-		return $statements;
+		// コメント内の場合はそのまま追加
+		if ($inLineComment || $inBlockComment) {
+			$currentStatement .= $char;
+			continue;
+		}
+
+		// クォート処理
+		if ($char === "'" && !$inDoubleQuote && !$inBacktick) {
+			$inSingleQuote = !$inSingleQuote;
+		} elseif ($char === '"' && !$inSingleQuote && !$inBacktick) {
+			$inDoubleQuote = !$inDoubleQuote;
+		} elseif ($char === '`' && !$inSingleQuote && !$inDoubleQuote) {
+			$inBacktick = !$inBacktick;
+		}
+
+		// セミコロン分割（クォート外の場合のみ）
+		if ($char === ';' && !$inSingleQuote && !$inDoubleQuote && !$inBacktick) {
+			$trimmedStatement = trim($currentStatement);
+			if (!empty($trimmedStatement)) {
+				$statements[] = $trimmedStatement;
+			}
+			$currentStatement = '';
+			continue;
+		}
+
+		$currentStatement .= $char;
 	}
+
+	$trimmedStatement = trim($currentStatement);
+	if (!empty($trimmedStatement)) {
+		$statements[] = $trimmedStatement;
+	}
+
+	return $statements;
 }
 
-if (!function_exists('isCommentOnly')) {
-	function isCommentOnly($statement)
-	{
-		// コメントのみの行判定
-		$trimmed = trim($statement);
-		return empty($trimmed) ||
-			strpos($trimmed, '--') === 0 ||
-			(strpos($trimmed, '/*') === 0 && strpos($trimmed, '*/') !== false);
-	}
+function isCommentOnly($statement)
+{
+	$trimmed = trim($statement);
+	return empty($trimmed) ||
+		strpos($trimmed, '--') === 0 ||
+		(strpos($trimmed, '/*') === 0 && strpos($trimmed, '*/') !== false);
 }
+
 
 function truncate_table($table)
 {
-	global $connection;
+	global $driver;
 
-	if (!$connection || !isset($connection->bigQueryClient)) {
+	if (!$driver) {
 		return false;
 	}
 
-	try {
-
-		$database = $_GET['db'] ?? ($connection && isset($connection->datasetId) ? $connection->datasetId : '') ?? '';
-		if (empty($database) || empty($table)) {
-			return false;
-		}
-
-		$projectId = $connection && isset($connection->projectId) ? $connection->projectId : 'default';
-		$fullTableName = BigQueryUtils::buildFullTableName($table, $database, $projectId);
-		$query = "TRUNCATE TABLE $fullTableName";
-
-		BigQueryUtils::logQuerySafely($query, "TRUNCATE");
-		$result = $connection->query($query);
-		return $result !== false;
-	} catch (Exception $e) {
-		if ($connection) {
-			$connection->error = "TRUNCATE TABLE failed: " . $e->getMessage();
-		}
-		BigQueryUtils::logQuerySafely($e->getMessage(), 'TRUNCATE_ERROR');
-		return false;
-	}
+	// 共通メソッドを使用してTRUNCATE文を実行
+	$sql = "TRUNCATE TABLE {table}";
+	return $driver->executeSql($sql, "TRUNCATE", $table) !== false;
 }
 
-if (!function_exists('check_table')) {
-
-	function check_table($table)
-	{
-		show_unsupported_feature_message('check');
-		return false;
-	}
+function check_table($table)
+{
+	show_unsupported_feature_message('check');
+	return false;
 }
 
-if (!function_exists('optimize_table')) {
 
-	function optimize_table($table)
-	{
-		show_unsupported_feature_message('optimize');
-		return false;
-	}
+function optimize_table($table)
+{
+	show_unsupported_feature_message('optimize');
+	return false;
 }
 
-if (!function_exists('repair_table')) {
 
-	function repair_table($table)
-	{
-		show_unsupported_feature_message('repair');
-		return false;
-	}
+
+function repair_table($table)
+{
+	show_unsupported_feature_message('repair');
+	return false;
 }
 
-if (!function_exists('analyze_table')) {
 
-	function analyze_table($table)
-	{
-		show_unsupported_feature_message('analyze');
-		return false;
-	}
+
+function analyze_table($table)
+{
+	show_unsupported_feature_message('analyze');
+	return false;
 }
