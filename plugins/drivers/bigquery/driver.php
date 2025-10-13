@@ -12,8 +12,7 @@ use InvalidArgumentException;
  *
  * Separated from bigquery.php for better code organization
  */
-class Driver
-{
+class Driver {
 
 	static $instance;
 	static $extensions = array("BigQuery");
@@ -68,67 +67,55 @@ class Driver
 		array("ARRAY" => 0, "STRUCT" => 0, "JSON" => 0, "GEOGRAPHY" => 0)
 	);
 
-	static function connect($server, $username, $password)
-	{
+	static function connect($server, $username, $password) {
 		$db = new Db();
 		if ($db->connect($server, $username, $password)) {
 			return $db;
 		}
 		return false;
 	}
-	function tableHelp($name, $is_view = false)
-	{
+	function tableHelp($name, $is_view = false) {
 		return null;
 	}
-	function structuredTypes()
-	{
+	function structuredTypes() {
 		$allTypes = array();
 		foreach ($this->types as $typeGroup) {
 			$allTypes = array_merge($allTypes, array_keys($typeGroup));
 		}
 		return $allTypes;
 	}
-	function inheritsFrom($table)
-	{
+	function inheritsFrom($table) {
 		return array();
 	}
-	function inheritedTables($table)
-	{
+	function inheritedTables($table) {
 		return array();
 	}
-	function select($table, $select, $where, $group, $order = array(), $limit = 1, $page = 0, $print = false)
-	{
+	function select($table, $select, $where, $group, $order = array(), $limit = 1, $page = 0, $print = false) {
 		return select($table, $select, $where, $group, $order, $limit, $page, $print);
 	}
-	function value($val, $field)
-	{
+	function value($val, $field) {
 		return BigQueryUtils::formatComplexValue($val, $field);
 	}
-	function convert_field(array $field)
-	{
+	function convert_field(array $field) {
 		// BigQuery SELECT * との併用問題を回避するため、フィールド変換を無効化
 		// Adminerが SELECT * を使用する際に不正なSQL生成を防ぐ
 		return null;
 	}
 
-	function hasCStyleEscapes(): bool
-	{
+	function hasCStyleEscapes(): bool {
 		return false;
 	}
 
-	function warnings()
-	{
+	function warnings() {
 
 		return array();
 	}
 
-	function engines()
-	{
+	function engines() {
 		return array('BigQuery');
 	}
 
-	function types()
-	{
+	function types() {
 		return array(
 			'Numbers' => array(
 				'INT64' => 0,
@@ -161,38 +148,32 @@ class Driver
 		);
 	}
 
-	function enumLength($field)
-	{
+	function enumLength($field) {
 
 		return array();
 	}
 
-	function unconvertFunction($field)
-	{
+	function unconvertFunction($field) {
 
 		return null;
 	}
 
-	function insert($table, $set)
-	{
+	function insert($table, $set) {
 
 		return insert($table, $set);
 	}
 
-	function update($table, $set, $queryWhere = '', $limit = 0)
-	{
+	function update($table, $set, $queryWhere = '', $limit = 0) {
 
 		return update($table, $set, $queryWhere, $limit);
 	}
 
-	function delete($table, $queryWhere = '', $limit = 0)
-	{
+	function delete($table, $queryWhere = '', $limit = 0) {
 
 		return delete($table, $queryWhere, $limit);
 	}
 
-	function allFields(): array
-	{
+	function allFields(): array {
 		$return = array();
 		try {
 			foreach (tables_list() as $table => $type) {
@@ -208,14 +189,12 @@ class Driver
 		}
 	}
 
-	function convertSearch(string $idf, array $val, array $field): string
-	{
+	function convertSearch(string $idf, array $val, array $field): string {
 
 		return $idf;
 	}
 
-	function dropTables($tables)
-	{
+	function dropTables($tables) {
 		// 共通メソッドを使用してテーブル削除を実行
 		return $this->executeForTables("DROP TABLE {table}", $tables, "DROP_TABLE");
 	}
@@ -228,8 +207,7 @@ class Driver
 	 * @param string|null $database データベース名（オプション、$_GET['db']より優先）
 	 * @return mixed クエリ実行結果
 	 */
-	public function executeSql($sql, $logOperation, $table = null, $database = null)
-	{
+	public function executeSql($sql, $logOperation, $table = null, $database = null) {
 		global $connection;
 
 		// 基本接続チェック
@@ -263,7 +241,6 @@ class Driver
 
 			// クエリ実行
 			return $connection->query($sql);
-
 		} catch (Exception $e) {
 			if ($connection) {
 				$connection->error = "$logOperation failed: " . $e->getMessage();
@@ -281,8 +258,7 @@ class Driver
 	 * @param string|null $database データベース名（オプション）
 	 * @return bool 全て成功した場合true、1つでも失敗した場合false
 	 */
-	public function executeForTables($sqlTemplate, $tables, $logOperation, $database = null)
-	{
+	public function executeForTables($sqlTemplate, $tables, $logOperation, $database = null) {
 		global $connection;
 
 		if (!$connection || !isset($connection->bigQueryClient)) {
@@ -320,8 +296,7 @@ class Driver
 	 * @param callable $callback 各データベースに対する処理関数
 	 * @return bool 1つでも成功した場合true
 	 */
-	public function executeForDatabases($databases, $logOperation, $callback)
-	{
+	public function executeForDatabases($databases, $logOperation, $callback) {
 		global $connection;
 
 		if (!$connection || !isset($connection->bigQueryClient)) {
@@ -358,7 +333,6 @@ class Driver
 			}
 
 			return $successCount > 0;
-
 		} catch (Exception $e) {
 			if ($connection) {
 				$connection->error = "$logOperation failed: " . $e->getMessage();
@@ -368,8 +342,7 @@ class Driver
 		}
 	}
 
-	function explain($query)
-	{
+	function explain($query) {
 		global $connection;
 		if (!$connection || !isset($connection->bigQueryClient)) {
 			return false;
@@ -387,8 +360,7 @@ class Driver
 		}
 	}
 
-	function css()
-	{
+	function css() {
 		return "
 		<style>
 		/* BigQuery非対応機能を非表示 - より強い優先度で適用 */

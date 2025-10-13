@@ -5,12 +5,10 @@ ini_set('display_errors', 1);
 
 require_once __DIR__ . '/vendor/autoload.php';
 
-function adminer_object()
-{
+function adminer_object() {
 	include_once __DIR__ . '/adminer/include/bootstrap.inc.php';
 	include_once __DIR__ . '/adminer/include/adminer.inc.php';
 	include_once __DIR__ . '/adminer/include/plugin.inc.php';
-
 	require_once __DIR__ . '/plugins/drivers/bigquery.php';
 
 	$plugins = array(
@@ -32,47 +30,40 @@ if ($is_oauth_callback) {
 	error_log('OAuth2 callback detected. Query parameter oauth2=callback');
 	error_log('GET parameters: ' . json_encode($_GET));
 
-	// OAuth2コールバックURLの場合、BigQueryドライバーのOAuth2処理を実行
-	if (isset($_GET['code']) && isset($_GET['state'])) {
-		// BigQueryドライバーを読み込み
-		include_once __DIR__ . '/adminer/include/plugin.inc.php';
-		require_once __DIR__ . '/plugins/drivers/bigquery.php';
+	include_once __DIR__ . '/adminer/include/bootstrap.inc.php';
+	include_once __DIR__ . '/adminer/include/adminer.inc.php';
+	include_once __DIR__ . '/adminer/include/plugin.inc.php';
+	require_once __DIR__ . '/plugins/drivers/bigquery.php';
 
-		// OAuth2処理のためのダミー接続を作成
-		$oauth2Handler = new \Adminer\Db();
+	// OAuth2処理のためのダミー接続を作成
+	$oauth2Handler = new \Adminer\Db();
 
-		try {
-			// OAuth2コールバック処理を実行
-			$state = $_GET['state'] ?? '';
-			$stateData = json_decode(base64_decode($state), true);
-			$redirectTo = $stateData['redirect_to'] ?? '/';
+	try {
+		// OAuth2コールバック処理を実行
+		$state = $_GET['state'] ?? '';
+		$stateData = json_decode(base64_decode($state), true);
+		$redirectTo = $stateData['redirect_to'] ?? '/';
 
-			// OAuth2処理を実行（handleOAuth2Callbackメソッドを直接呼び出し）
-			$reflection = new ReflectionClass($oauth2Handler);
-			$method = $reflection->getMethod('handleOAuth2Callback');
-			$method->setAccessible(true);
-			$result = $method->invoke($oauth2Handler);
+		// OAuth2処理を実行（handleOAuth2Callbackメソッドを直接呼び出し）
+		$reflection = new ReflectionClass($oauth2Handler);
+		$method = $reflection->getMethod('handleOAuth2Callback');
+		$method->setAccessible(true);
+		$result = $method->invoke($oauth2Handler);
 
-			if ($result) {
-				// 成功時はリダイレクト
-				header('Location: ' . $redirectTo);
-				exit;
-			} else {
-				// 失敗時はエラーページ
-				echo "<h1>OAuth2 Authentication Failed</h1>";
-				echo "<p>Authentication failed. Please <a href='/'>try again</a>.</p>";
-				exit;
-			}
-		} catch (Exception $e) {
-			error_log('OAuth2 callback error: ' . $e->getMessage());
-			echo "<h1>OAuth2 Authentication Error</h1>";
-			echo "<p>Authentication error occurred. Please <a href='/'>try again</a>.</p>";
+		if ($result) {
+			// 成功時はリダイレクト
+			header('Location: ' . $redirectTo);
+			exit;
+		} else {
+			// 失敗時はエラーページ
+			echo "<h1>OAuth2 Authentication Failed</h1>";
+			echo "<p>Authentication failed. Please <a href='/'>try again</a>.</p>";
 			exit;
 		}
-	} else {
-		// 不正なコールバック
-		echo "<h1>Invalid OAuth2 Callback</h1>";
-		echo "<p>Missing required parameters. Please <a href='/'>try again</a>.</p>";
+	} catch (Exception $e) {
+		error_log('OAuth2 callback error: ' . $e->getMessage());
+		echo "<h1>OAuth2 Authentication Error</h1>";
+		echo "<p>Authentication error occurred. Please <a href='/'>try again</a>.</p>";
 		exit;
 	}
 }

@@ -2,14 +2,12 @@
 
 namespace Adminer;
 
-class BigQueryCacheManager
-{
+class BigQueryCacheManager {
 
 	private static array $staticCache = array();
 	private static array $cacheTimestamps = array();
 	private static ?bool $apcuAvailable = null;
-	private static function isApcuAvailable()
-	{
+	private static function isApcuAvailable() {
 		if (self::$apcuAvailable === null) {
 			self::$apcuAvailable = extension_loaded('apcu')
 				&& function_exists('\apcu_exists')
@@ -18,8 +16,7 @@ class BigQueryCacheManager
 		}
 		return self::$apcuAvailable;
 	}
-	static function get($key, $ttl = 300)
-	{
+	static function get($key, $ttl = 300) {
 		if (self::isApcuAvailable()) {
 			return \apcu_fetch($key);
 		}
@@ -31,8 +28,7 @@ class BigQueryCacheManager
 		}
 		return false;
 	}
-	static function set($key, $value, $ttl = 300)
-	{
+	static function set($key, $value, $ttl = 300) {
 		$success = false;
 		if (self::isApcuAvailable()) {
 			$success = \apcu_store($key, $value, $ttl);
@@ -41,8 +37,7 @@ class BigQueryCacheManager
 		self::$cacheTimestamps[$key] = time();
 		return $success;
 	}
-	static function clear($pattern = null)
-	{
+	static function clear($pattern = null) {
 		if ($pattern === null) {
 			if (self::isApcuAvailable()) {
 				\apcu_clear_cache();
@@ -58,8 +53,7 @@ class BigQueryCacheManager
 			}
 		}
 	}
-	static function getStats()
-	{
+	static function getStats() {
 		$apcuInfo = self::isApcuAvailable() ? \apcu_cache_info() : array();
 		return array(
 			'static_cache_size' => count(self::$staticCache),

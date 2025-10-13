@@ -7,20 +7,17 @@ use Exception;
 /**
  * AdminerLoginBigQuery - BigQuery認証用のログインプラグイン
  */
-class AdminerLoginBigQuery extends Plugin
-{
+class AdminerLoginBigQuery extends Plugin {
 	protected $config;
 
-	function __construct($config = array())
-	{
+	function __construct($config = array()) {
 		$this->config = $config;
 		$this->initializeDriverSelection();
 	}
 	/**
 	 * OAuth2認証が有効かどうかをチェック
 	 */
-	private function isOAuth2Enabled()
-	{
+	private function isOAuth2Enabled() {
 		$oauth2Enable = getenv('GOOGLE_OAUTH2_ENABLE');
 		// Add input validation and sanitization
 		return $oauth2Enable === 'true' && $this->validateOAuth2Configuration();
@@ -29,8 +26,7 @@ class AdminerLoginBigQuery extends Plugin
 	/**
 	 * Validate OAuth2 configuration for security
 	 */
-	private function validateOAuth2Configuration()
-	{
+	private function validateOAuth2Configuration() {
 		$clientId = getenv('GOOGLE_OAUTH2_CLIENT_ID');
 		$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
 
@@ -47,8 +43,10 @@ class AdminerLoginBigQuery extends Plugin
 		}
 
 		// Ensure HTTPS for production
-		if (parse_url($redirectUrl, PHP_URL_SCHEME) !== 'https' &&
-			!in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'])) {
+		if (
+			parse_url($redirectUrl, PHP_URL_SCHEME) !== 'https' &&
+			!in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'])
+		) {
 			error_log('OAuth2: Redirect URL must use HTTPS in production');
 			return false;
 		}
@@ -59,8 +57,7 @@ class AdminerLoginBigQuery extends Plugin
 	/**
 	 * Validate OAuth2 state parameter for CSRF protection
 	 */
-	private function validateStateParameter($state)
-	{
+	private function validateStateParameter($state) {
 		try {
 			$decodedState = base64_decode($state, true);
 			if ($decodedState === false) {
@@ -76,8 +73,10 @@ class AdminerLoginBigQuery extends Plugin
 			if (isset($stateData['redirect_to'])) {
 				$redirectTo = $stateData['redirect_to'];
 				// Only allow relative URLs or same-origin URLs
-				if (!preg_match('/^\/[^\/]/', $redirectTo) &&
-					parse_url($redirectTo, PHP_URL_HOST) !== $_SERVER['HTTP_HOST']) {
+				if (
+					!preg_match('/^\/[^\/]/', $redirectTo) &&
+					parse_url($redirectTo, PHP_URL_HOST) !== $_SERVER['HTTP_HOST']
+				) {
 					return false;
 				}
 			}
@@ -92,16 +91,14 @@ class AdminerLoginBigQuery extends Plugin
 	/**
 	 * OAuth2設定を取得
 	 */
-	private function getOAuth2Config()
-	{
+	private function getOAuth2Config() {
 		return [
 			'client_id' => getenv('GOOGLE_OAUTH2_CLIENT_ID'),
 			'redirect_url' => getenv('GOOGLE_OAUTH2_REDIRECT_URL')
 		];
 	}
 
-	private function initializeDriverSelection()
-	{
+	private function initializeDriverSelection() {
 		if (!isset($_POST["auth"])) {
 			return;
 		}
@@ -109,27 +106,23 @@ class AdminerLoginBigQuery extends Plugin
 		$_POST["auth"]["driver"] = 'bigquery';
 	}
 
-	function credentials()
-	{
+	function credentials() {
 		$server = $this->getProjectId();
 
 		return array($server, 'bigquery-service-account', 'service-account-auth');
 	}
 
-	private function getProjectId()
-	{
+	private function getProjectId() {
 		return $_GET["server"] ??
 			$_POST["auth"]["server"] ??
 			$this->config['project_id'];
 	}
 
-	function login($login, $password)
-	{
+	function login($login, $password) {
 		return true;
 	}
 
-	function loginFormField($name, $heading, $value)
-	{
+	function loginFormField($name, $heading, $value) {
 		// OAuth2認証が有効な場合は異なる表示
 		if ($this->isOAuth2Enabled()) {
 			return $this->renderOAuth2Field($name, $heading, $value);
@@ -157,19 +150,16 @@ class AdminerLoginBigQuery extends Plugin
 		return isset($fieldHandlers[$name]) ? $fieldHandlers[$name]() : '';
 	}
 
-	private function renderDriverField($heading)
-	{
+	private function renderDriverField($heading) {
 		return $heading . '<select name="auth[driver]" readonly><option value="bigquery" selected>Google BigQuery</option></select>' . "\n";
 	}
 
-	private function renderProjectIdField()
-	{
+	private function renderProjectIdField() {
 		$default_value = htmlspecialchars($this->getProjectId());
 		return '<tr><th>Project ID</th><td><input name="auth[server]" value="' . $default_value . '" title="GCP Project ID" placeholder="your-project-id" autocapitalize="off" required></td></tr>' . "\n";
 	}
 
-	private function renderHiddenField($fieldName)
-	{
+	private function renderHiddenField($fieldName) {
 		$defaultValues = array(
 			'username' => 'bigquery-service-account',
 			'password' => 'service-account-auth',
@@ -182,8 +172,7 @@ class AdminerLoginBigQuery extends Plugin
 	/**
 	 * OAuth2認証用のフィールドを描画
 	 */
-	private function renderOAuth2Field($name, $heading, $value)
-	{
+	private function renderOAuth2Field($name, $heading, $value) {
 		switch ($name) {
 			case 'driver':
 				return $this->renderDriverField($heading);
@@ -201,8 +190,7 @@ class AdminerLoginBigQuery extends Plugin
 	/**
 	 * OAuth2認証用のProject IDフィールドを描画
 	 */
-	private function renderOAuth2ProjectIdField()
-	{
+	private function renderOAuth2ProjectIdField() {
 		$default_value = htmlspecialchars($this->getProjectId());
 		return '<tr><th>Project ID</th><td><input name="auth[server]" value="' . $default_value . '" title="GCP Project ID" placeholder="your-project-id" autocapitalize="off" required></td></tr>' . "\n";
 	}
@@ -210,8 +198,7 @@ class AdminerLoginBigQuery extends Plugin
 	/**
 	 * Google OAuth2ログインボタンを描画
 	 */
-	private function renderOAuth2LoginButton()
-	{
+	private function renderOAuth2LoginButton() {
 		$config = $this->getOAuth2Config();
 		$clientId = $config['client_id'];
 		$redirectUrl = $config['redirect_url'];
@@ -249,8 +236,7 @@ class AdminerLoginBigQuery extends Plugin
 		</div>';
 	}
 
-	function loginForm()
-	{
+	function loginForm() {
 		// OAuth2認証が有効な場合は専用のログイン画面を表示
 		if ($this->isOAuth2Enabled()) {
 			echo "<style>";
@@ -314,12 +300,23 @@ class AdminerLoginBigQuery extends Plugin
 		}
 	}
 
-	function operators()
-	{
+	function operators() {
 		return array(
-			"=", "!=", "<>", "<", "<=", ">", ">=",
-			"IN", "NOT IN", "IS NULL", "IS NOT NULL",
-			"LIKE", "NOT LIKE", "REGEXP", "NOT REGEXP"
+			"=",
+			"!=",
+			"<>",
+			"<",
+			"<=",
+			">",
+			">=",
+			"IN",
+			"NOT IN",
+			"IS NULL",
+			"IS NOT NULL",
+			"LIKE",
+			"NOT LIKE",
+			"REGEXP",
+			"NOT REGEXP"
 		);
 	}
 
