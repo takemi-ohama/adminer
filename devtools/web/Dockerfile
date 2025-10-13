@@ -70,6 +70,9 @@ RUN a2enmod rewrite && \
 ENV HOME=/var/www
 ENV COMPOSER_HOME=/tmp/composer
 
+# Adminer staticファイルのシンボリックリンク作成（404エラー解決）
+RUN ln -sf /var/www/html/adminer/static /var/www/html/static
+
 # 権限設定
 RUN chown -R www-data:www-data /var/www/html && \
     chmod -R 755 /var/www/html
