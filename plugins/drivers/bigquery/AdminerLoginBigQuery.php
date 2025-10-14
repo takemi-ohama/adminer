@@ -20,73 +20,9 @@ class AdminerLoginBigQuery extends Plugin {
 	private function isOAuth2Enabled() {
 		$oauth2Enable = getenv('GOOGLE_OAUTH2_ENABLE');
 		// Add input validation and sanitization
-		return $oauth2Enable === 'true' && $this->validateOAuth2Configuration();
+		return $oauth2Enable === 'true';
 	}
 
-	/**
-	 * Validate OAuth2 configuration for security
-	 */
-	private function validateOAuth2Configuration() {
-		$clientId = getenv('GOOGLE_OAUTH2_CLIENT_ID');
-		$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
-
-		// Validate client ID format
-		if (!$clientId || !preg_match('/^[a-zA-Z0-9\-_.]+$/', $clientId)) {
-			error_log('OAuth2: Invalid client ID format');
-			return false;
-		}
-
-		// Validate redirect URL
-		if (!$redirectUrl || !filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
-			error_log('OAuth2: Invalid redirect URL');
-			return false;
-		}
-
-		// Ensure HTTPS for production
-		if (
-			parse_url($redirectUrl, PHP_URL_SCHEME) !== 'https' &&
-			!in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'])
-		) {
-			error_log('OAuth2: Redirect URL must use HTTPS in production');
-			return false;
-		}
-
-		return true;
-	}
-
-	/**
-	 * Validate OAuth2 state parameter for CSRF protection
-	 */
-	private function validateStateParameter($state) {
-		try {
-			$decodedState = base64_decode($state, true);
-			if ($decodedState === false) {
-				return false;
-			}
-
-			$stateData = json_decode($decodedState, true);
-			if (!is_array($stateData)) {
-				return false;
-			}
-
-			// Validate redirect_to parameter
-			if (isset($stateData['redirect_to'])) {
-				$redirectTo = $stateData['redirect_to'];
-				// Only allow relative URLs or same-origin URLs
-				if (
-					!preg_match('/^\/[^\/]/', $redirectTo) &&
-					parse_url($redirectTo, PHP_URL_HOST) !== $_SERVER['HTTP_HOST']
-				) {
-					return false;
-				}
-			}
-
-			return true;
-		} catch (Exception $e) {
-			error_log('OAuth2: State validation error: ' . $e->getMessage());
-			return false;
-		}
-	}
 
 	/**
 	 * OAuth2設定を取得
