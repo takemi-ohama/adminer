@@ -226,7 +226,9 @@ class Db {
 	 */
 	private function validateStateParameter($state) {
 		try {
-			$decodedState = base64_decode($state, true);
+			// Handle double URL encoding that may occur in OAuth flow
+			$decodedState = urldecode($state);
+			$decodedState = base64_decode($decodedState, true);
 			if ($decodedState === false) {
 				return false;
 			}
@@ -239,13 +241,15 @@ class Db {
 			// Validate redirect_to parameter
 			if (isset($stateData['redirect_to'])) {
 				$redirectTo = $stateData['redirect_to'];
-				// Only allow relative URLs or same-origin URLs
+				// Allow root path "/" and relative URLs starting with /
 				if (
-					!preg_match('/^\/[^\/]/', $redirectTo) &&
-					parse_url($redirectTo, PHP_URL_HOST) !== $_SERVER['HTTP_HOST']
+					$redirectTo === '/' ||
+					preg_match('/^\/[^\/]/', $redirectTo) ||
+					(parse_url($redirectTo, PHP_URL_HOST) === $_SERVER['HTTP_HOST'])
 				) {
-					return false;
+					return true;
 				}
+				return false;
 			}
 
 			return true;

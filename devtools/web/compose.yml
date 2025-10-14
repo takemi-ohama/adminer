@@ -16,7 +16,7 @@ services:
       # OAuth2認証設定
       - GOOGLE_OAUTH2_ENABLE=true
       - GOOGLE_OAUTH2_CLIENT_ID=${GOOGLE_OAUTH2_CLIENT_ID}
-      - GOOGLE_OAUTH2_CLIENT_SECRET=your-oauth2-client-secret
+      - GOOGLE_OAUTH2_CLIENT_SECRET=${GOOGLE_OAUTH2_CLIENT_SECRET}
       - GOOGLE_OAUTH2_REDIRECT_URL=http://localhost:8080/?oauth2=callback
       - GOOGLE_OAUTH2_COOKIE_DOMAIN=localhost
       - GOOGLE_OAUTH2_COOKIE_NAME=oauth2_token
