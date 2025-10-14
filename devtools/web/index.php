@@ -10,6 +10,8 @@ function adminer_object() {
 	include_once __DIR__ . '/adminer/include/adminer.inc.php';
 	include_once __DIR__ . '/adminer/include/plugin.inc.php';
 	require_once __DIR__ . '/plugins/drivers/bigquery.php';
+	require_once __DIR__ . '/plugins/drivers/bigquery/AdminerLoginBigQuery.php';
+	require_once __DIR__ . '/plugins/drivers/bigquery/adminer-bigquery-css.php';
 
 	$plugins = array(
 		new \Adminer\AdminerLoginBigQuery(array(
@@ -30,10 +32,9 @@ if ($is_oauth_callback) {
 	error_log('OAuth2 callback detected. Query parameter oauth2=callback');
 	error_log('GET parameters: ' . json_encode($_GET));
 
-	include_once __DIR__ . '/adminer/include/bootstrap.inc.php';
 	include_once __DIR__ . '/adminer/include/adminer.inc.php';
 	include_once __DIR__ . '/adminer/include/plugin.inc.php';
-	require_once __DIR__ . '/plugins/drivers/bigquery.php';
+	require_once __DIR__ . '/plugins/drivers/bigquery/Db.php';
 
 	// OAuth2処理のためのダミー接続を作成
 	$oauth2Handler = new \Adminer\Db();

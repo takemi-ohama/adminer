@@ -9,7 +9,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ~/.claude.json:/home/ubuntu/.claude.json
       - ~/.serena:/home/ubuntu/.serena
-      - ~/.docker:/home/ubuntu/.docker
+      #- ~/.docker:/home/ubuntu/.docker
       - ~/.aws:/home/ubuntu/.aws
       - ~/.gitconfig:/home/ubuntu/.gitconfig
       - ~/.git-credentials:/home/ubuntu/.git-credentials

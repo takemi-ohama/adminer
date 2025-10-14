@@ -33,6 +33,9 @@ docker compose up --build -d
 docker ps | grep adminer-bigquery-test
 ```
 
+* curlで接続する場合は `curl -I http://adminer-bigquery-test` でテスト。
+* Docker outside of Docker環境(DooD)であるため、localhost:8080では接続できないことに注意
+
 ### 3. Playwright MCPテスト実行
 - テスト対象: http://adminer-bigquery-test
 - BigQuery認証画面への接続

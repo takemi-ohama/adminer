@@ -7,19 +7,16 @@ use Google\Cloud\Core\Exception\ServiceException;
 use Exception;
 use InvalidArgumentException;
 
-require_once __DIR__ . '/bigquery/AdminerLoginBigQuery.php';
-require_once __DIR__ . '/bigquery/adminer-bigquery-css.php';
-
-
 if (function_exists('Adminer\\add_driver')) {
 	add_driver("bigquery", "Google BigQuery");
 }
 
 if (isset($_GET["bigquery"])) {
 	define('Adminer\DRIVER', "bigquery");
-	// 分離されたクラスファイルを読み込み
-	require_once __DIR__ . '/bigquery/Db.php';
 
+	require_once __DIR__ . '/bigquery/AdminerLoginBigQuery.php';
+	require_once __DIR__ . '/bigquery/adminer-bigquery-css.php';
+	require_once __DIR__ . '/bigquery/Db.php';
 	require_once __DIR__ . '/bigquery/bigquery-utils.php';
 	require_once __DIR__ . '/bigquery/result.php';
 	require_once __DIR__ . '/bigquery/driver.php';
@@ -31,8 +28,6 @@ if (isset($_GET["bigquery"])) {
 		return BigQueryUtils::escapeIdentifier($idf);
 	}
 
-	// Dbクラスは plugins/drivers/bigquery/Db.php に移動されました
-	require_once __DIR__ . '/bigquery/Db.php';
 	function support($feature) {
 		$supportedFeatures = array(
 			'database',
