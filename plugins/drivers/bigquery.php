@@ -24,7 +24,6 @@ if (isset($_GET["bigquery"])) {
 	require_once __DIR__ . '/bigquery/BigQueryConnectionPool.php';
 	require_once __DIR__ . '/bigquery/BigQueryConfig.php';
 
-
 	function idf_escape($idf) {
 		return BigQueryUtils::escapeIdentifier($idf);
 	}
