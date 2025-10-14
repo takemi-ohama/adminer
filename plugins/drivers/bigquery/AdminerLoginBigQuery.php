@@ -20,7 +20,38 @@ class AdminerLoginBigQuery extends Plugin {
 	private function isOAuth2Enabled() {
 		$oauth2Enable = getenv('GOOGLE_OAUTH2_ENABLE');
 		// Add input validation and sanitization
-		return $oauth2Enable === 'true';
+		return $oauth2Enable === 'true' && $this->validateOAuth2Configuration();
+	}
+
+	/**
+	 * Validate OAuth2 configuration for security
+	 */
+	private function validateOAuth2Configuration() {
+		$clientId = getenv('GOOGLE_OAUTH2_CLIENT_ID');
+		$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
+
+		// Validate client ID format
+		if (!$clientId || !preg_match('/^[a-zA-Z0-9\-_.]+$/', $clientId)) {
+			error_log('OAuth2: Invalid client ID format');
+			return false;
+		}
+
+		// Validate redirect URL
+		if (!$redirectUrl || !filter_var($redirectUrl, FILTER_VALIDATE_URL)) {
+			error_log('OAuth2: Invalid redirect URL');
+			return false;
+		}
+
+		// Ensure HTTPS for production
+		if (
+			parse_url($redirectUrl, PHP_URL_SCHEME) !== 'https' &&
+			!in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'])
+		) {
+			error_log('OAuth2: Redirect URL must use HTTPS in production');
+			return false;
+		}
+
+		return true;
 	}
 
 
@@ -28,9 +59,21 @@ class AdminerLoginBigQuery extends Plugin {
 	 * OAuth2設定を取得
 	 */
 	private function getOAuth2Config() {
+		// Dynamic redirect URL generation for production environments
+		$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
+		
+		// If no explicit redirect URL is set, generate from current request
+		if (!$redirectUrl || $redirectUrl === 'http://localhost:8080/?oauth2=callback') {
+			$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+			$host = $_SERVER['HTTP_HOST'] ?? 'localhost:8080';
+			$redirectUrl = $protocol . $host . '/?oauth2=callback';
+			
+			error_log("OAuth2: Auto-generated redirect URL: " . $redirectUrl);
+		}
+		
 		return [
 			'client_id' => getenv('GOOGLE_OAUTH2_CLIENT_ID'),
-			'redirect_url' => getenv('GOOGLE_OAUTH2_REDIRECT_URL')
+			'redirect_url' => $redirectUrl
 		];
 	}
 

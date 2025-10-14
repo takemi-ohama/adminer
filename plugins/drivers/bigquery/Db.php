@@ -226,9 +226,20 @@ class Db {
 	 */
 	private function validateStateParameter($state) {
 		try {
+			// Validate input format before decoding
+			if (!is_string($state) || strlen($state) > 512 || !preg_match('/^([A-Za-z0-9%_\-\.=]+)$/', $state)) {
+				return false;
+			}
+
 			// Handle double URL encoding that may occur in OAuth flow
-			$decodedState = urldecode($state);
-			$decodedState = base64_decode($decodedState, true);
+			$urlDecoded = urldecode($state);
+			$decodedState = base64_decode($urlDecoded, true);
+			
+			// Fallback to direct base64 decode if URL decode fails
+			if ($decodedState === false) {
+				$decodedState = base64_decode($state, true);
+			}
+			
 			if ($decodedState === false) {
 				return false;
 			}
@@ -263,9 +274,21 @@ class Db {
 	 * OAuth2認証用の環境変数を取得
 	 */
 	private function getOAuth2Config() {
+		// Dynamic redirect URL generation for production environments
+		$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
+		
+		// If no explicit redirect URL is set, generate from current request
+		if (!$redirectUrl || $redirectUrl === 'http://localhost:8080/?oauth2=callback') {
+			$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
+			$host = $_SERVER['HTTP_HOST'] ?? 'localhost:8080';
+			$redirectUrl = $protocol . $host . '/?oauth2=callback';
+			
+			error_log("OAuth2: Auto-generated redirect URL: " . $redirectUrl);
+		}
+		
 		return [
 			'client_id' => getenv('GOOGLE_OAUTH2_CLIENT_ID'),
-			'redirect_url' => getenv('GOOGLE_OAUTH2_REDIRECT_URL'),
+			'redirect_url' => $redirectUrl,
 			'cookie_domain' => getenv('GOOGLE_OAUTH2_COOKIE_DOMAIN'),
 			'cookie_name' => getenv('GOOGLE_OAUTH2_COOKIE_NAME'),
 			'cookie_expire' => getenv('GOOGLE_OAUTH2_COOKIE_EXPIRE'),
@@ -524,11 +547,17 @@ class Db {
 	 */
 	private function exchangeCodeForToken($code, $clientId, $redirectUrl) {
 		$tokenUrl = 'https://oauth2.googleapis.com/token';
+		$clientSecret = getenv('GOOGLE_OAUTH2_CLIENT_SECRET');
+
+		// Debug logging for troubleshooting
+		error_log("OAuth2 Token Exchange - Client ID: " . substr($clientId, 0, 10) . "...");
+		error_log("OAuth2 Token Exchange - Redirect URL: " . $redirectUrl);
+		error_log("OAuth2 Token Exchange - Client Secret set: " . ($clientSecret ? 'Yes' : 'No'));
 
 		$postData = [
 			'code' => $code,
 			'client_id' => $clientId,
-			'client_secret' => getenv('GOOGLE_OAUTH2_CLIENT_SECRET'), // 必要に応じて追加
+			'client_secret' => $clientSecret,
 			'redirect_uri' => $redirectUrl,
 			'grant_type' => 'authorization_code'
 		];
@@ -537,17 +566,48 @@ class Db {
 			'http' => [
 				'method' => 'POST',
 				'header' => 'Content-Type: application/x-www-form-urlencoded',
-				'content' => http_build_query($postData)
+				'content' => http_build_query($postData),
+				'ignore_errors' => true // Important: capture error responses
 			]
 		]);
 
 		$response = file_get_contents($tokenUrl, false, $context);
-
-		if ($response === false) {
-			throw new Exception('Failed to exchange code for token');
+		
+		// Get HTTP response headers to check status code
+		$httpStatus = null;
+		if (isset($http_response_header)) {
+			foreach ($http_response_header as $header) {
+				if (preg_match('/HTTP\/\d\.\d\s+(\d+)/', $header, $matches)) {
+					$httpStatus = (int)$matches[1];
+					break;
+				}
+			}
 		}
 
-		return json_decode($response, true);
+		if ($response === false) {
+			throw new Exception('Failed to exchange code for token - No response');
+		}
+
+		$responseData = json_decode($response, true);
+
+		// Enhanced error handling
+		if ($httpStatus >= 400 || isset($responseData['error'])) {
+			$errorMsg = 'OAuth2 Token Exchange Failed';
+			if (isset($responseData['error'])) {
+				$errorMsg .= ' - Error: ' . $responseData['error'];
+				if (isset($responseData['error_description'])) {
+					$errorMsg .= ', Description: ' . $responseData['error_description'];
+				}
+			}
+			$errorMsg .= ' (HTTP Status: ' . ($httpStatus ?? 'Unknown') . ')';
+			
+			error_log($errorMsg);
+			error_log('OAuth2 Response: ' . $response);
+			
+			throw new Exception($errorMsg);
+		}
+
+		return $responseData;
 	}
 
 	/**
