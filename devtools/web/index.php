@@ -32,7 +32,7 @@ if ($is_oauth_callback) {
 
 	include_once __DIR__ . '/adminer/include/adminer.inc.php';
 	include_once __DIR__ . '/adminer/include/plugin.inc.php';
-	require_once __DIR__ . '/plugins/drivers/bigquery.php';
+	require_once __DIR__ . '/plugins/drivers/bigquery/DB.php';
 
 	// OAuth2処理のためのダミー接続を作成
 	$oauth2Handler = new \Adminer\Db();
