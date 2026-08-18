@@ -85,6 +85,29 @@ class AdminerLoginBigQuery extends Plugin {
 		$_POST["auth"]["driver"] = 'bigquery';
 	}
 
+	/**
+	 * Content Security Policy に Google の認証エンドポイントを追加する
+	 *
+	 * ログインフォームの送信はサーバ側で Google の認証URLへリダイレクトされる。
+	 * ブラウザは form-action をリダイレクト先にも適用するため、'self' のままだと
+	 * 「violates the following Content Security Policy directive: form-action 'self'」
+	 * で送信自体がブロックされ、ログインできない。
+	 *
+	 * @param array $csp
+	 * @return array
+	 */
+	function csp(array $csp) {
+		if (!$this->isOAuth2Enabled()) {
+			return $csp;
+		}
+		foreach ($csp as $key => $policy) {
+			if (isset($policy['form-action'])) {
+				$csp[$key]['form-action'] .= ' https://accounts.google.com';
+			}
+		}
+		return $csp;
+	}
+
 	function credentials() {
 		$server = $this->getProjectId();
 

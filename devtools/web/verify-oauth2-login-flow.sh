@@ -84,6 +84,21 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+# T9: CSP の form-action が Google の認証エンドポイントを許可している
+#     ブラウザは form-action をフォーム送信のリダイレクト先にも適用するため、
+#     'self' のままだと Google への遷移がブロックされログインできない
+# ---------------------------------------------------------------------------
+CSP_HEADER=$($CURL -D - -o /dev/null "$BASE_URL/" | tr -d '\r' | grep -i '^content-security-policy:')
+FORM_ACTION=$(printf '%s' "$CSP_HEADER" | sed -n 's/.*form-action \([^;]*\).*/\1/p')
+
+if [[ "$FORM_ACTION" == *"accounts.google.com"* ]]; then
+    pass "T9 CSP の form-action が Google を許可している ($FORM_ACTION)"
+else
+    fail "T9 CSP の form-action が Google を許可している" \
+        "form-action=${FORM_ACTION:-なし} — ブラウザがフォーム送信のリダイレクト先(Google)をブロックする"
+fi
+
+# ---------------------------------------------------------------------------
 # T2: ログインフォーム送信で Adminer のセッションが確立し、サーバ付き URL へ遷移する
 # ---------------------------------------------------------------------------
 LOGIN_LOCATION=$($CURL -b "$WORK_DIR/cookie.txt" -c "$WORK_DIR/cookie.txt" -D - -o /dev/null \
