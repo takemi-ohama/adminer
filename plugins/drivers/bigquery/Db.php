@@ -414,9 +414,11 @@ class Db {
 			// 取得済みアクセストークンを供給してBigQueryクライアントを初期化する。
 			// \Google\Client は google/apiclient のクラスで依存関係に含まれないため使用しない。
 			// データセット一覧などの処理は $bigQueryClient を参照するため、そちらに格納する。
-			$this->bigQueryClient = new BigQueryClient($config + array(
-				'credentialsFetcher' => new OAuth2AccessTokenFetcher($accessToken)
-			));
+			$this->withoutMissingAdcFile(function () use ($config, $accessToken) {
+				$this->bigQueryClient = new BigQueryClient($config + array(
+					'credentialsFetcher' => new OAuth2AccessTokenFetcher($accessToken)
+				));
+			});
 			$this->bigquery = $this->bigQueryClient;
 
 			$this->location = $location;
@@ -433,6 +435,36 @@ class Db {
 			}
 
 			throw new Exception('OAuth2 BigQuery client initialization failed: ' . $e->getMessage());
+		}
+	}
+
+	/**
+	 * ADCファイルが存在しない場合だけ GOOGLE_APPLICATION_CREDENTIALS を外して処理を実行する
+	 *
+	 * google/cloud-core は credentialsFetcher を渡していても BigQueryClient の生成時に
+	 * GOOGLE_APPLICATION_CREDENTIALS を読みに行き、ファイルが無いと
+	 * "Unable to read the credential file specified by GOOGLE_APPLICATION_CREDENTIALS"
+	 * で例外になる。OAuth2認証ではADCを使わないため、この場合のみ一時的に外す。
+	 * 存在する場合は他の処理（サービスアカウント認証へのフォールバック）のため維持する。
+	 *
+	 * @param callable $callback
+	 */
+	private function withoutMissingAdcFile($callback) {
+		$credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS') ?: ($_ENV['GOOGLE_APPLICATION_CREDENTIALS'] ?? '');
+		$unset = ($credentialsPath && !file_exists($credentialsPath));
+		if ($unset) {
+			error_log('OAuth2: GOOGLE_APPLICATION_CREDENTIALS points to a missing file, ignoring it: ' . $credentialsPath);
+			// google/auth の CredentialsLoader は getenv() が空でも $_ENV を参照するため両方外す
+			putenv('GOOGLE_APPLICATION_CREDENTIALS');
+			unset($_ENV['GOOGLE_APPLICATION_CREDENTIALS']);
+		}
+		try {
+			$callback();
+		} finally {
+			if ($unset) {
+				putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
+				$_ENV['GOOGLE_APPLICATION_CREDENTIALS'] = $credentialsPath;
+			}
 		}
 	}
 
