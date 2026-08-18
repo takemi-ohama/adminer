@@ -22,7 +22,9 @@
 		<exclude name="PSR12.Properties.ConstantVisibility.NotFound"/><!-- PHP 7.1 is not required. -->
 
 		<!-- More readable. -->
-		<exclude name="PSR12.Files.FileHeader.SpacingAfterBlock"/>
+		<exclude name="PSR12.Files.FileHeader.SpacingAfterBlock"/><!-- PHP_CodeSniffer 3 -->
+		<exclude name="PSR12.Files.FileHeader.SpacingAfterTagBlock"/><!-- PHP_CodeSniffer 4 で分割された同等ルール -->
+		<exclude name="PSR12.Files.FileHeader.SpacingAfterDocblockBlock"/>
 		<exclude name="PSR12.Classes.OpeningBraceSpace.Found"/>
 		<exclude name="PSR12.Operators.OperatorSpacing.NoSpaceBefore"/>
 		<exclude name="PSR12.Operators.OperatorSpacing.NoSpaceAfter"/>
@@ -51,8 +53,8 @@
 		<exclude-pattern>adminer/drivers/</exclude-pattern>
 		<exclude-pattern>adminer/include/db.inc.php</exclude-pattern>
 		<exclude-pattern>adminer/include/pdo.inc.php</exclude-pattern>
-		<exclude-pattern>adminer/plugins/foreign-system.php</exclude-pattern>
-		<exclude-pattern>adminer/plugins/drivers/</exclude-pattern>
+		<exclude-pattern>/plugins/foreign-system.php</exclude-pattern>
+		<exclude-pattern>/plugins/drivers/</exclude-pattern><!-- ドライバは Adminer のスネークケース API に準拠 -->
 	</rule>
 
 	<rule ref="Generic.Files.LineLength">
@@ -79,13 +81,19 @@
 	<rule ref="Generic.CodeAnalysis.UnnecessaryFinalModifier"/>
 	<rule ref="Generic.CodeAnalysis.UselessOverridingMethod"/>
 	<rule ref="Generic.Files.EndFileNewline"/>
-	<rule ref="Generic.Files.LowercasedFilename"/>
+	<rule ref="Generic.Files.LowercasedFilename">
+		<!-- BigQuery ドライバはクラス単位でファイルを分割しており、ファイル名をクラス名に合わせている -->
+		<exclude-pattern>/plugins/drivers/bigquery/</exclude-pattern>
+	</rule>
 	<rule ref="Generic.Formatting.SpaceAfterCast"/>
 	<rule ref="Generic.Functions.OpeningFunctionBraceKernighanRitchie"/>
 	<rule ref="Generic.NamingConventions.ConstructorName"/>
 	<rule ref="Generic.PHP.BacktickOperator"/>
 	<rule ref="Generic.PHP.DisallowRequestSuperglobal"/>
-	<rule ref="Generic.PHP.ForbiddenFunctions"/>
+	<rule ref="Generic.PHP.ForbiddenFunctions">
+		<!-- Adminer のドライバ API である delete() の呼び出しであり、PHP の delete 構文ではない -->
+		<exclude-pattern>/plugins/drivers/bigquery/driver\.php</exclude-pattern>
+	</rule>
 	<rule ref="Generic.Strings.UnnecessaryHeredoc"/>
 	<rule ref="Generic.VersionControl.GitMergeConflict"/>
 	<rule ref="Generic.WhiteSpace.DisallowSpaceIndent"/>
@@ -97,7 +105,11 @@
 	<rule ref="Squiz.Functions.FunctionDuplicateArgument"/>
 	<rule ref="Squiz.Operators.IncrementDecrementUsage"/>
 	<rule ref="Squiz.Operators.ValidLogicalOperators"/>
-	<rule ref="Squiz.PHP.DiscouragedFunctions"/>
+	<rule ref="Squiz.PHP.DiscouragedFunctions">
+		<!-- Adminer プラグインにはロガー基盤がなく、診断ログの出力手段は error_log() のみ -->
+		<exclude-pattern>/plugins/drivers/bigquery/</exclude-pattern>
+		<exclude-pattern>/plugins/drivers/bigquery\.php</exclude-pattern>
+	</rule>
 	<rule ref="Squiz.PHP.Eval"/>
 	<rule ref="Squiz.PHP.Heredoc"/>
 	<rule ref="Squiz.PHP.InnerFunctions"/>

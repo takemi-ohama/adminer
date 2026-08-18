@@ -18,7 +18,6 @@ class BigQueryUtils {
 	}
 
 	public static function escapeIdentifier($identifier) {
-
 		if (preg_match('/^`[^`]*`$/', $identifier)) {
 			return $identifier;
 		}
@@ -28,10 +27,10 @@ class BigQueryUtils {
 	}
 
 	public static function logQuerySafely($query, $context = "QUERY") {
-		$sanitizers = [
+		$sanitizers = array(
 			'/([\'"])[^\'"]*\\1/' => '$1***REDACTED***$1',
 			'/\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Z|a-z]{2,}\\b/' => '***EMAIL_REDACTED***'
-		];
+		);
 		$safeQuery = preg_replace(array_keys($sanitizers), array_values($sanitizers), $query);
 		if (strlen($safeQuery) > 200) {
 			$safeQuery = substr($safeQuery, 0, 200) . '... [TRUNCATED]';
@@ -40,7 +39,6 @@ class BigQueryUtils {
 	}
 
 	public static function convertValueForBigQuery($value, $fieldType) {
-
 		if ($value === null) {
 			return 'NULL';
 		}
@@ -57,7 +55,6 @@ class BigQueryUtils {
 		} elseif (strpos($fieldType, 'time') !== false) {
 			return "TIME('" . str_replace("'", "''", $cleanValue) . "')";
 		} elseif (strpos($fieldType, 'int') !== false || strpos($fieldType, 'float') !== false || strpos($fieldType, 'numeric') !== false || strpos($fieldType, 'decimal') !== false) {
-
 			if (is_numeric($cleanValue)) {
 				return $cleanValue;
 			} else {
@@ -72,11 +69,11 @@ class BigQueryUtils {
 
 	public static function formatComplexValue($value, $field) {
 		$fieldType = strtolower($field['type'] ?? 'text');
-		$typePatterns = [
-			'json' => ['json', 'struct', 'record', 'array'],
-			'geography' => ['geography'],
-			'binary' => ['bytes', 'blob'],
-		];
+		$typePatterns = array(
+			'json' => array('json', 'struct', 'record', 'array'),
+			'geography' => array('geography'),
+			'binary' => array('bytes', 'blob'),
+		);
 		foreach ($typePatterns as $handlerType => $patterns) {
 			if (self::matchesTypePattern($fieldType, $patterns)) {
 				return self::handleTypeConversion($value, $handlerType);
@@ -108,12 +105,11 @@ class BigQueryUtils {
 	}
 
 	public static function generateFieldConversion($field) {
-
 		$fieldName = self::escapeIdentifier($field['field']);
 		$fieldType = strtolower($field['type'] ?? '');
 
 		// BigQuery固有データ型の変換マッピング
-		$conversions = [
+		$conversions = array(
 			// 地理空間データの変換
 			'geography' => "ST_AsText($fieldName)",
 			'geom' => "ST_AsText($fieldName)",
@@ -141,7 +137,7 @@ class BigQueryUtils {
 			// 論理データの明示化
 			'boolean' => "IF($fieldName, 'true', 'false')",
 			'bool' => "IF($fieldName, 'true', 'false')"
-		];
+		);
 
 		// パターンマッチングで最適な変換を選択
 		foreach ($conversions as $typePattern => $conversion) {
@@ -228,7 +224,7 @@ class BigQueryUtils {
 			throw new InvalidArgumentException('WHERE condition exceeds maximum length');
 		}
 
-		$suspiciousPatterns = [
+		$suspiciousPatterns = array(
 			'/;\s*(DROP|ALTER|CREATE|DELETE|INSERT|UPDATE|TRUNCATE)\s+/i',
 			'/UNION\s+(ALL\s+)?SELECT/i',
 			'/\/\*.*?\*\//s',
@@ -236,7 +232,7 @@ class BigQueryUtils {
 			'/\bEXEC\b/i',
 			'/\bEXECUTE\b/i',
 			'/\bSP_/i'
-		];
+		);
 
 		foreach ($suspiciousPatterns as $pattern) {
 			if (preg_match($pattern, $condition)) {

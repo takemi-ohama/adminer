@@ -107,7 +107,6 @@ class Driver {
 	}
 
 	function warnings() {
-
 		return array();
 	}
 
@@ -149,27 +148,22 @@ class Driver {
 	}
 
 	function enumLength($field) {
-
 		return array();
 	}
 
 	function unconvertFunction($field) {
-
 		return null;
 	}
 
 	function insert($table, $set) {
-
 		return insert($table, $set);
 	}
 
 	function update($table, $set, $queryWhere = '', $limit = 0) {
-
 		return update($table, $set, $queryWhere, $limit);
 	}
 
 	function delete($table, $queryWhere = '', $limit = 0) {
-
 		return delete($table, $queryWhere, $limit);
 	}
 
@@ -190,7 +184,6 @@ class Driver {
 	}
 
 	function convertSearch(string $idf, array $val, array $field): string {
-
 		return $idf;
 	}
 
@@ -349,7 +342,6 @@ class Driver {
 		}
 
 		try {
-
 			$explainQuery = "EXPLAIN " . $query;
 			BigQueryUtils::logQuerySafely($explainQuery, "EXPLAIN");
 			$result = $connection->query($explainQuery);

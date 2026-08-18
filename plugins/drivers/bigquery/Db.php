@@ -212,7 +212,7 @@ class Db {
 		// Ensure HTTPS for production
 		if (
 			parse_url($redirectUrl, PHP_URL_SCHEME) !== 'https' &&
-			!in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'])
+			!in_array($_SERVER['HTTP_HOST'] ?? '', array('localhost', '127.0.0.1'))
 		) {
 			error_log('OAuth2: Redirect URL must use HTTPS in production');
 			return false;
@@ -234,12 +234,12 @@ class Db {
 			// Handle double URL encoding that may occur in OAuth flow
 			$urlDecoded = urldecode($state);
 			$decodedState = base64_decode($urlDecoded, true);
-			
+
 			// Fallback to direct base64 decode if URL decode fails
 			if ($decodedState === false) {
 				$decodedState = base64_decode($state, true);
 			}
-			
+
 			if ($decodedState === false) {
 				return false;
 			}
@@ -276,24 +276,24 @@ class Db {
 	private function getOAuth2Config() {
 		// Dynamic redirect URL generation for production environments
 		$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
-		
+
 		// If no explicit redirect URL is set, generate from current request
 		if (!$redirectUrl || $redirectUrl === 'http://localhost:8080/?oauth2=callback') {
 			$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
 			$host = $_SERVER['HTTP_HOST'] ?? 'localhost:8080';
 			$redirectUrl = $protocol . $host . '/?oauth2=callback';
-			
+
 			error_log("OAuth2: Auto-generated redirect URL: " . $redirectUrl);
 		}
-		
-		return [
+
+		return array(
 			'client_id' => getenv('GOOGLE_OAUTH2_CLIENT_ID'),
 			'redirect_url' => $redirectUrl,
 			'cookie_domain' => getenv('GOOGLE_OAUTH2_COOKIE_DOMAIN'),
 			'cookie_name' => getenv('GOOGLE_OAUTH2_COOKIE_NAME'),
 			'cookie_expire' => getenv('GOOGLE_OAUTH2_COOKIE_EXPIRE'),
 			'cookie_secret' => getenv('GOOGLE_OAUTH2_COOKIE_SECRET')
-		];
+		);
 	}
 
 	/**
@@ -405,18 +405,18 @@ class Db {
 			$client->setAccessToken($accessToken);
 
 			// BigQueryクライアントを作成
-			$config = [
+			$config = array(
 				'projectId' => $this->projectId,
 				'location' => $location
-			];
+			);
 
 			// OAuth2クライアントを使用してBigQueryクライアントを初期化
-			$this->bigquery = new BigQueryClient($config + [
+			$this->bigquery = new BigQueryClient($config + array(
 				'authHttpHandler' => function ($request, $options) use ($client) {
 					// OAuth2アクセストークンをHTTPヘッダーに追加
 					return $client->authorize()->send($request, $options);
 				}
-			]);
+			));
 
 			$this->location = $location;
 
@@ -447,11 +447,11 @@ class Db {
 				throw new Exception('Service account credentials not found');
 			}
 
-			$config = [
+			$config = array(
 				'projectId' => $this->projectId,
 				'keyFilePath' => $credentialsPath,
 				'location' => $location
-			];
+			);
 
 			$this->bigquery = new BigQueryClient($config);
 			$this->location = $location;
@@ -478,18 +478,18 @@ class Db {
 
 		// 現在のURLを保存してコールバック後にリダイレクト
 		$currentUrl = $_SERVER['REQUEST_URI'] ?? '/';
-		$state = base64_encode(json_encode(['redirect_to' => $currentUrl]));
+		$state = base64_encode(json_encode(array('redirect_to' => $currentUrl)));
 
 		// Google OAuth2認証URL
 		$authUrl = 'https://accounts.google.com/o/oauth2/v2/auth';
-		$params = [
+		$params = array(
 			'client_id' => $clientId,
 			'redirect_uri' => $redirectUrl,
 			'scope' => 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform',
 			'response_type' => 'code',
 			'access_type' => 'offline',
 			'state' => $state
-		];
+		);
 
 		$authUrlWithParams = $authUrl . '?' . http_build_query($params);
 
@@ -554,31 +554,31 @@ class Db {
 		error_log("OAuth2 Token Exchange - Redirect URL: " . $redirectUrl);
 		error_log("OAuth2 Token Exchange - Client Secret set: " . ($clientSecret ? 'Yes' : 'No'));
 
-		$postData = [
+		$postData = array(
 			'code' => $code,
 			'client_id' => $clientId,
 			'client_secret' => $clientSecret,
 			'redirect_uri' => $redirectUrl,
 			'grant_type' => 'authorization_code'
-		];
+		);
 
-		$context = stream_context_create([
-			'http' => [
+		$context = stream_context_create(array(
+			'http' => array(
 				'method' => 'POST',
 				'header' => 'Content-Type: application/x-www-form-urlencoded',
 				'content' => http_build_query($postData),
 				'ignore_errors' => true // Important: capture error responses
-			]
-		]);
+			)
+		));
 
 		$response = file_get_contents($tokenUrl, false, $context);
-		
+
 		// Get HTTP response headers to check status code
 		$httpStatus = null;
 		if (isset($http_response_header)) {
 			foreach ($http_response_header as $header) {
 				if (preg_match('/HTTP\/\d\.\d\s+(\d+)/', $header, $matches)) {
-					$httpStatus = (int)$matches[1];
+					$httpStatus = (int) $matches[1];
 					break;
 				}
 			}
@@ -600,10 +600,10 @@ class Db {
 				}
 			}
 			$errorMsg .= ' (HTTP Status: ' . ($httpStatus ?? 'Unknown') . ')';
-			
+
 			error_log($errorMsg);
 			error_log('OAuth2 Response: ' . $response);
-			
+
 			throw new Exception($errorMsg);
 		}
 
@@ -682,7 +682,7 @@ class Db {
 	}
 	private function performLightweightLocationDetection($projectId, $defaultLocation) {
 		try {
-			$datasets = $this->bigQueryClient->datasets(['maxResults' => 1]);
+			$datasets = $this->bigQueryClient->datasets(array('maxResults' => 1));
 			foreach ($datasets as $dataset) {
 				try {
 					$datasetInfo = $dataset->info();
@@ -698,18 +698,19 @@ class Db {
 				}
 			}
 		} catch (Exception $e) {
+			// ロケーション検出は最適化目的のため、失敗しても既定値で処理を継続する
+			error_log("BigQuery: Location detection skipped: " . $e->getMessage());
 		}
 	}
 
 	private static function performBackgroundLocationDetection($projectId, $defaultLocation, $clientKey) {
 		try {
-
 			$client = BigQueryConnectionPool::getConnectionFromPool($clientKey);
 			if (!$client) {
 				return;
 			}
 
-			$datasets = $client->datasets(['maxResults' => 1]);
+			$datasets = $client->datasets(array('maxResults' => 1));
 			foreach ($datasets as $dataset) {
 				try {
 					$datasetInfo = $dataset->info();
@@ -723,6 +724,8 @@ class Db {
 				}
 			}
 		} catch (Exception $e) {
+			// バックグラウンド検出のため、失敗しても呼び出し元の処理には影響させない
+			error_log("BigQuery: Background location detection skipped: " . $e->getMessage());
 		}
 	}
 
@@ -736,7 +739,6 @@ class Db {
 	}
 	function query($query) {
 		try {
-
 			if (preg_match('/^\s*(ANALYZE|OPTIMIZE|CHECK|REPAIR)\s+TABLE\s+/i', $query, $matches)) {
 				$operation = strtolower($matches[1]);
 				switch ($operation) {
@@ -757,7 +759,6 @@ class Db {
 			}
 
 			if (empty($this->datasetId) && isset($_GET['db']) && !empty($_GET['db'])) {
-
 				if (preg_match('/^[A-Za-z0-9_]{1,1024}$/', $_GET['db'])) {
 					$this->datasetId = $_GET['db'];
 				} else {
@@ -773,9 +774,7 @@ class Db {
 
 			$queryLocation = $this->determineQueryLocation();
 
-			$queryJob = $this->bigQueryClient->query($query)
-				->useLegacySql(false)
-				->location($queryLocation);
+			$queryJob = $this->bigQueryClient->query($query)->useLegacySql(false)->location($queryLocation);
 			$job = $this->bigQueryClient->runQuery($queryJob);
 			if (!$job->isComplete()) {
 				$job->waitUntilComplete();
@@ -836,7 +835,9 @@ class Db {
 					$this->config['location'] = $datasetLocation;
 					return $datasetLocation;
 				}
-			} catch (Exception) {
+			} catch (Exception $e) {
+				// データセット情報を取得できない場合は設定値または既定リージョンを使う
+				error_log("BigQuery: Dataset location lookup failed: " . $e->getMessage());
 			}
 		}
 		return $this->config['location'] ?? 'US';
@@ -875,7 +876,6 @@ class Db {
 		return BigQueryUtils::escapeIdentifier($idf);
 	}
 	function error() {
-
 		if (!empty($this->error)) {
 			return $this->error;
 		}
@@ -884,17 +884,14 @@ class Db {
 	}
 
 	function multi_query($query) {
-
 		return $this->query($query);
 	}
 
 	function store_result() {
-
 		return $this->last_result;
 	}
 
 	function next_result() {
-
 		return false;
 	}
 }
