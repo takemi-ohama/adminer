@@ -17,9 +17,12 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 WORKDIR /app
 
 # Adminer本体をclone（軽量化のため shallow clone）
-# 当リポジトリは上流のプラグインとして動くため、バージョンは固定せず常に最新に追従する。
-# 上流の構成変更でビルドが壊れた場合はその都度追従する。
-RUN git clone --depth 1 https://github.com/vrana/adminer.git /tmp/adminer-src
+# 当リポジトリは上流のプラグインとして動くため、既定では固定せず上流の既定ブランチの
+# 最新に追従する。上流の構成変更でビルドが壊れた場合はその都度追従する。
+# 再現性が必要なビルド（過去コミットの再デプロイ、上流破損時の暫定回避）では
+# --build-arg ADMINER_REF=<タグ/ブランチ> でリビジョンを固定できる。
+ARG ADMINER_REF=
+RUN git clone --depth 1 ${ADMINER_REF:+--branch "$ADMINER_REF"} https://github.com/vrana/adminer.git /tmp/adminer-src
 
 # Adminer本体のsubmoduleをinstall
 RUN cd /tmp/adminer-src && git submodule update --init --recursive
@@ -27,8 +30,13 @@ RUN cd /tmp/adminer-src && git submodule update --init --recursive
 # Adminer本体をすべてコピー（全てのincludeファイルとディレクトリ）
 # 上流6.0.1でexternals/は廃止され、jushはadminer/static/jushへ移動したため
 # adminer/のコピーだけで足りる。JsShrink/PhpShrinkはcompile.php専用で実行時には不要。
+# 上流の構成が再び変わった場合にビルド時点で失敗させるため、必須ファイルの存在を検証する。
 RUN mkdir -p /app/adminer && \
-    cp -r /tmp/adminer-src/adminer/* /app/adminer/
+    cp -r /tmp/adminer-src/adminer/* /app/adminer/ && \
+    if [ ! -f /app/adminer/index.php ] || [ ! -d /app/adminer/static/jush ]; then \
+        echo "Error: expected Adminer core files not found (upstream layout changed?)" >&2; \
+        exit 1; \
+    fi
 
 # プロジェクト固有ファイルをコピー
 COPY plugins/ /app/plugins/
