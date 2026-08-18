@@ -27,6 +27,9 @@ class Db {
 
 	public $affected_rows = 0;
 
+	/** @var int 直近のエラー番号（SQLコマンド画面が参照する） */
+	public $errno = 0;
+
 	public $info = '';
 
 	public $last_result = null;
@@ -398,11 +401,9 @@ class Db {
 				return $this->createBigQueryClientWithServiceAccount($location);
 			}
 
-			// Google Client を使用してOAuth2認証を設定
-			require_once __DIR__ . '/../../vendor/autoload.php';
-
-			$client = new \Google\Client();
-			$client->setAccessToken($accessToken);
+			// OAuth2認証を設定
+			require_once __DIR__ . '/../../../vendor/autoload.php';
+			require_once __DIR__ . '/OAuth2AccessTokenFetcher.php';
 
 			// BigQueryクライアントを作成
 			$config = array(
@@ -410,13 +411,13 @@ class Db {
 				'location' => $location
 			);
 
-			// OAuth2クライアントを使用してBigQueryクライアントを初期化
-			$this->bigquery = new BigQueryClient($config + array(
-				'authHttpHandler' => function ($request, $options) use ($client) {
-					// OAuth2アクセストークンをHTTPヘッダーに追加
-					return $client->authorize()->send($request, $options);
-				}
+			// 取得済みアクセストークンを供給してBigQueryクライアントを初期化する。
+			// \Google\Client は google/apiclient のクラスで依存関係に含まれないため使用しない。
+			// データセット一覧などの処理は $bigQueryClient を参照するため、そちらに格納する。
+			$this->bigQueryClient = new BigQueryClient($config + array(
+				'credentialsFetcher' => new OAuth2AccessTokenFetcher($accessToken)
 			));
+			$this->bigquery = $this->bigQueryClient;
 
 			$this->location = $location;
 
@@ -440,7 +441,7 @@ class Db {
 	 */
 	private function createBigQueryClientWithServiceAccount($location) {
 		try {
-			require_once __DIR__ . '/../../vendor/autoload.php';
+			require_once __DIR__ . '/../../../vendor/autoload.php';
 
 			$credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
 			if (!$credentialsPath || !file_exists($credentialsPath)) {
@@ -453,7 +454,9 @@ class Db {
 				'location' => $location
 			);
 
-			$this->bigquery = new BigQueryClient($config);
+			// データセット一覧などの処理は $bigQueryClient を参照するため、そちらに格納する
+			$this->bigQueryClient = new BigQueryClient($config);
+			$this->bigquery = $this->bigQueryClient;
 			$this->location = $location;
 
 			error_log('OAuth2: Successfully created BigQuery client with service account fallback');
@@ -892,6 +895,16 @@ class Db {
 	}
 
 	function next_result() {
+		return false;
+	}
+
+	/**
+	 * トランザクション中かどうか
+	 *
+	 * BigQueryはトランザクションを扱わないため常にfalse。
+	 * SQLコマンド画面がROLLBACKの要否判定で無条件に参照する。
+	 */
+	function inTransaction() {
 		return false;
 	}
 }

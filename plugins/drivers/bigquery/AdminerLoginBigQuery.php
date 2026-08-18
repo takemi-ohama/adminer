@@ -168,10 +168,14 @@ class AdminerLoginBigQuery extends Plugin {
 
 	/**
 	 * OAuth2認証用のProject IDフィールドを描画
+	 *
+	 * OAuth2モードではログインフォーム全体を非表示にするため、可視の入力欄ではなく
+	 * hidden フィールドとして出力する。display:none の required 入力があると
+	 * ブラウザのフォーム検証でサインインボタンからの送信がブロックされる。
 	 */
 	private function renderOAuth2ProjectIdField() {
 		$default_value = htmlspecialchars($this->getProjectId());
-		return '<tr><th>Project ID</th><td><input name="auth[server]" value="' . $default_value . '" title="GCP Project ID" placeholder="your-project-id" autocapitalize="off" required></td></tr>' . "\n";
+		return '<input type="hidden" name="auth[server]" value="' . $default_value . '">' . "\n";
 	}
 
 	/**
@@ -186,20 +190,11 @@ class AdminerLoginBigQuery extends Plugin {
 			return '<div class="oauth2-error">OAuth2 configuration incomplete. Please set GOOGLE_OAUTH2_CLIENT_ID and GOOGLE_OAUTH2_REDIRECT_URL.</div>';
 		}
 
-		// Google OAuth2 認証URL を構築
-		$scope = urlencode('https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform');
-		$state = urlencode(base64_encode(json_encode(array('redirect_to' => $_SERVER['REQUEST_URI']))));
-
-		$authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query(array(
-			'client_id' => $clientId,
-			'redirect_uri' => $redirectUrl,
-			'scope' => 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform',
-			'response_type' => 'code',
-			'state' => $state,
-			'access_type' => 'offline',
-			'prompt' => 'consent'
-		));
-
+		// ここから直接 Google へリンクしてはいけない。
+		// Adminer のログイン（$_POST["auth"]）を経ずに認証すると、コールバックの戻り先が
+		// ログイン画面のままとなり、認証に成功してもログイン画面へ戻され続ける。
+		// ボタンはログインフォームを送信し、Google への遷移は Adminer のセッション確立後に
+		// ドライバ側の Db::initiateOAuth2Flow() が行う。
 		return '
 		<div class="oauth2-login-container">
 			<div class="oauth2-logo">
@@ -211,7 +206,7 @@ class AdminerLoginBigQuery extends Plugin {
 				</svg>
 			</div>
 			<h2>Adminer</h2>
-			<a href="' . htmlspecialchars($authUrl) . '" class="oauth2-signin-button">Sign in with Google</a>
+			<input type="submit" class="oauth2-signin-button" value="Sign in with Google">
 		</div>';
 	}
 

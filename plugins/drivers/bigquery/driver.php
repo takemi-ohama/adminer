@@ -12,12 +12,12 @@ use InvalidArgumentException;
  *
  * Separated from bigquery.php for better code organization
  */
-class Driver {
+class Driver extends SqlDriver {
 
 	static $instance;
 	static $extensions = array("BigQuery");
 	static $jush = "sql";
-	static $operators = array(
+	public $operators = array(
 		"=",
 		"!=",
 		"<>",
@@ -67,6 +67,18 @@ class Driver {
 		array("ARRAY" => 0, "STRUCT" => 0, "JSON" => 0, "GEOGRAPHY" => 0)
 	);
 
+	/**
+	 * 接続オブジェクトを保持する
+	 *
+	 * adminer-bigquery-css.php が CSS 取得のために接続なしで生成するため、
+	 * 上流 SqlDriver と異なり引数を省略できるようにする。
+	 */
+	function __construct(?Db $connection = null) {
+		if ($connection) {
+			parent::__construct($connection);
+		}
+	}
+
 	static function connect($server, $username, $password) {
 		$db = new Db();
 		if ($db->connect($server, $username, $password)) {
@@ -74,27 +86,53 @@ class Driver {
 		}
 		return false;
 	}
+
+	/**
+	 * JUSHモジュールを返す
+	 *
+	 * $jush = "sql" のモジュールは jush.js に同梱されているため、追加のJavaScriptは不要。
+	 */
+	static function jushModule(): string {
+		return "";
+	}
+
+	/**
+	 * クエリ入力欄の補完式を返す
+	 *
+	 * 上流の既定実装は全テーブルのカラムを走査するため、BigQueryでは高コストになる。
+	 * 補完は提供せず空文字を返す。
+	 *
+	 * @param array $tables
+	 * @param array|null $statements
+	 */
+	static function jushAutocomplete(array $tables, ?array $statements): string {
+		return "";
+	}
 	function tableHelp($name, $is_view = false) {
 		return null;
 	}
-	function structuredTypes() {
+	function structuredTypes(): array {
 		$allTypes = array();
 		foreach ($this->types as $typeGroup) {
 			$allTypes = array_merge($allTypes, array_keys($typeGroup));
 		}
 		return $allTypes;
 	}
-	function inheritsFrom($table) {
+	function inheritsFrom(string $table): array {
 		return array();
 	}
-	function inheritedTables($table) {
+	function inheritedTables(string $table): array {
 		return array();
 	}
 	function select($table, $select, $where, $group, $order = array(), $limit = 1, $page = 0, $print = false) {
 		return select($table, $select, $where, $group, $order, $limit, $page, $print);
 	}
-	function value($val, $field) {
-		return BigQueryUtils::formatComplexValue($val, $field);
+	function value(?string $val, array $field): ?string {
+		$value = BigQueryUtils::formatComplexValue($val, $field);
+		if ($value === null) {
+			return null;
+		}
+		return is_scalar($value) ? (string) $value : json_encode($value);
 	}
 	function convert_field(array $field) {
 		// BigQuery SELECT * との併用問題を回避するため、フィールド変換を無効化
@@ -106,15 +144,53 @@ class Driver {
 		return false;
 	}
 
+	/**
+	 * BigQueryはトランザクションを扱えないため、上流の既定実装（BEGIN/COMMIT/ROLLBACKの発行）を無効化する
+	 *
+	 * SQLコマンド画面はsupport('transaction')に関わらずrollback()を呼ぶため、明示的に上書きする。
+	 * @return false
+	 */
+	function begin() {
+		return false;
+	}
+
+	/** @return false */
+	function commit() {
+		return false;
+	}
+
+	/** @return false */
+	function rollback() {
+		return false;
+	}
+
+	/**
+	 * BigQueryはインデックスを持たない
+	 * @param array $table_status
+	 */
+	function supportsIndex(array $table_status): bool {
+		return false;
+	}
+
+	/**
+	 * BigQueryにはCHECK制約もINFORMATION_SCHEMA.CHECK_CONSTRAINTSも無い
+	 *
+	 * 上流の既定実装はINFORMATION_SCHEMAへのSQLを発行するため上書きする。
+	 * @return string[]
+	 */
+	function checkConstraints(string $table): array {
+		return array();
+	}
+
 	function warnings() {
 		return array();
 	}
 
-	function engines() {
+	function engines(): array {
 		return array('BigQuery');
 	}
 
-	function types() {
+	function types(): array {
 		return array(
 			'Numbers' => array(
 				'INT64' => 0,
@@ -159,8 +235,8 @@ class Driver {
 		return insert($table, $set);
 	}
 
-	function update($table, $set, $queryWhere = '', $limit = 0) {
-		return update($table, $set, $queryWhere, $limit);
+	function update($table, $set, $queryWhere = '', $limit = 0, $separator = "\n") {
+		return update($table, $set, $queryWhere, $limit, $separator);
 	}
 
 	function delete($table, $queryWhere = '', $limit = 0) {
