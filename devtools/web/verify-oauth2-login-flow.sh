@@ -21,11 +21,18 @@ BASE_URL="http://localhost:${PORT}"
 # コンテナ外から叩く場合も Cookie のドメインを localhost に揃えるため --resolve を使う
 CURL="curl -sS --resolve localhost:${PORT}:${HOST_ADDR}"
 PROJECT_ID="verify-project"
+# VERIFY_ACCESS_TOKEN を使う検証では、トークンのプロジェクトと GOOGLE_CLOUD_PROJECT を
+# 一致させる必要がある（不一致だと BigQuery API が ACCESS_TOKEN_TYPE_UNSUPPORTED を返す）
 WORK_DIR="$(mktemp -d)"
 
 FAILED=0
 
 cleanup() {
+    # VERIFY_KEEP=1 で調査用にコンテナと作業ファイルを残す
+    if [[ -n "${VERIFY_KEEP:-}" ]]; then
+        echo "🔍 コンテナ $CONTAINER_NAME と $WORK_DIR を残しました"
+        return
+    fi
     docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1
     rm -rf "$WORK_DIR"
 }
@@ -43,7 +50,7 @@ docker build -q -t "$IMAGE_TAG" -f "$REPO_ROOT/devtools/web/Dockerfile" "$REPO_R
 echo "🚀 コンテナ起動中 (port $PORT)..."
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1
 docker run -d --name "$CONTAINER_NAME" -p "${PORT}:80" \
-    -e GOOGLE_CLOUD_PROJECT="$PROJECT_ID" \
+    -e GOOGLE_CLOUD_PROJECT="${VERIFY_REAL_PROJECT:-$PROJECT_ID}" \
     -e GOOGLE_OAUTH2_ENABLE=true \
     -e GOOGLE_OAUTH2_CLIENT_ID=verify-client-id.apps.googleusercontent.com \
     -e GOOGLE_OAUTH2_CLIENT_SECRET=verify-client-secret \
@@ -175,6 +182,42 @@ if [[ -n "${VERIFY_ACCESS_TOKEN:-}" ]]; then
             "$(sed 's/<[^>]*>//g' "$WORK_DIR/real_authed.html" | grep -A1 'Fatal error' | head -2 | tr '\n' ' ')"
     else
         pass "T6 実トークンでログイン後の画面が Fatal error なく描画される"
+    fi
+
+    # -----------------------------------------------------------------------
+    # T8: OAuth2認証でもデータセット一覧が取得できる
+    #     （OAuth2経路のBigQueryClientが他のコードと同じプロパティに入っていること）
+    # -----------------------------------------------------------------------
+    # リンクは HTML エスケープされる（&amp;db=...）ため接頭辞は見ない
+    if grep -qE 'db=[A-Za-z0-9_]' "$WORK_DIR/real_authed.html"; then
+        pass "T8 実トークンでデータセット一覧が表示される"
+    else
+        fail "T8 実トークンでデータセット一覧が表示される" \
+            "データベース選択画面にデータセットが1件も無い"
+    fi
+
+    # -----------------------------------------------------------------------
+    # T7: ログイン後の主要画面が Fatal error なく描画される
+    #     上流 Adminer のドライバAPI変更（SqlDriver）への追従漏れを検出する
+    # -----------------------------------------------------------------------
+    DATASET=$(grep -oE 'db=[A-Za-z0-9_]+' "$WORK_DIR/real_authed.html" | head -1 | cut -d= -f2)
+    SCREENS="${REAL_PATH}&sql="
+    if [[ -n "$DATASET" ]]; then
+        SCREENS="$SCREENS ${REAL_PATH}&db=${DATASET} ${REAL_PATH}&db=${DATASET}&sql="
+    fi
+
+    SCREEN_NG=0
+    for SCREEN in $SCREENS; do
+        $CURL -b "$WORK_DIR/real_cookie.txt" -b "oauth2_token=${VERIFY_ACCESS_TOKEN}" \
+            -o "$WORK_DIR/screen.html" "${BASE_URL}${SCREEN}"
+        if grep -q 'Fatal error' "$WORK_DIR/screen.html"; then
+            fail "T7 主要画面が Fatal error なく描画される (${SCREEN})" \
+                "$(sed 's/<[^>]*>//g' "$WORK_DIR/screen.html" | grep -A1 'Fatal error' | head -2 | tr '\n' ' ')"
+            SCREEN_NG=1
+        fi
+    done
+    if [[ $SCREEN_NG -eq 0 ]]; then
+        pass "T7 主要画面が Fatal error なく描画される (${SCREENS})"
     fi
 else
     echo "⏭️  SKIP: T6（VERIFY_ACCESS_TOKEN 未指定のためログイン後の画面は未検証）"

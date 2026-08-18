@@ -27,6 +27,9 @@ class Db {
 
 	public $affected_rows = 0;
 
+	/** @var int 直近のエラー番号（SQLコマンド画面が参照する） */
+	public $errno = 0;
+
 	public $info = '';
 
 	public $last_result = null;
@@ -410,9 +413,11 @@ class Db {
 
 			// 取得済みアクセストークンを供給してBigQueryクライアントを初期化する。
 			// \Google\Client は google/apiclient のクラスで依存関係に含まれないため使用しない。
-			$this->bigquery = new BigQueryClient($config + array(
+			// データセット一覧などの処理は $bigQueryClient を参照するため、そちらに格納する。
+			$this->bigQueryClient = new BigQueryClient($config + array(
 				'credentialsFetcher' => new OAuth2AccessTokenFetcher($accessToken)
 			));
+			$this->bigquery = $this->bigQueryClient;
 
 			$this->location = $location;
 
@@ -449,7 +454,9 @@ class Db {
 				'location' => $location
 			);
 
-			$this->bigquery = new BigQueryClient($config);
+			// データセット一覧などの処理は $bigQueryClient を参照するため、そちらに格納する
+			$this->bigQueryClient = new BigQueryClient($config);
+			$this->bigquery = $this->bigQueryClient;
 			$this->location = $location;
 
 			error_log('OAuth2: Successfully created BigQuery client with service account fallback');
@@ -888,6 +895,16 @@ class Db {
 	}
 
 	function next_result() {
+		return false;
+	}
+
+	/**
+	 * トランザクション中かどうか
+	 *
+	 * BigQueryはトランザクションを扱わないため常にfalse。
+	 * SQLコマンド画面がROLLBACKの要否判定で無条件に参照する。
+	 */
+	function inTransaction() {
 		return false;
 	}
 }
