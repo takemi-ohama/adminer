@@ -45,7 +45,7 @@ class AdminerLoginBigQuery extends Plugin {
 		// Ensure HTTPS for production
 		if (
 			parse_url($redirectUrl, PHP_URL_SCHEME) !== 'https' &&
-			!in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'])
+			!in_array($_SERVER['HTTP_HOST'] ?? '', array('localhost', '127.0.0.1'))
 		) {
 			error_log('OAuth2: Redirect URL must use HTTPS in production');
 			return false;
@@ -61,20 +61,20 @@ class AdminerLoginBigQuery extends Plugin {
 	private function getOAuth2Config() {
 		// Dynamic redirect URL generation for production environments
 		$redirectUrl = getenv('GOOGLE_OAUTH2_REDIRECT_URL');
-		
+
 		// If no explicit redirect URL is set, generate from current request
 		if (!$redirectUrl || $redirectUrl === 'http://localhost:8080/?oauth2=callback') {
 			$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https://' : 'http://';
 			$host = $_SERVER['HTTP_HOST'] ?? 'localhost:8080';
 			$redirectUrl = $protocol . $host . '/?oauth2=callback';
-			
+
 			error_log("OAuth2: Auto-generated redirect URL: " . $redirectUrl);
 		}
-		
-		return [
+
+		return array(
 			'client_id' => getenv('GOOGLE_OAUTH2_CLIENT_ID'),
 			'redirect_url' => $redirectUrl
-		];
+		);
 	}
 
 	private function initializeDriverSelection() {
@@ -188,9 +188,9 @@ class AdminerLoginBigQuery extends Plugin {
 
 		// Google OAuth2 認証URL を構築
 		$scope = urlencode('https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform');
-		$state = urlencode(base64_encode(json_encode(['redirect_to' => $_SERVER['REQUEST_URI']])));
+		$state = urlencode(base64_encode(json_encode(array('redirect_to' => $_SERVER['REQUEST_URI']))));
 
-		$authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query([
+		$authUrl = 'https://accounts.google.com/o/oauth2/v2/auth?' . http_build_query(array(
 			'client_id' => $clientId,
 			'redirect_uri' => $redirectUrl,
 			'scope' => 'https://www.googleapis.com/auth/bigquery https://www.googleapis.com/auth/cloud-platform',
@@ -198,7 +198,7 @@ class AdminerLoginBigQuery extends Plugin {
 			'state' => $state,
 			'access_type' => 'offline',
 			'prompt' => 'consent'
-		]);
+		));
 
 		return '
 		<div class="oauth2-login-container">

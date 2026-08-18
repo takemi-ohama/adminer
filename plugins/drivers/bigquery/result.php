@@ -11,8 +11,8 @@ use DateTimeInterface;
  *
  * Separated from bigquery.php for better code organization
  */
-class Result
-{
+class Result {
+
 
 	private $queryResults;
 	private $rowNumber = 0;
@@ -22,8 +22,7 @@ class Result
 	public $num_rows = 0;
 	public $job = null; // Phase 1: last_id()機能のためのジョブ参照
 
-	function __construct($queryResults)
-	{
+	function __construct($queryResults) {
 		$this->queryResults = $queryResults;
 		$this->job = $queryResults; // BigQueryジョブへの参照を保存
 
@@ -31,12 +30,10 @@ class Result
 			$jobInfo = $queryResults->info();
 			$this->num_rows = (int) ($jobInfo['totalRows'] ?? 0);
 		} catch (Exception $e) {
-
 			$this->num_rows = 0;
 		}
 	}
-	function fetch_assoc()
-	{
+	function fetch_assoc() {
 		try {
 			if (!$this->isIteratorInitialized) {
 				$this->iterator = $this->queryResults->getIterator();
@@ -80,20 +77,17 @@ class Result
 			return false;
 		}
 	}
-	function fetch_row()
-	{
+	function fetch_row() {
 		$assoc = $this->fetch_assoc();
 		return $assoc ? array_values($assoc) : false;
 	}
-	function num_fields()
-	{
+	function num_fields() {
 		if ($this->fieldsCache === null) {
 			$this->fieldsCache = $this->queryResults->info()['schema']['fields'] ?? array();
 		}
 		return count($this->fieldsCache);
 	}
-	function fetch_field($offset = 0)
-	{
+	function fetch_field($offset = 0) {
 		if ($this->fieldsCache === null) {
 			$this->fieldsCache = $this->queryResults->info()['schema']['fields'] ?? array();
 		}
@@ -111,8 +105,7 @@ class Result
 			'orgtable' => ''
 		);
 	}
-	private function mapBigQueryType($bigQueryType)
-	{
+	private function mapBigQueryType($bigQueryType) {
 		$typeMap = array(
 			'STRING' => 'varchar',
 			'INT64' => 'bigint',
@@ -137,17 +130,14 @@ class Result
 		return $typeMap[strtoupper($bigQueryType)] ?? 'text';
 	}
 
-	private function getBigQueryCharsetNr($bigQueryType)
-	{
+	private function getBigQueryCharsetNr($bigQueryType) {
 		$baseType = strtoupper(preg_replace('/\([^)]*\)/', '', $bigQueryType));
 
 		switch ($baseType) {
 			case 'BYTES':
-
 				return 63;
 			case 'STRING':
 			case 'JSON':
-
 				return 33;
 			case 'INT64':
 			case 'INTEGER':
@@ -161,16 +151,13 @@ class Result
 			case 'TIME':
 			case 'DATETIME':
 			case 'TIMESTAMP':
-
 				return 63;
 			case 'ARRAY':
 			case 'STRUCT':
 			case 'RECORD':
 			case 'GEOGRAPHY':
-
 				return 33;
 			default:
-
 				return 33;
 		}
 	}

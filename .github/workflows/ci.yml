@@ -9,11 +9,33 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: php-actions/composer@v6
       - uses: php-actions/phpcs@v1
         with:
+          # latest だと PHP_CodeSniffer の sniff 追加・分割で突然 CI が壊れるため、
+          # 上流 adminer が使用しているバージョンに固定する
+          version: 4.0.4
           path: .
           standard: phpcs.xml
           args: -d memory_limit=512M
       - uses: php-actions/phpstan@v3
+        with:
+          version: 2.2.8
+          configuration: phpstan.neon
+
+  # 上流Adminerの構成変更によるコンテナビルド破損をPR時点で検知する。
+  # 上流の既定ブランチを毎回cloneするため、あえてビルドキャッシュは使わない。
+  docker-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build web image (validation only)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: devtools/web/Dockerfile
+          platforms: linux/amd64
+          push: false

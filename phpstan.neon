@@ -36,7 +36,6 @@ parameters:
 		- identifier: notIdentical.alwaysTrue
 		- identifier: booleanNot.alwaysTrue
 		- identifier: booleanNot.alwaysFalse
-		- identifier: booleanAnd.alwaysFalse
 		- identifier: booleanAnd.leftAlwaysTrue
 		- identifier: booleanAnd.rightAlwaysTrue
 		- identifier: booleanAnd.rightAlwaysFalse
@@ -46,7 +45,21 @@ parameters:
 		- identifier: isset.offset
 		- identifier: deadCode.unreachable
 		- "~Function Adminer\\\\get_driver\\(\\) never returns null~"
-		- "~on array\\{}~"
+
+		# 上流由来ファイルの既知エラー。adminer/ は上流のスナップショットのため、修正は上流追従で取り込む
+		-
+			identifier: function.resultUnused
+			message: "~Adminer\\\\set_schema\\(\\)~"
+			paths:
+				- adminer/foreign.inc.php
+				- adminer/include/adminer.inc.php
+				- adminer/sql.inc.php
+		-
+			identifier: parameterByRef.type
+			path: adminer/include/editing.inc.php
+		-
+			identifier: binaryOp.invalid
+			path: adminer/schema.inc.php
 
 	paths:
 		- adminer/drivers/mysql.inc.php # other drivers inherit the annotations so we take them from here

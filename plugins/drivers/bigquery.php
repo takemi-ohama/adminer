@@ -144,7 +144,6 @@ if (isset($_GET["bigquery"])) {
 		);
 	}
 	function collations() {
-
 		return array(
 			"unicode:cs" => "Unicode (大文字小文字区別)",
 			"unicode:ci" => "Unicode (大文字小文字区別なし)",
@@ -152,7 +151,6 @@ if (isset($_GET["bigquery"])) {
 		);
 	}
 	function db_collation($db) {
-
 		if (!$db) {
 			return "";
 		}
@@ -408,7 +406,6 @@ if (isset($_GET["bigquery"])) {
 
 			$maxFields = 1000;
 			if ($fieldCount > $maxFields) {
-
 				$schemaFields = array_slice($schemaFields, 0, $maxFields);
 			}
 
@@ -517,7 +514,6 @@ if (isset($_GET["bigquery"])) {
 	}
 	if (!function_exists('unconvert_field')) {
 		function unconvert_field(array $field, $value) {
-
 			if ($value === null) {
 				return null;
 			}
@@ -550,10 +546,12 @@ if (isset($_GET["bigquery"])) {
 				case (strpos($fieldType, 'boolean') !== false):
 				case (strpos($fieldType, 'bool') !== false):
 					// 'true'/'false'文字列を論理値に変換
-					if ($stringValue === 'true')
+					if ($stringValue === 'true') {
 						return '1';
-					if ($stringValue === 'false')
+					}
+					if ($stringValue === 'false') {
 						return '0';
+					}
 					return $stringValue;
 
 					// 数値データの逆変換
@@ -619,7 +617,6 @@ if (isset($_GET["bigquery"])) {
 				$fields = array();
 				$values = array();
 				foreach ($set as $field => $value) {
-
 					$cleanFieldName = trim(str_replace('`', '', $field));
 					$cleanField = BigQueryUtils::escapeIdentifier($cleanFieldName);
 					$fields[] = $cleanField;
@@ -638,9 +635,7 @@ if (isset($_GET["bigquery"])) {
 				BigQueryUtils::logQuerySafely($insertQuery, "INSERT");
 
 				$queryLocation = $connection->config['location'] ?? 'US';
-				$queryJob = $connection->bigQueryClient->query($insertQuery)
-					->useLegacySql(false)
-					->location($queryLocation);
+				$queryJob = $connection->bigQueryClient->query($insertQuery)->useLegacySql(false)->location($queryLocation);
 
 				$job = $connection->bigQueryClient->runQuery($queryJob);
 				if (!$job->isComplete()) {
@@ -694,9 +689,8 @@ if (isset($_GET["bigquery"])) {
 
 				$tableFields = fields($table);
 
-				$setParts = [];
+				$setParts = array();
 				foreach ($set as $field => $value) {
-
 					$cleanFieldName = trim(str_replace('`', '', $field));
 					$cleanField = BigQueryUtils::escapeIdentifier($cleanFieldName);
 
@@ -722,9 +716,7 @@ if (isset($_GET["bigquery"])) {
 				BigQueryUtils::logQuerySafely($updateQuery, "UPDATE");
 
 				$queryLocation = $connection->config['location'] ?? 'US';
-				$queryJob = $connection->bigQueryClient->query($updateQuery)
-					->useLegacySql(false)
-					->location($queryLocation);
+				$queryJob = $connection->bigQueryClient->query($updateQuery)->useLegacySql(false)->location($queryLocation);
 
 				$job = $connection->bigQueryClient->runQuery($queryJob);
 				if (!$job->isComplete()) {
@@ -790,9 +782,7 @@ if (isset($_GET["bigquery"])) {
 				BigQueryUtils::logQuerySafely($deleteQuery, "DELETE");
 
 				$queryLocation = $connection->config['location'] ?? 'US';
-				$queryJob = $connection->bigQueryClient->query($deleteQuery)
-					->useLegacySql(false)
-					->location($queryLocation);
+				$queryJob = $connection->bigQueryClient->query($deleteQuery)->useLegacySql(false)->location($queryLocation);
 
 				$job = $connection->bigQueryClient->runQuery($queryJob);
 				if (!$job->isComplete()) {
@@ -843,7 +833,6 @@ if (isset($_GET["bigquery"])) {
 		}
 
 		function create_database($database, $collation) {
-
 			global $connection;
 			try {
 				if (!$connection || !isset($connection->bigQueryClient)) {
@@ -857,9 +846,9 @@ if (isset($_GET["bigquery"])) {
 				}
 
 				// データセット設定の構築
-				$datasetOptions = [
+				$datasetOptions = array(
 					'location' => $connection->config['location'] ?? 'US'
-				];
+				);
 
 				// 説明の追加（collationパラメータを説明として活用）
 				if (!empty($collation) && is_string($collation)) {
@@ -907,7 +896,6 @@ if (isset($_GET["bigquery"])) {
 		}
 
 		function drop_databases($databases) {
-
 			global $driver;
 
 			if (!$driver) {
@@ -928,13 +916,13 @@ if (isset($_GET["bigquery"])) {
 				}
 
 				// 削除前の安全確認（テーブル数チェック）
-				$tableIterator = $dataset->tables(['maxResults' => 1]);
+				$tableIterator = $dataset->tables(array('maxResults' => 1));
 				if ($tableIterator->current()) {
 					error_log("BigQuery: Warning - Dataset '$database' contains tables, proceeding with deletion");
 				}
 
 				// BigQuery Dataset削除実行
-				$dataset->delete(['deleteContents' => true]);
+				$dataset->delete(array('deleteContents' => true));
 				error_log("BigQuery: Dataset '$database' deleted successfully");
 
 				return true;
@@ -942,7 +930,6 @@ if (isset($_GET["bigquery"])) {
 		}
 
 		function rename_database($old_name, $new_name) {
-
 			global $connection;
 
 			if (!$connection || !isset($connection->bigQueryClient)) {
@@ -983,10 +970,10 @@ if (isset($_GET["bigquery"])) {
 
 				// 新データセット作成
 				BigQueryUtils::logQuerySafely("CREATE DATASET $new_name (rename from $old_name)", "RENAME_DATASET_CREATE");
-				$newDatasetOptions = [
+				$newDatasetOptions = array(
 					'location' => $location,
 					'description' => $description . " (Renamed from $old_name via Adminer)"
-				];
+				);
 				$newDataset = $connection->bigQueryClient->createDataset($new_name, $newDatasetOptions);
 
 				// テーブル一覧取得（イテレータを直接使用）
@@ -1004,9 +991,7 @@ if (isset($_GET["bigquery"])) {
 						$copyQuery = "CREATE TABLE $newTableId AS SELECT * FROM $oldTableId";
 						BigQueryUtils::logQuerySafely($copyQuery, "RENAME_DATASET_COPY_TABLE");
 
-						$queryJob = $connection->bigQueryClient->query($copyQuery)
-							->useLegacySql(false)
-							->location($location);
+						$queryJob = $connection->bigQueryClient->query($copyQuery)->useLegacySql(false)->location($location);
 						$job = $connection->bigQueryClient->runQuery($queryJob);
 
 						if (!$job->isComplete()) {
@@ -1024,7 +1009,7 @@ if (isset($_GET["bigquery"])) {
 						error_log("BigQuery: Failed to copy table '$tableName': " . $e->getMessage());
 						// テーブルコピー失敗時は新データセットをクリーンアップ
 						try {
-							$newDataset->delete(['deleteContents' => true]);
+							$newDataset->delete(array('deleteContents' => true));
 						} catch (Exception $cleanupError) {
 							error_log("BigQuery: Cleanup failed: " . $cleanupError->getMessage());
 						}
@@ -1040,7 +1025,7 @@ if (isset($_GET["bigquery"])) {
 				// 元データセット削除
 				try {
 					BigQueryUtils::logQuerySafely("DROP DATASET $old_name (rename completion)", "RENAME_DATASET_DROP");
-					$oldDataset->delete(['deleteContents' => true]);
+					$oldDataset->delete(array('deleteContents' => true));
 					error_log("BigQuery: Successfully deleted old dataset '$old_name'");
 				} catch (Exception $e) {
 					error_log("BigQuery: Warning - Failed to delete old dataset '$old_name': " . $e->getMessage());
@@ -1093,20 +1078,19 @@ if (isset($_GET["bigquery"])) {
 
 					$dataset = $connection->bigQueryClient->dataset($database);
 
-					$schemaFields = [];
+					$schemaFields = array();
 					foreach ($fields as $field) {
 						if (isset($field[1]) && is_array($field[1])) {
-
 							$fieldName = trim(str_replace('`', '', $field[1][0] ?? ''));
 							$fieldType = trim($field[1][1] ?? 'STRING');
 							$fieldMode = ($field[1][3] ?? false) ? 'REQUIRED' : 'NULLABLE';
 
 							if (!empty($fieldName)) {
-								$schemaFields[] = [
+								$schemaFields[] = array(
 									'name' => $fieldName,
 									'type' => strtoupper($fieldType),
 									'mode' => $fieldMode
-								];
+								);
 							}
 						}
 					}
@@ -1115,9 +1099,9 @@ if (isset($_GET["bigquery"])) {
 						return false;
 					}
 
-					$tableOptions = [
-						'schema' => ['fields' => $schemaFields]
-					];
+					$tableOptions = array(
+						'schema' => array('fields' => $schemaFields)
+					);
 
 					if (!empty($comment)) {
 						$tableOptions['description'] = $comment;
@@ -1244,9 +1228,7 @@ if (isset($_GET["bigquery"])) {
 						$sourceTableInfo = $sourceTable->info();
 						$location = $sourceTableInfo['location'] ?? 'US';
 
-						$queryJob = $connection->bigQueryClient->query($copyQuery)
-							->useLegacySql(false)
-							->location($location);
+						$queryJob = $connection->bigQueryClient->query($copyQuery)->useLegacySql(false)->location($location);
 						$job = $connection->bigQueryClient->runQuery($queryJob);
 
 						if (!$job->isComplete()) {
@@ -1268,9 +1250,8 @@ if (isset($_GET["bigquery"])) {
 						// 権限エラー
 						if (strpos($message, 'permission') !== false || $errorCode === 403) {
 							$errors[] = "Permission denied: Cannot copy table '$table'";
-						}
-						// その他のServiceException
-						else {
+						} else {
+							// その他のServiceException
 							$errors[] = "Failed to copy table '$table': $message";
 						}
 
@@ -1394,9 +1375,7 @@ if (isset($_GET["bigquery"])) {
 						$sourceTableInfo = $sourceTable->info();
 						$location = $sourceTableInfo['location'] ?? 'US';
 
-						$queryJob = $connection->bigQueryClient->query($copyQuery)
-							->useLegacySql(false)
-							->location($location);
+						$queryJob = $connection->bigQueryClient->query($copyQuery)->useLegacySql(false)->location($location);
 						$job = $connection->bigQueryClient->runQuery($queryJob);
 
 						if (!$job->isComplete()) {
@@ -1418,9 +1397,8 @@ if (isset($_GET["bigquery"])) {
 						// 権限エラー
 						if (strpos($message, 'permission') !== false || $errorCode === 403) {
 							$errors[] = "Permission denied: Cannot move table '$table'";
-						}
-						// その他のServiceException
-						else {
+						} else {
+							// その他のServiceException
 							$errors[] = "Failed to move table '$table': $message";
 						}
 
@@ -1504,7 +1482,7 @@ if (isset($_GET["bigquery"])) {
 					$numericFields = array_filter($fields, function ($field) {
 						$type = strtolower($field['type'] ?? '');
 						// BigQuery数値型の包括的チェック
-						$numericTypes = ['int64', 'integer', 'float64', 'float', 'numeric', 'bignumeric', 'decimal'];
+						$numericTypes = array('int64', 'integer', 'float64', 'float', 'numeric', 'bignumeric', 'decimal');
 						foreach ($numericTypes as $numType) {
 							if (strpos($type, $numType) !== false) {
 								return true;
@@ -1555,7 +1533,6 @@ if (isset($_GET["bigquery"])) {
 	}
 
 	function show_unsupported_feature_message($feature, $reason = '') {
-
 		$unsupported_messages = array(
 			'move_tables' => 'BigQuery does not support moving tables between datasets directly. Use CREATE TABLE AS SELECT + DROP TABLE instead.',
 			'schema' => 'BigQuery uses datasets instead of schemas. Please use the dataset view for schema information.',
@@ -1587,11 +1564,9 @@ if (isset($_GET["bigquery"])) {
 
 	function schema() {
 		show_unsupported_feature_message('schema', 'BigQuery uses datasets instead of traditional schemas. Dataset information is available in the main database view.');
-		return;
 	}
 
 	function bigquery_view($name) {
-
 		global $connection;
 
 		if (!$connection || !isset($connection->bigQueryClient)) {
@@ -1616,7 +1591,7 @@ if (isset($_GET["bigquery"])) {
 
 			// ビューかどうかを確認
 			$tableType = strtolower($tableInfo['type'] ?? 'TABLE');
-			if (!in_array($tableType, ['view', 'materialized_view'])) {
+			if (!in_array($tableType, array('view', 'materialized_view'))) {
 				return array();
 			}
 
@@ -1678,7 +1653,6 @@ if (isset($_GET["bigquery"])) {
 	}
 
 	function import_sql($file) {
-
 		global $connection;
 
 		if (!$connection || !isset($connection->bigQueryClient)) {
@@ -1739,9 +1713,7 @@ if (isset($_GET["bigquery"])) {
 
 					// BigQueryクエリ実行
 					$queryLocation = $connection->config['location'] ?? 'US';
-					$queryJob = $connection->bigQueryClient->query($trimmedStatement)
-						->useLegacySql(false)
-						->location($queryLocation);
+					$queryJob = $connection->bigQueryClient->query($trimmedStatement)->useLegacySql(false)->location($queryLocation);
 					$job = $connection->bigQueryClient->runQuery($queryJob);
 
 					if (!$job->isComplete()) {
