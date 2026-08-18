@@ -57,6 +57,7 @@ docker run -d --name "$CONTAINER_NAME" -p "${PORT}:80" \
     -e GOOGLE_OAUTH2_REDIRECT_URL="https://verify.example.com/?oauth2=callback" \
     -e GOOGLE_OAUTH2_COOKIE_NAME=oauth2_token \
     -e GOOGLE_OAUTH2_COOKIE_EXPIRE=3600 \
+    -e GOOGLE_APPLICATION_CREDENTIALS=/tmp/service-account.json \
     "$IMAGE_TAG" >/dev/null || exit 1
 
 echo -n "⏳ 起動待ち"
@@ -167,6 +168,18 @@ if grep -qE 'Class (&quot;|")Google' "$WORK_DIR/authed.html"; then
         "$(grep -oE 'Class (&quot;|")[^&"]*(&quot;|") not found' "$WORK_DIR/authed.html" | head -1)"
 else
     pass "T5 OAuth2 トークンで BigQuery クライアントを生成できる"
+fi
+
+# ---------------------------------------------------------------------------
+# T10: GOOGLE_APPLICATION_CREDENTIALS が存在しないファイルを指していても接続できる
+#      （dev の設定は /tmp/service-account.json だがファイルは無い。google/cloud-core は
+#        OAuth2 の credentialsFetcher を渡していても ADC ファイルを読もうとする）
+# ---------------------------------------------------------------------------
+if grep -q 'Select database' "$WORK_DIR/authed.html"; then
+    pass "T10 ADCファイルが無くてもOAuth2で接続できる"
+else
+    fail "T10 ADCファイルが無くてもOAuth2で接続できる" \
+        "データベース選択画面に到達しない: $(sed 's/<[^>]*>//g' "$WORK_DIR/authed.html" | grep -iE "credential|不正|Invalid" | head -1 | cut -c1-160)"
 fi
 
 # ---------------------------------------------------------------------------
