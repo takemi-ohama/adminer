@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: php-actions/composer@v6
       - uses: php-actions/phpcs@v1
         with:
@@ -19,7 +19,7 @@ jobs:
       - uses: php-actions/phpstan@v3
 
   # 上流Adminerの構成変更によるコンテナビルド破損をPR時点で検知する。
-  # 上流masterを毎回cloneするため、あえてビルドキャッシュは使わない。
+  # 上流の既定ブランチを毎回cloneするため、あえてビルドキャッシュは使わない。
   docker-build:
     runs-on: ubuntu-latest
 
