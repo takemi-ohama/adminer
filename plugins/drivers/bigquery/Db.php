@@ -398,11 +398,9 @@ class Db {
 				return $this->createBigQueryClientWithServiceAccount($location);
 			}
 
-			// Google Client を使用してOAuth2認証を設定
-			require_once __DIR__ . '/../../vendor/autoload.php';
-
-			$client = new \Google\Client();
-			$client->setAccessToken($accessToken);
+			// OAuth2認証を設定
+			require_once __DIR__ . '/../../../vendor/autoload.php';
+			require_once __DIR__ . '/OAuth2AccessTokenFetcher.php';
 
 			// BigQueryクライアントを作成
 			$config = array(
@@ -410,12 +408,10 @@ class Db {
 				'location' => $location
 			);
 
-			// OAuth2クライアントを使用してBigQueryクライアントを初期化
+			// 取得済みアクセストークンを供給してBigQueryクライアントを初期化する。
+			// \Google\Client は google/apiclient のクラスで依存関係に含まれないため使用しない。
 			$this->bigquery = new BigQueryClient($config + array(
-				'authHttpHandler' => function ($request, $options) use ($client) {
-					// OAuth2アクセストークンをHTTPヘッダーに追加
-					return $client->authorize()->send($request, $options);
-				}
+				'credentialsFetcher' => new OAuth2AccessTokenFetcher($accessToken)
 			));
 
 			$this->location = $location;
@@ -440,7 +436,7 @@ class Db {
 	 */
 	private function createBigQueryClientWithServiceAccount($location) {
 		try {
-			require_once __DIR__ . '/../../vendor/autoload.php';
+			require_once __DIR__ . '/../../../vendor/autoload.php';
 
 			$credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS');
 			if (!$credentialsPath || !file_exists($credentialsPath)) {

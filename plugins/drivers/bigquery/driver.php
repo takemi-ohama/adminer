@@ -74,6 +74,28 @@ class Driver {
 		}
 		return false;
 	}
+
+	/**
+	 * JUSHモジュールを返す（上流Adminer 6.0.2以降が全ページのフッタから静的に呼ぶ）
+	 *
+	 * $jush = "sql" のモジュールは jush.js に同梱されているため、追加のJavaScriptは不要。
+	 * 未実装のままだと Adminer\Driver::jushModule() 未定義でFatal errorになる。
+	 */
+	static function jushModule(): string {
+		return "";
+	}
+
+	/**
+	 * クエリ入力欄の補完式を返す（上流Adminer 6.0.2以降がSQLコマンド画面から静的に呼ぶ）
+	 *
+	 * BigQueryドライバは補完を提供しないため空文字を返す。
+	 *
+	 * @param array $tables
+	 * @param array|null $statements
+	 */
+	static function jushAutocomplete(array $tables, ?array $statements): string {
+		return "";
+	}
 	function tableHelp($name, $is_view = false) {
 		return null;
 	}
